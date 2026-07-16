@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "visual-wallet1";
+const BUILD_VERSION = "bet-cue1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -19,6 +19,7 @@ const ui = {
   bossMult: document.getElementById("bossMultText"),
   message: document.getElementById("messageText"),
   slots: document.getElementById("towerSlots"),
+  bottomUi: document.querySelector(".bottom-ui"),
   betMinus: document.getElementById("betMinusBtn"),
   betPlus: document.getElementById("betPlusBtn"),
   betText: document.getElementById("betText"),
@@ -3007,6 +3008,8 @@ function updateUi() {
   ui.bet.disabled = state.over || state.choicesOpen || state.waveActive || state.monsters.length || state.wallet < currentBet();
   const readyForNextWave = state.started && state.wave > 0 && !state.over && !state.choicesOpen && !state.waveActive && !state.monsters.length && !state.spawn && state.wallet >= currentBet();
   ui.bet.classList.toggle("ready-next", readyForNextWave);
+  ui.bottomUi?.classList.toggle("bet-ready", readyForNextWave);
+  ui.message.classList.toggle("bet-ready", readyForNextWave);
   ui.bet.setAttribute?.("aria-label", readyForNextWave ? `繼續第 ${state.wave + 1} 波，BET ${currentBet()}` : `BET ${currentBet()}`);
   ui.collect.disabled = !canCollect();
   ui.betMinus.disabled = state.started || state.baseBetIndex <= 0;
