@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "balance-attr2";
+const BUILD_VERSION = "rtp-balance1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -165,7 +165,7 @@ const ENEMY_ATTRIBUTE_DEFAULTS = {
   boss_4:  { fire:1,    ice:1,    electric:.80,  poison:1.35, neutral:1 },
   boss_5:  { fire:1.35, ice:.80,  electric:1,    poison:1,    neutral:1 },
 };
-const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v2";
+const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v3";
 const PARAM_CHANNEL = "tower-defense-param-sync";
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
@@ -397,14 +397,14 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  bossLowWeight: 70,
-  bossMidWeight: 25,
-  bossHighWeight: 5,
+  bossLowWeight: 30,
+  bossMidWeight: 50,
+  bossHighWeight: 20,
   bossLowMin: 1.0,
   bossLowMax: 1.8,
-  bossMidMin: 1.8,
-  bossMidMax: 3.4,
-  bossHighMin: 3.4,
+  bossMidMin: 2.2,
+  bossMidMax: 3.8,
+  bossHighMin: 4.0,
   bossHighMax: 8.0,
   bossChanceMul: 1.0,
   bossChanceCap: 70,
@@ -413,10 +413,10 @@ const DEFAULT_PARAMS = {
   minionSpeedMul: 1.0,
   eliteHpMul: 1.0,
   eliteAtkMul: 1.0,
-  bossHpMul: 1.0,
+  bossHpMul: 1.25,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
-  moneyMul: 1.0,
+  moneyMul: 1.2,
   eliteMoneyMul: 1.0,
   dropChanceMul: 1.0,
   expMul: 1.0,
