@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "attr-wave2";
+const BUILD_VERSION = "attr-hint1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -2212,7 +2212,7 @@ function renderAttributeCanvas(canvasEl, attr, boss=false) {
 function drawEnemyAttributeMarker(m, size) {
   const entries = Object.entries(m.attrMultipliers || {});
   const weak = entries.reduce((best, entry) => !best || entry[1] > best[1] ? entry : best, null);
-  if (!weak || weak[1] <= 1.001) return;
+  if (!weak || weak[0] === "neutral" || weak[1] <= 1.001) return;
   const display = ATTRIBUTE_DISPLAY[weak[0]] || ATTRIBUTE_DISPLAY.neutral;
   const radius = m.boss ? 11 : m.elite ? 9.5 : 8;
   const x = m.x - size / 2 - radius + 1;
@@ -2429,8 +2429,8 @@ function jag(a,b) {
 
 function updateAttributeIndicators(bossWarning) {
   const previewWave = state.wave + 1;
-  const showNext = previewWave <= 30 && !state.waveActive && !state.choicesOpen && !state.over;
   const nextAttr = wavePrimaryAttribute(previewWave);
+  const showNext = previewWave <= 30 && nextAttr !== "neutral" && !state.waveActive && !state.choicesOpen && !state.over;
   if (ui.nextAttrHint) {
     ui.nextAttrHint.hidden = !showNext;
     ui.nextAttrHint.classList.toggle("boss", !!bossWarning);
@@ -2440,7 +2440,7 @@ function updateAttributeIndicators(bossWarning) {
   }
   if (showNext) renderAttributeCanvas(ui.nextAttrCanvas, nextAttr, !!bossWarning);
 
-  const showCurrent = state.wave > 0 && (state.waveActive || state.monsters.length > 0);
+  const showCurrent = state.wave > 0 && state.currentWaveAttr !== "neutral" && (state.waveActive || state.monsters.length > 0);
   if (ui.waveAttrCanvas) {
     ui.waveAttrCanvas.hidden = !showCurrent;
     ui.waveAttrCanvas.setAttribute?.("aria-label", `本波主要為${ATTRIBUTE_DISPLAY[state.currentWaveAttr]?.label || "無"}屬性弱點`);

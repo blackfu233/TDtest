@@ -435,11 +435,11 @@ canvas {
 
 .next-attr-hint {
   position: absolute;
-  z-index: 3;
-  top: -15px;
-  right: -15px;
-  width: 40px;
-  height: 40px;
+  z-index: 9;
+  top: 112px;
+  right: 14px;
+  width: 44px;
+  height: 44px;
   border: 2px solid #d5dde8;
   border-radius: 50%;
   background: rgba(7, 10, 16, .96);
@@ -450,7 +450,7 @@ canvas {
 .next-attr-hint::after {
   content: "";
   position: absolute;
-  left: 7px;
+  right: 6px;
   bottom: -5px;
   width: 7px;
   height: 7px;
