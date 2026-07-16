@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "attr-hint1";
+const BUILD_VERSION = "synergy-fix1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -78,6 +78,27 @@ const UPGRADE_REQUIREMENTS = {
   "迴旋增幅": "迴旋飛刃",
   "追加飛刃": "迴旋飛刃",
   "封鎖延長": "戰術封鎖",
+  "氣爆燃燒": "凝固汽油彈",
+  "牽引爆震": "戰術封鎖",
+  "冰痕狙擊": "冰痕",
+  "折射聚焦": "折射光束",
+  "劇毒烈焰": "燃料附著",
+  "麻痺毒針": "電磁殘留",
+  "電刃麻痺": "電磁殘留",
+  "燃燒陷阱": "燃料附著",
+  "電熱灼斷": "電磁殘留",
+  "電磁榴彈": "電磁殘留",
+  "冷毒穿甲": "神經毒素",
+  "高壓爆點": "強力裝藥",
+  "寒毒封鎖": "冰痕",
+  "燃毒彈頭": "燃料附著",
+  "電磁陷阱": "電磁殘留",
+  "毒焰": "腐蝕毒霧",
+  "毒爆榴彈": "腐蝕毒霧",
+  "碎晶穿透": "碎晶爆裂",
+  "導電標記": "傳導增幅",
+  "碎毒穿刺": "極凍禁制",
+  "毒化陷阱": "腐蝕毒霧",
 };
 
 const UPGRADE_ROWS = [
@@ -88,6 +109,9 @@ const UPGRADE_ROWS = [
   [["燃料附著","解鎖燃燒","命中後每秒造成燃燒傷害，持續2S"],["凝固汽油彈","爆炸後留下燃燒區域","燃燒區域持續2秒，每秒造成30傷害"],["寒氣附著","解鎖緩速","命中後緩速25%，持續2S"],["冰痕","爆炸後留下冰痕","爆炸後留下冰痕區域，敵人移速-15%，持續2S"],["過載聚焦","持續增傷","持續照射同一目標1S後，後續傷害+20%"],["電磁殘留","麻痺攻擊目標","被擊中的敵人麻痺0.3S"],["腐蝕毒霧","毒霧中的敵人受到額外傷害","毒霧中的敵人受到傷害+15%"],["神經毒素","命中後造成中毒","命中後造成中毒，每0.5S25傷害，持續2S"],["迴旋飛刃","命中後有機率發射額外迴旋刃","命中後機率向隨機方向發射一道回旋刃，造成50%傷害"],["戰術封鎖","陷阱造成定身","陷阱觸發後造成定身0.5S"]],
   [["燃燒強化","燃燒傷害+","燃燒傷害+100%"],["燃燒加劇","燃燒傷害+","燃燒傷害+100%"],["冷卻延長","緩速時間+","緩速時間+50%"],["冰痕延長","冰痕持續時間+","冰痕持續時間+50%"],["聚焦強化","聚焦效果+","加成效果提升50%"],["麻痺擴散","麻痺時間+","麻痺時間+50%"],["腐蝕加深","易傷效果+","增傷效果+50%"],["毒傷強化","中毒傷害+","中毒傷害+100%"],["迴旋增幅","迴旋飛刃傷害+","飛刃傷害+100%"],["封鎖延長","定身時間+","定身時間+50%"]],
   [["延時燃燒","燃燒時間+","燃燒持續時間+50%"],["延燒區域","燃燒時間+","燃燒持續時間+50%"],["極凍禁制","對第一個目標凍結","對第一個目標造成凍結效果，持續1S"],["冰痕強化","冰痕緩速+","冰痕緩速效果+15%"],["持續灼穿","聚焦時間-","持續照射需要時間-50%"],["路徑強化","路徑傷害+","路徑上造成的傷害+100%"],["延時滯留","毒霧持續時間+","毒霧持續時間+50%"],["延效毒素","中毒時間+","中毒持續時間+50%"],["追加飛刃","迴旋刃+1","額外迴旋刃+1"],["牽引模組","牽引強度+","陷阱觸發後將目標拉向中心"]],
+  [["氣爆燃燒","對燃燒敵人造成爆炸","命中燃燒中的敵人時，在目標位置造成小範圍爆炸"],["牽引爆震","爆炸牽引敵人","爆炸命中敵人時造成短距離牽引"],["冰痕狙擊","子彈軌跡留下冰痕","子彈軌跡留下冰痕造成緩速25%，持續1S"],["冰封延長","凍結時間+","凍結持續時間+50%"],["折射聚焦","折射光束有聚焦","折射出的光束同樣享有聚焦效果"],["麻痺導流","攻擊聚焦敵人","被聚焦標記敵人也會被連鎖"],["劇毒烈焰","毒霧中燃燒敵人傷害+","毒霧中的燃燒敵人受到傷害+100%"],["麻痺毒針","中毒目標被毒針命中麻痺","中毒目標被毒針爆裂命中時，麻痺0.2S"],["電刃麻痺","造成命中麻痺","被迴旋刃命中的敵人造成麻痺0.2S"],["燃燒陷阱","陷阱觸發後留下燃燒區域","陷阱觸發後留下燃燒區域造成火焰傷害，持續2S"]],
+  [["電熱灼斷","對燃燒敵人造成麻痺","命中燃燒中的敵人時，麻痺0.2S"],["電磁榴彈","爆炸後留下電磁區","爆炸後留下電磁區2S，接觸的敵人停頓0.3S"],["冷毒穿甲","中毒目標受到額外傷害","中毒目標受到狙擊傷害+20%"],["碎晶爆裂","冰爆後碎晶散射","爆炸後散出3枚冰晶，各造成30%傷害"],["高壓爆點","命中範圍爆炸","持續照射命中1S後，在目標位置產生小範圍爆炸"],["電毒傳播","中毒的敵人爆炸","中毒的敵人被閃電命中時，造成小範圍爆炸，造成50%傷害"],["寒毒封鎖","毒霧內緩速","毒霧內敵人降低10%移速"],["燃毒彈頭","中毒目標附加燃燒","中毒目標被毒針爆裂命中時，附加燃燒"],["燃刃切割","造成命中燃燒","被迴旋刃命中的敵人造成燃燒，持續1S"],["電磁陷阱","陷阱觸發後留下感電區域","陷阱觸發後留下感電區域，對接觸敵人造成麻痺0.3S，持續2S"]],
+  [["毒焰","對中毒敵人造成額外傷害","若敵人中毒，噴火傷害+20%"],["毒爆榴彈","燃燒區域中的敵人中毒","燃燒區域中的敵人附加中毒效果，持續2S"],["碎晶穿透","擊中目標後分裂冰晶碎片","擊中第一個目標後分裂2枚冰晶碎片，造成40%傷害"],["寒爆壓制","凍結結束後減速","敵人凍結結束後，額外緩速20%，持續1S"],["導電標記","雷射命中增傷","被雷射命中的敵人受到閃電傷害+20%，持續2S"],["電毒擴散","中毒的敵人被擊中額外電流","中毒的敵人被電擊時，放出一條電流造成50%傷害"],null,["碎毒穿刺","凍結敵人命中增傷","凍結中的敵人被毒針命中時，爆裂傷害+30%"],["毒刃穿刺","造成命中中毒","被迴旋刃命中的敵人造成中毒，持續1S"],["毒化陷阱","陷阱觸發後留下毒霧區域","陷阱觸發後留下毒霧區域造成毒傷，持續2S"]],
 ];
 
 const MONSTERS = {
@@ -289,6 +313,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"burnDps", value:18 }, { key:"burnTime", value:2 }],
     [{ key:"dotDamagePct", value:100 }],
     [{ key:"burnDurationPct", value:50 }],
+    [{ key:"conditionalExplosionPct", value:50 }, { key:"conditionalExplosionRadius", value:46 }],
+    [{ key:"conditionalStunTime", value:.2 }],
+    [{ key:"poisonTargetDamagePct", value:20 }],
   ],
   grenade: [
     [{ key:"damagePct", value:35 }],
@@ -298,6 +325,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"burnAreaDps", value:30 }, { key:"burnAreaTime", value:2 }],
     [{ key:"dotDamagePct", value:100 }],
     [{ key:"burnDurationPct", value:50 }],
+    [{ key:"pullStrengthPct", value:35 }],
+    [{ key:"zoneStunTime", value:.3 }, { key:"zoneTime", value:2 }],
+    [{ key:"zonePoisonDps", value:25 }, { key:"zonePoisonTime", value:2 }],
   ],
   cryo: [
     [{ key:"damagePct", value:35 }],
@@ -307,6 +337,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"slowPct", value:25 }, { key:"slowTime", value:2 }],
     [{ key:"slowDurationPct", value:50 }],
     [{ key:"freezeTime", value:1 }],
+    [{ key:"trailSlowPct", value:25 }, { key:"trailTime", value:1 }],
+    [{ key:"poisonTargetDamagePct", value:20 }],
+    [{ key:"shardCount", value:2 }, { key:"shardDamagePct", value:40 }],
   ],
   frostbomb: [
     [{ key:"damagePct", value:30 }],
@@ -316,6 +349,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"iceTrailSlowPct", value:15 }, { key:"iceTrailTime", value:2 }],
     [{ key:"iceTrailDurationPct", value:50 }],
     [{ key:"iceTrailSlowBonusPct", value:15 }],
+    [{ key:"freezeDurationPct", value:50 }],
+    [{ key:"shardCount", value:3 }, { key:"shardDamagePct", value:30 }],
+    [{ key:"postFreezeSlowPct", value:20 }, { key:"postFreezeSlowTime", value:1 }],
   ],
   laser: [
     [{ key:"damagePct", value:30 }],
@@ -325,6 +361,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"focusDelay", value:1 }, { key:"focusDamagePct", value:20 }],
     [{ key:"focusDamageBonusPct", value:50 }],
     [{ key:"focusDelayReducePct", value:50 }],
+    [{ key:"refractFocusPct", value:100 }],
+    [{ key:"focusedBurstDamagePct", value:50 }, { key:"focusedBurstRadius", value:42 }],
+    [{ key:"electricVulnerablePct", value:20 }, { key:"electricVulnerableTime", value:2 }],
   ],
   chain: [
     [{ key:"damagePct", value:35 }],
@@ -334,6 +373,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"stunTime", value:.3 }],
     [{ key:"stunDurationPct", value:50 }],
     [{ key:"pathDamagePct", value:100 }],
+    [{ key:"focusConduit", value:1 }],
+    [{ key:"poisonBurstDamagePct", value:50 }, { key:"poisonBurstRadius", value:40 }],
+    [{ key:"poisonChainDamagePct", value:50 }],
   ],
   gas: [
     [{ key:"damagePct", value:35 }],
@@ -343,6 +385,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"vulnerablePct", value:15 }],
     [{ key:"vulnerableBonusPct", value:50 }],
     [{ key:"zoneDurationPct", value:50 }],
+    [{ key:"burningTargetDamagePct", value:100 }],
+    [{ key:"zoneSlowPct", value:10 }],
+    [],
   ],
   needle: [
     [{ key:"damagePct", value:30 }],
@@ -352,6 +397,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"poisonTick", value:.5 }, { key:"poisonDps", value:25 }, { key:"poisonTime", value:2 }],
     [{ key:"dotDamagePct", value:100 }],
     [{ key:"poisonDurationPct", value:50 }],
+    [{ key:"conditionalStunTime", value:.2 }],
+    [{ key:"burnDps", value:18 }, { key:"burnTime", value:2 }],
+    [{ key:"frozenTargetDamagePct", value:30 }],
   ],
   blade: [
     [{ key:"damagePct", value:40 }],
@@ -361,6 +409,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"ricochetChancePct", value:45 }, { key:"ricochetDamagePct", value:50 }],
     [{ key:"ricochetDamageBonusPct", value:100 }],
     [{ key:"ricochetExtra", value:1 }],
+    [{ key:"conditionalStunTime", value:.2 }],
+    [{ key:"burnDps", value:18 }, { key:"burnTime", value:1 }],
+    [{ key:"poisonDps", value:25 }, { key:"poisonTime", value:1 }],
   ],
   trap: [
     [{ key:"damagePct", value:30 }],
@@ -370,6 +421,9 @@ const UPGRADE_VALUE_DEFS = {
     [{ key:"rootTime", value:.5 }],
     [{ key:"rootDurationPct", value:50 }],
     [{ key:"pullStrengthPct", value:75 }],
+    [{ key:"burnAreaDps", value:30 }, { key:"burnAreaTime", value:2 }],
+    [{ key:"zoneStunTime", value:.3 }, { key:"zoneTime", value:2 }],
+    [{ key:"zonePoisonDps", value:25 }, { key:"zonePoisonTime", value:2 }],
   ],
 };
 
@@ -717,7 +771,7 @@ function addTower(def) {
     slot: state.towers.length, x: TOWER_SLOTS[state.towers.length].x, y: TOWER_SLOTS[state.towers.length].y,
     cd: 0, channel: null, lock: null, upgrades: [], level: 1, extraShots: 0, extraAreas: 0, dotMul: 1, slowMul: 1, stunMul: 1,
     burnDurationMul: 1, poisonDurationMul: 1, slowDurationMul: 1, zoneDurationMul: 1, iceTrailDurationMul: 1,
-    durationMul: 1, focusMul: 1, vulnerable: 0, burnArea: false, poison: false, stun: false, freeze: false,
+    durationMul: 1, freezeDurationMul: 1, focusMul: 1, vulnerable: 0, burnArea: false, poison: false, stun: false, freeze: false,
   });
 }
 
@@ -802,7 +856,8 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   ]));
   const attrMultipliers = applyWaveAttributeBias(baseAttrMultipliers, primaryAttr);
   return { ...tunedBase, kind, elite, boss, pathType, x, y: FIELD.spawnY, sx:x, curve, hp, maxHp:hp, atk, speed, atkCd:0, stopped:false,
-    tuneId, attrMultipliers, burn:0, burnTime:0, poison:0, poisonTime:0, slowTime:0, stunTime:0, freezeTime:0, vulnerable:0, vulnerableAmount:0, dropChance };
+    tuneId, attrMultipliers, burn:0, burnTime:0, poison:0, poisonTime:0, slowTime:0, slowPct:0, stunTime:0, freezeTime:0,
+    focusMarkTime:0, electricVulnerableTime:0, electricVulnerableAmount:0, vulnerable:0, vulnerableAmount:0, dropChance };
 }
 
 function update(dt) {
@@ -842,7 +897,10 @@ function updateZones(dt) {
     for (const m of state.monsters) {
       if (dist(z, m) <= z.radius) {
         if (tickCount > 0 && z.damage) damageEnemy(m, z.damage * tick * tickCount, z.tower);
-        if (z.slow) m.slowTime = Math.max(m.slowTime, z.slow);
+        if (z.slow) {
+          m.slowTime = Math.max(m.slowTime, z.slow);
+          m.slowPct = Math.max(m.slowPct || 0, z.slowPct || .45);
+        }
         if (z.root && !z.hardControlHits.has(m)) {
           const control = zoneControls.get(m) || { root:0, rootZones:[], pull:0, pullZone:null };
           if (z.root > control.root) control.root = z.root;
@@ -960,7 +1018,8 @@ function startChannel(t, primary) {
     tick: 0,
     target: primary,
     lockElapsed: 0,
-    aimAngle: Math.atan2(primary.y - origin.y, primary.x - origin.x)
+    aimAngle: Math.atan2(primary.y - origin.y, primary.x - origin.x),
+    burstTargets: new Set()
   };
   t.cd = 0;
 }
@@ -1008,7 +1067,14 @@ function flame(t, targets, channel) {
       const width = 34 + (forward / reach) * 46;
       const lateral = Math.abs(-dx * direction.y + dy * direction.x);
       if (lateral <= width) {
+        const wasBurning = o.m.burnTime > 0;
         damageEnemy(o.m, dmg, t);
+        if (wasBurning && t.conditionalExplosionPct && (o.m.flameBurstCd || 0) <= 0) {
+          synergyAreaDamage(t, o.m, dmg * t.conditionalExplosionPct / 100, t.conditionalExplosionRadius || 46, o.m);
+          o.m.flameBurstCd = .6;
+          effect("impact", t, o.m, { radius:t.conditionalExplosionRadius || 46 });
+        }
+        if (wasBurning && t.conditionalStunTime) applyHardControl(o.m, "stunTime", t.conditionalStunTime);
         if (t.burnArea) addZone(o.m.x, o.m.y, 42, towerBurnAreaTime(t), 24*t.dotMul, t, { burn:towerBurnDps(t) });
       }
     });
@@ -1029,7 +1095,16 @@ function areaHit(t, primary, type, radius, splashMul, opts={}) {
   effect(type, t, primary, { radius });
 }
 function pierce(t, targets, type, from = fireOrigin(), showEffect = true) {
-  targets.forEach((o,i) => { damageEnemy(o.m, scaledDamage(t)*(i?0.72:1), t); if (t.slow) o.m.slowTime=Math.max(o.m.slowTime,towerSlowTime(t)); if (t.freeze && i === 0) applyHardControl(o.m, "freezeTime", towerFreezeTime(t)); });
+  targets.forEach((o,i) => {
+    damageEnemy(o.m, scaledDamage(t)*(i?0.72:1), t);
+    if (t.slow) {
+      o.m.slowTime = Math.max(o.m.slowTime, towerSlowTime(t));
+      o.m.slowPct = Math.max(o.m.slowPct || 0, t.slow || .25);
+    }
+    if (t.freeze && i === 0) applyHardControl(o.m, "freezeTime", towerFreezeTime(t));
+  });
+  if (t.trailTime && targets[0]) addLineSlowZones(t, from, targets[0].m);
+  if (t.shardCount && targets[0]) scatterShards(t, targets[0].m, targets.map(o => o.m));
   if (showEffect) effect(type, { ...from, color:t.color }, targets[0].m, { chain: targets.slice(1).map(o=>o.m) });
 }
 function laser(t, primary, targets, channel=null) {
@@ -1037,12 +1112,26 @@ function laser(t, primary, targets, channel=null) {
   const focused = t.focus && channel && channel.lockElapsed >= focusDelay;
   const bonus = focused ? 1 + ((t.focusDamagePct || 20) / 100)*t.focusMul : 1;
   damageEnemy(primary, scaledDamage(t)*bonus, t);
+  if (focused) primary.focusMarkTime = Math.max(primary.focusMarkTime || 0, 2);
   if (t.refract) {
     const next = targets.find(o => o.m !== primary)?.m;
     if (next) {
-      damageEnemy(next, scaledDamage(t)*((t.refractDamagePct || 55) / 100), t);
+      const refractFocus = focused && t.refractFocusPct
+        ? 1 + ((t.focusDamagePct || 20) / 100) * t.focusMul * (t.refractFocusPct / 100)
+        : 1;
+      damageEnemy(next, scaledDamage(t)*((t.refractDamagePct || 55) / 100)*refractFocus, t);
+      if (focused && t.refractFocusPct) next.focusMarkTime = Math.max(next.focusMarkTime || 0, 2);
       effect("laser", { x:primary.x, y:primary.y, color:t.color }, next, { life:.18 });
     }
+  }
+  if (channel && t.focusedBurstDamagePct && channel.lockElapsed >= 1 && !channel.burstTargets.has(primary)) {
+    channel.burstTargets.add(primary);
+    synergyAreaDamage(t, primary, scaledDamage(t) * t.focusedBurstDamagePct / 100, t.focusedBurstRadius || 42, primary);
+    effect("impact", t, primary, { radius:t.focusedBurstRadius || 42 });
+  }
+  if (t.electricVulnerablePct) {
+    primary.electricVulnerableAmount = Math.max(primary.electricVulnerableAmount || 0, t.electricVulnerablePct / 100);
+    primary.electricVulnerableTime = Math.max(primary.electricVulnerableTime || 0, t.electricVulnerableTime || 2);
   }
   effect("laser", { ...fireOrigin(), color:t.color }, primary);
 }
@@ -1069,7 +1158,33 @@ function chain(t, targets) {
       });
       hit.push(pool.splice(bestIndex, 1)[0]);
     }
-    hit.forEach((m,i) => { damageEnemy(m, scaledDamage(t)*(i?0.58:1), t); if (t.stun) applyHardControl(m, "stunTime", towerStunTime(t)); });
+    if (t.focusConduit) {
+      state.monsters
+        .filter(m => m.hp > 0 && (m.focusMarkTime || 0) > 0 && !hit.includes(m))
+        .slice(0, t.focusConduit)
+        .forEach(m => hit.push(m));
+    }
+    const extraCurrent = new Set();
+    hit.forEach((m,i) => {
+      const wasPoisoned = m.poisonTime > 0;
+      damageEnemy(m, scaledDamage(t)*(i?0.58:1), t);
+      if (t.stun) applyHardControl(m, "stunTime", towerStunTime(t));
+      if (wasPoisoned && t.poisonBurstDamagePct && (m.poisonBurstCd || 0) <= 0) {
+        synergyAreaDamage(t, m, scaledDamage(t) * t.poisonBurstDamagePct / 100, t.poisonBurstRadius || 40, m);
+        m.poisonBurstCd = .6;
+        effect("impact", t, m, { radius:t.poisonBurstRadius || 40 });
+      }
+      if (wasPoisoned && t.poisonChainDamagePct) {
+        const extra = state.monsters
+          .filter(other => other !== m && other.hp > 0 && !hit.includes(other) && !extraCurrent.has(other))
+          .sort((a,b) => dist(m,a)-dist(m,b))[0];
+        if (extra) {
+          extraCurrent.add(extra);
+          damageEnemy(extra, scaledDamage(t) * t.poisonChainDamagePct / 100, t);
+          effect("chain", { x:m.x, y:m.y, color:t.color }, extra);
+        }
+      }
+    });
     if (t.pathDamage) damageChainPath(t, hit);
     effect("chain", { ...fireOrigin(), color:t.color }, hit[0], { chain: hit.slice(1) });
   });
@@ -1088,14 +1203,26 @@ function damageChainPath(t, hit) {
 function gas(t, targets) {
   const radius = scaledSplash(t, t.splash || 58);
   areaTargetPoints(targets, 1 + (t.extraShots || 0), radius).forEach(center => {
-    addZone(center.x, center.y, radius, zoneDuration(t, t.zoneTime || 2.5), scaledDamage(t), t, { poison:t.poison ? towerPoisonDps(t) : 0, slow:t.slow ? towerSlowTime(t) : 0, vulnerable:t.vulnerable || 0 });
+    addZone(center.x, center.y, radius, zoneDuration(t, t.zoneTime || 2.5), scaledDamage(t), t, {
+      poison:t.poison ? towerPoisonDps(t) : 0,
+      slow:t.zoneSlowPct ? 1 : t.slow ? towerSlowTime(t) : 0,
+      slowPct:t.zoneSlowPct ? t.zoneSlowPct / 100 : t.slow || 0,
+      vulnerable:t.vulnerable || 0
+    });
     effect("gas", t, center, { radius });
   });
 }
 function frostbomb(t, targets) {
   const radius = scaledSplash(t, t.splash || 62);
   areaTargetPoints(targets, 1 + (t.extraShots || 0), radius).forEach(center => {
-    areaAtPoint(t, center, "frost", radius, scaledDamage(t), .5, { freeze:t.freeze || .6, slow:.25 });
+    areaAtPoint(t, center, "frost", radius, scaledDamage(t), .5, {
+      freeze:(t.freeze || .6) * (t.freezeDurationMul || 1),
+      slow:.25,
+      slowPct:.25,
+      postFreezeSlowPct:t.postFreezeSlowPct || 0,
+      postFreezeSlowTime:t.postFreezeSlowTime || 0
+    });
+    if (t.shardCount) scatterShards(t, center, []);
     if (t.iceTrail) addZone(center.x, center.y, radius * .85, (t.iceTrailTime || 2)*t.iceTrailDurationMul, 0, t, { slow:t.iceSlow || .15 });
   });
 }
@@ -1118,9 +1245,50 @@ function blade(t, primary) {
 function trap(t, targets) {
   const radius = scaledSplash(t, t.splash || 62);
   areaTargetPoints(targets, 1 + (t.extraShots || 0), radius).forEach(center => {
-    addZone(center.x, center.y, radius, zoneDuration(t, 1.25), scaledDamage(t), t, { slow:.45*t.slowMul, root:t.root ? towerRootTime(t) : 0, pull:t.pull ? ((t.pullStrengthPct || 75) / 100)*(t.pullMul || 1) : 0, burn:t.burn ? towerBurnDps(t) : 0, poison:t.poison ? towerPoisonDps(t) : 0 });
+    const duration = Math.max(zoneDuration(t, 1.25), t.burnAreaTime || 0, t.synergyZoneTime || 0, t.zonePoisonTime || 0);
+    const controlTime = Math.max(t.root ? towerRootTime(t) : 0, t.zoneStunTime || 0);
+    addZone(center.x, center.y, radius, duration, scaledDamage(t), t, {
+      root:controlTime,
+      pull:t.pull ? ((t.pullStrengthPct || 75) / 100)*(t.pullMul || 1) : 0,
+      burn:t.burnAreaDps || 0,
+      poison:t.zonePoisonDps || 0
+    });
     effect("trap", t, center, { radius });
   });
+}
+
+function synergyAreaDamage(t, center, damage, radius, excluded=null) {
+  state.monsters.forEach(m => {
+    if (m !== excluded && m.hp > 0 && dist(m, center) <= radius) damageEnemy(m, damage, t);
+  });
+}
+
+function scatterShards(t, center, excluded=[]) {
+  const excludeSet = new Set(excluded);
+  state.monsters
+    .filter(m => m.hp > 0 && !excludeSet.has(m))
+    .sort((a,b) => dist(center,a)-dist(center,b))
+    .slice(0, t.shardCount || 0)
+    .forEach(m => {
+      damageEnemy(m, scaledDamage(t) * (t.shardDamagePct || 0) / 100, t);
+      effect("spark", { x:center.x, y:center.y, color:t.color }, m, { life:.22 });
+    });
+}
+
+function addLineSlowZones(t, from, to) {
+  const count = 4;
+  for (let i = 1; i <= count; i += 1) {
+    const ratio = i / count;
+    addZone(
+      from.x + (to.x - from.x) * ratio,
+      from.y + (to.y - from.y) * ratio,
+      28,
+      t.trailTime || 1,
+      0,
+      t,
+      { slow:.3, slowPct:(t.trailSlowPct || 25) / 100 }
+    );
+  }
 }
 
 function launchProjectile(t, target, type) {
@@ -1253,8 +1421,20 @@ function projectileHit(p) {
   const t = p.tower;
   const center = { x: p.tx, y: p.ty };
   if (p.type === "grenade") {
-    areaAtPoint(t, center, "grenade", scaledSplash(t, t.splash || 54), scaledDamage(t), .65);
-    if (t.burnArea) addZone(center.x, center.y, scaledSplash(t, t.splash || 54), towerBurnAreaTime(t), towerBurnAreaDps(t), t, { burn:towerBurnDps(t) });
+    const radius = scaledSplash(t, t.splash || 54);
+    areaAtPoint(t, center, "grenade", radius, scaledDamage(t), .65);
+    if (t.pullStrengthPct) {
+      const pull = clamp(t.pullStrengthPct / 100, 0, .8);
+      state.monsters.forEach(m => {
+        if (dist(m, center) <= radius) {
+          m.x += (center.x - m.x) * pull;
+          m.y += (center.y - m.y) * pull;
+        }
+      });
+    }
+    if (t.zoneStunTime) addZone(center.x, center.y, radius, t.synergyZoneTime || 2, 0, t, { root:t.zoneStunTime });
+    if (t.zonePoisonDps) addZone(center.x, center.y, radius, t.zonePoisonTime || 2, 0, t, { poison:t.zonePoisonDps });
+    if (t.burnArea) addZone(center.x, center.y, radius, towerBurnAreaTime(t), towerBurnAreaDps(t), t, { burn:towerBurnDps(t) });
   } else if (p.type === "needle") {
     areaAtPoint(t, center, "needle", scaledSplash(t, t.splash || 36), scaledDamage(t), .75, { poison:t.poison ? towerPoisonDps(t) : 0 });
   } else if (p.type === "blade") {
@@ -1272,8 +1452,17 @@ function areaAtPoint(t, center, type, radius, mainDamage, splashMul, opts={}) {
   const targets = state.monsters.filter(m => dist(m, center) <= radius);
   targets.forEach((m, idx) => {
     damageEnemy(m, idx === 0 ? mainDamage : mainDamage * splashMul, t);
-    if (opts.freeze) applyHardControl(m, "freezeTime", opts.freeze*t.durationMul);
-    if (opts.slow) m.slowTime = Math.max(m.slowTime, opts.slow*t.slowMul);
+    if (opts.freeze) {
+      applyHardControl(m, "freezeTime", opts.freeze*t.durationMul);
+      if (opts.postFreezeSlowTime) {
+        m.postFreezeSlowTime = Math.max(m.postFreezeSlowTime || 0, opts.postFreezeSlowTime);
+        m.postFreezeSlowPct = Math.max(m.postFreezeSlowPct || 0, (opts.postFreezeSlowPct || 0) / 100);
+      }
+    }
+    if (opts.slow) {
+      m.slowTime = Math.max(m.slowTime, opts.slow*t.slowMul);
+      m.slowPct = Math.max(m.slowPct || 0, opts.slowPct || .45);
+    }
     if (opts.poison) applyPoison(m, opts.poison, towerPoisonTime(t), t, t.poisonTick || .5);
   });
   effect(type, t, center, { radius });
@@ -1289,16 +1478,27 @@ function applyHardControl(m, key, time) {
   m[key] = Math.max(m[key], duration);
 }
 function damageEnemy(m, amount, t) {
+  const wasPoisoned = m.poisonTime > 0;
   const dealt = resolveDamage(m, amount, t);
   if (t.burn) applyBurn(m, towerBurnDps(t), towerBurnTime(t), t);
   if (t.poison) applyPoison(m, towerPoisonDps(t), towerPoisonTime(t), t, t.poisonTick || .5);
+  if (t.id === "needle" && wasPoisoned && t.conditionalStunTime) applyHardControl(m, "stunTime", t.conditionalStunTime);
+  if (t.id === "needle" && wasPoisoned && t.burnDps && !t.burn) applyBurn(m, t.burnDps, t.burnTime || 2, t);
+  if (t.id === "blade" && t.conditionalStunTime) applyHardControl(m, "stunTime", t.conditionalStunTime);
+  if (t.id === "blade" && t.burnDps && !t.burn) applyBurn(m, t.burnDps, t.burnTime || 1, t);
+  if (t.id === "blade" && t.poisonDps && !t.poison) applyPoison(m, t.poisonDps, t.poisonTime || 1, t, t.poisonTick || .5);
   return dealt;
 }
 function resolveDamage(m, amount, t) {
   const vuln = m.vulnerable > 0 ? 1 + (m.vulnerableAmount || 0) : 1;
   const attrMul = attributeMultiplier(t, m);
   const classMul = targetClassMultiplier(t, m);
-  const dealt = amount * vuln * attrMul * classMul;
+  let conditionalMul = 1;
+  if (t.poisonTargetDamagePct && m.poisonTime > 0) conditionalMul *= 1 + t.poisonTargetDamagePct / 100;
+  if (t.frozenTargetDamagePct && m.freezeTime > 0) conditionalMul *= 1 + t.frozenTargetDamagePct / 100;
+  if (t.burningTargetDamagePct && m.burnTime > 0) conditionalMul *= 1 + t.burningTargetDamagePct / 100;
+  if (towerAttr(t) === "electric" && m.electricVulnerableTime > 0) conditionalMul *= 1 + (m.electricVulnerableAmount || 0);
+  const dealt = amount * vuln * attrMul * classMul * conditionalMul;
   m.hp -= dealt;
   const attrState = attrMul > 1.001 ? 1 : attrMul < .999 ? -1 : 0;
   showDamageNumber(m, dealt, t, attrState);
@@ -1397,6 +1597,11 @@ function projectileCollision(p, from, to) {
 }
 function updateEnemies(dt) {
   for (const m of state.monsters) {
+    if (m.focusMarkTime > 0) m.focusMarkTime -= dt;
+    if (m.electricVulnerableTime > 0) m.electricVulnerableTime -= dt;
+    else m.electricVulnerableAmount = 0;
+    if (m.flameBurstCd > 0) m.flameBurstCd -= dt;
+    if (m.poisonBurstCd > 0) m.poisonBurstCd -= dt;
     if (m.burnTime > 0) {
       resolveDamage(m, m.burn * dt, m.burnTower || { color:"#ff6b35", attrKey:"fire" });
       m.burnTime -= dt;
@@ -1412,7 +1617,15 @@ function updateEnemies(dt) {
     }
     if (m.vulnerable > 0) m.vulnerable -= dt;
     else m.vulnerableAmount = 0;
-    if (m.freezeTime > 0) { m.freezeTime -= dt; }
+    if (m.freezeTime > 0) {
+      m.freezeTime -= dt;
+      if (m.freezeTime <= 0 && m.postFreezeSlowTime > 0) {
+        m.slowTime = Math.max(m.slowTime, m.postFreezeSlowTime);
+        m.slowPct = Math.max(m.slowPct || 0, m.postFreezeSlowPct || 0);
+        m.postFreezeSlowTime = 0;
+        m.postFreezeSlowPct = 0;
+      }
+    }
     else if (m.stunTime > 0) { m.stunTime -= dt; }
     else {
       const inRange = (FIELD.baseY - m.y) <= m.range || m.y >= FIELD.baseY;
@@ -1425,8 +1638,11 @@ function updateEnemies(dt) {
           effect("hitBase", {x:m.x,y:m.y,color:"#ff5d4f"}, {x:FIELD.pathX,y:FIELD.baseY});
         }
       } else {
-        const slow = m.slowTime > 0 ? .55 : 1;
-        if (m.slowTime > 0) m.slowTime -= dt;
+        const slow = m.slowTime > 0 ? 1 - clamp(m.slowPct || .45, 0, .9) : 1;
+        if (m.slowTime > 0) {
+          m.slowTime -= dt;
+          if (m.slowTime <= 0) m.slowPct = 0;
+        }
         m.y += m.speed * slow * dt;
         if (m.pathType === "sway") m.x = m.sx + Math.sin(m.y / 82) * m.curve;
       }
@@ -1575,12 +1791,14 @@ function showUpgradeChoices() {
   };
   pickedCandidates.forEach(picked => {
     const repeatNote = picked.takenCount > 0 ? `｜已拿 ${picked.takenCount} 次，權重降低` : "";
+    const required = UPGRADE_REQUIREMENTS[picked.up.name];
+    const requirementNote = required ? `前置已解鎖：${required}｜` : "";
     choices.push({
       title: picked.up.name,
       tag: picked.tower.name,
       rarity: picked.rarity,
       repeatTaken: picked.takenCount > 0,
-      desc: `${picked.up.desc}｜${picked.up.effect}${repeatNote}`,
+      desc: `${requirementNote}${picked.up.desc}｜${picked.up.effect}${repeatNote}`,
       onPick: () => { applyUpgrade(picked.tower, picked.up); hideChoices(); }
     });
   });
@@ -1707,7 +1925,13 @@ const ONE_TIME_UPGRADE_KEYS = new Set([
   "stunTime", "rootTime", "pullStrengthPct",
   "focusDelay", "focusDamagePct", "refractDamagePct",
   "ricochetChancePct", "ricochetDamagePct",
-  "pathDamage", "vulnerablePct"
+  "pathDamage", "vulnerablePct",
+  "conditionalExplosionPct", "conditionalExplosionRadius", "conditionalStunTime", "poisonTargetDamagePct",
+  "zoneStunTime", "zoneTime", "zonePoisonDps", "zonePoisonTime", "trailSlowPct", "trailTime",
+  "shardCount", "shardDamagePct", "freezeDurationPct", "postFreezeSlowPct", "postFreezeSlowTime",
+  "refractFocusPct", "focusedBurstDamagePct", "focusedBurstRadius", "electricVulnerablePct", "electricVulnerableTime",
+  "focusConduit", "poisonBurstDamagePct", "poisonBurstRadius", "poisonChainDamagePct", "burningTargetDamagePct",
+  "zoneSlowPct", "frozenTargetDamagePct"
 ]);
 function upgradeTakenCount(tower, name) {
   return tower.upgrades.filter(item => item === name).length;
@@ -1772,13 +1996,13 @@ function applyUpgrade(t, up) {
   if (s.includes("路徑上造成的傷害+100")) t.pathDamageMul = (t.pathDamageMul || 1) * 2;
   if (s.includes("解鎖燃燒") || s.includes("命中後每秒造成燃燒傷害")) t.burn = true;
   if (s.includes("命中後造成中毒")) t.poison = true;
-  if (s.includes("緩速")) t.slow = Math.max(t.slow || 0, .25);
-  if (s.includes("凍結")) t.freeze = true;
-  if (s.includes("冰痕")) t.iceTrail = true;
+  if (up.name === "寒氣附著") t.slow = Math.max(t.slow || 0, .25);
+  if (up.name === "極凍禁制") t.freeze = true;
+  if (up.name === "冰痕") t.iceTrail = true;
   if (s.includes("冰痕緩速效果+15")) t.iceSlow = (t.iceSlow || .15) + .15;
-  if (s.includes("麻痺")) t.stun = true;
-  if (s.includes("定身")) t.root = true;
-  if (s.includes("聚焦")) t.focus = true;
+  if (up.name === "電磁殘留") t.stun = true;
+  if (up.name === "戰術封鎖") t.root = true;
+  if (up.name === "過載聚焦") t.focus = true;
   if (s.includes("加成效果提升50")) t.focusMul *= 1.5;
   if (s.includes("持續照射需要時間-50")) t.focusDelayMul = (t.focusDelayMul || 1) * .5;
   if (s.includes("折射")) t.refract = true;
@@ -1789,7 +2013,7 @@ function applyUpgrade(t, up) {
   if (s.includes("迴旋飛刃")) t.ricochet = true;
   if (s.includes("飛刃傷害+100")) t.ricochetMul = (t.ricochetMul || 1) * 2;
   if (s.includes("額外迴旋刃+1")) t.ricochetExtra = (t.ricochetExtra || 0) + 1;
-  if (s.includes("牽引")) t.pull = true;
+  if (up.name === "牽引模組") t.pull = true;
   if (s.includes("牽引強度+")) t.pullMul = (t.pullMul || 1) * 1.5;
   if (s.includes("燃燒傷害+100") || s.includes("中毒傷害+100")) t.dotMul *= 2;
   if (s.includes("燃燒持續時間+50")) t.burnDurationMul *= 1.5;
@@ -1958,6 +2182,33 @@ function tuneUpgradeEffectValues(t, up, before) {
   if (has("refractDamagePct")) t.refractDamagePct = val("refractDamagePct");
   if (has("ricochetChancePct")) t.ricochetChancePct = val("ricochetChancePct");
   if (has("ricochetDamagePct")) t.ricochetDamagePct = val("ricochetDamagePct");
+  if (has("conditionalExplosionPct")) t.conditionalExplosionPct = val("conditionalExplosionPct");
+  if (has("conditionalExplosionRadius")) t.conditionalExplosionRadius = val("conditionalExplosionRadius");
+  if (has("conditionalStunTime")) t.conditionalStunTime = val("conditionalStunTime");
+  if (has("poisonTargetDamagePct")) t.poisonTargetDamagePct = val("poisonTargetDamagePct");
+  if (has("zoneStunTime")) t.zoneStunTime = val("zoneStunTime");
+  if (has("zoneTime")) t.synergyZoneTime = val("zoneTime");
+  if (has("zonePoisonDps")) t.zonePoisonDps = val("zonePoisonDps");
+  if (has("zonePoisonTime")) t.zonePoisonTime = val("zonePoisonTime");
+  if (has("trailSlowPct")) t.trailSlowPct = val("trailSlowPct");
+  if (has("trailTime")) t.trailTime = val("trailTime");
+  if (has("shardCount")) t.shardCount = Math.max(0, Math.round(val("shardCount")));
+  if (has("shardDamagePct")) t.shardDamagePct = val("shardDamagePct");
+  if (has("freezeDurationPct")) t.freezeDurationMul = 1 + val("freezeDurationPct") / 100;
+  if (has("postFreezeSlowPct")) t.postFreezeSlowPct = val("postFreezeSlowPct");
+  if (has("postFreezeSlowTime")) t.postFreezeSlowTime = val("postFreezeSlowTime");
+  if (has("refractFocusPct")) t.refractFocusPct = val("refractFocusPct");
+  if (has("focusedBurstDamagePct")) t.focusedBurstDamagePct = val("focusedBurstDamagePct");
+  if (has("focusedBurstRadius")) t.focusedBurstRadius = val("focusedBurstRadius");
+  if (has("electricVulnerablePct")) t.electricVulnerablePct = val("electricVulnerablePct");
+  if (has("electricVulnerableTime")) t.electricVulnerableTime = val("electricVulnerableTime");
+  if (has("focusConduit")) t.focusConduit = Math.max(0, Math.round(val("focusConduit")));
+  if (has("poisonBurstDamagePct")) t.poisonBurstDamagePct = val("poisonBurstDamagePct");
+  if (has("poisonBurstRadius")) t.poisonBurstRadius = val("poisonBurstRadius");
+  if (has("poisonChainDamagePct")) t.poisonChainDamagePct = val("poisonChainDamagePct");
+  if (has("burningTargetDamagePct")) t.burningTargetDamagePct = val("burningTargetDamagePct");
+  if (has("zoneSlowPct")) t.zoneSlowPct = val("zoneSlowPct");
+  if (has("frozenTargetDamagePct")) t.frozenTargetDamagePct = val("frozenTargetDamagePct");
 }
 
 function tuneRatio(target, key, beforeValue, defaultRatio, tunedRatio) {
