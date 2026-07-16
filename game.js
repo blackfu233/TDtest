@@ -1,11 +1,12 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "synergy-fix1";
+const BUILD_VERSION = "visual-wallet1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
 
 const ui = {
+  phone: document.querySelector(".phone"),
   wallet: document.getElementById("walletText"),
   pot: document.getElementById("potText"),
   potChip: document.querySelector(".pot-chip"),
@@ -194,6 +195,7 @@ const ENEMY_ATTRIBUTE_DEFAULTS = {
   boss_5:  { fire:1.35, ice:.80,  electric:1,    poison:1,    neutral:1 },
 };
 const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v3";
+const WALLET_STORAGE_KEY = "towerDefenseWallet.v1";
 const PARAM_CHANNEL = "tower-defense-param-sync";
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
@@ -549,14 +551,29 @@ let lastDebugSnapshot = "";
 const slotViews = [];
 
 function reset() {
+  const wallet = state && Number.isFinite(state.wallet) ? state.wallet : loadWallet();
   state = {
-    wallet: 10000, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
+    wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
     towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, waveActive: false, upgradeRepeatLocks: {},
     spawn: null, bossWeight: 0, bossCd: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
   };
   hideChoices();
   hideResult();
   updateUi();
+}
+
+function loadWallet() {
+  try {
+    const raw = localStorage.getItem(WALLET_STORAGE_KEY);
+    if (raw === null || raw === "") return 10000;
+    const saved = Number(raw);
+    if (Number.isFinite(saved) && saved >= 0) return Math.floor(saved);
+  } catch {}
+  return 10000;
+}
+
+function persistWallet() {
+  try { localStorage.setItem(WALLET_STORAGE_KEY, String(Math.max(0, Math.floor(state.wallet)))); } catch {}
 }
 
 const rand = (a,b) => Math.floor(a + Math.random() * (b - a + 1));
@@ -691,9 +708,14 @@ function showChoices(title, hint, choices) {
   choices.forEach(choice => {
     const btn = document.createElement("button");
     const rarity = choice.rarity || "common";
-    btn.className = `choice-card rarity-${rarity}`;
+    const towerDef = choice.towerId ? TOWERS.find(tower => tower.id === choice.towerId) : null;
+    const attrKey = choice.attrKey || (towerDef ? towerAttr(towerDef) : "neutral");
+    const icon = towerDef ? towerIconDataUrl(towerDef) : "";
+    btn.className = `choice-card rarity-${rarity} attr-${attrKey}`;
     btn.type = "button";
-    btn.innerHTML = `<div class="choice-top"><span class="choice-name">${choice.title}</span><span class="rarity-badge">${choice.rarityLabel || rarityLabel(rarity)}</span></div><div class="choice-sub">${choice.tag || ""}</div><p>${choice.desc}</p>`;
+    btn.style.setProperty("--choice-color", (ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).color);
+    const iconHtml = icon ? `<span class="choice-emblem"><img src="${icon}" alt=""></span>` : "";
+    btn.innerHTML = `${iconHtml}<span class="choice-copy"><span class="choice-top"><span class="choice-name">${choice.title}</span><span class="rarity-badge">${choice.rarityLabel || rarityLabel(rarity)}</span></span><span class="choice-sub">${choice.tag || ""}</span><span class="choice-desc">${choice.desc}</span></span>`;
     btn.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -732,10 +754,12 @@ function startBet() {
   if (state.wallet < bet) { showResult("錢包不足", "沒有足夠餘額下注。"); return; }
   if (!state.started) {
     state.wallet -= bet;
+    persistWallet();
     showStartingTowerDraft();
     return;
   }
   state.wallet -= bet;
+  persistWallet();
   startWave();
 }
 
@@ -761,7 +785,79 @@ function randomTowerChoices(n, excluded = new Set()) {
 }
 
 function towerChoice(t, onPick) {
-  return { title: t.name, tag: `${t.attr} / ${t.mode}`, towerId:t.id, rarity:"newTower", desc: `傷害 ${t.damage}，射程 ${t.range}，攻速 ${t.rate}/秒。${t.desc}`, onPick };
+  return { title: t.name, tag: `${t.attr}屬性｜${towerRoleLabel(t)}`, towerId:t.id, attrKey:towerAttr(t), rarity:"newTower", desc: `傷害 ${t.damage}｜射程 ${t.range}｜攻速 ${t.rate}/秒。${t.desc}`, onPick };
+}
+
+function towerRoleLabel(t) {
+  return {
+    flame:"近距群攻", grenade:"範圍爆發", cryo:"單體點殺", frostbomb:"群體控場", laser:"持續單體",
+    chain:"連鎖群攻", gas:"範圍持續", needle:"毒傷點殺", blade:"泛用輸出", trap:"定點輔助"
+  }[t.id] || "戰術砲台";
+}
+
+const towerIconCache = new Map();
+function towerIconDataUrl(tower) {
+  if (!tower) return "";
+  if (towerIconCache.has(tower.id)) return towerIconCache.get(tower.id);
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 96;
+  iconCanvas.height = 96;
+  if (typeof iconCanvas.toDataURL !== "function") return "";
+  const g = iconCanvas.getContext("2d");
+  const attr = towerAttr(tower);
+  const color = (ATTRIBUTE_DISPLAY[attr] || ATTRIBUTE_DISPLAY.neutral).color;
+  const bg = g.createRadialGradient(40, 32, 4, 48, 48, 48);
+  bg.addColorStop(0, "#353941");
+  bg.addColorStop(1, "#0a0c10");
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 96, 96);
+  g.strokeStyle = color;
+  g.lineWidth = 4;
+  g.beginPath();
+  g.arc(48, 48, 38, 0, Math.PI * 2);
+  g.stroke();
+  g.globalAlpha = .22;
+  g.fillStyle = color;
+  g.beginPath();
+  g.arc(48, 48, 33, 0, Math.PI * 2);
+  g.fill();
+  g.globalAlpha = 1;
+  drawTowerGlyph(g, tower.id, color);
+  const url = iconCanvas.toDataURL("image/png");
+  towerIconCache.set(tower.id, url);
+  return url;
+}
+
+function drawTowerGlyph(g, id, color) {
+  g.save();
+  g.translate(48, 48);
+  g.strokeStyle = color;
+  g.fillStyle = color;
+  g.lineWidth = 6;
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  if (id === "flame") {
+    g.beginPath(); g.moveTo(-18,18); g.bezierCurveTo(-30,-2,-9,-24,0,-30); g.bezierCurveTo(4,-13,25,-10,16,-28); g.bezierCurveTo(34,-3,20,25,-2,29); g.bezierCurveTo(-1,15,-8,5,-18,18); g.fill();
+  } else if (id === "grenade") {
+    g.beginPath(); g.arc(0,7,21,0,Math.PI*2); g.fill(); g.fillRect(-9,-24,18,12); g.beginPath(); g.arc(13,-18,10,Math.PI,Math.PI*1.8); g.stroke();
+  } else if (id === "cryo") {
+    g.beginPath(); g.arc(0,0,20,0,Math.PI*2); g.stroke(); g.beginPath(); g.moveTo(-31,0); g.lineTo(31,0); g.moveTo(0,-31); g.lineTo(0,31); g.stroke(); g.beginPath(); g.arc(0,0,5,0,Math.PI*2); g.fill();
+  } else if (id === "frostbomb") {
+    for (let i=0;i<3;i++) { g.rotate(Math.PI/3); g.beginPath(); g.moveTo(-29,0); g.lineTo(29,0); g.moveTo(18,0); g.lineTo(10,-8); g.moveTo(18,0); g.lineTo(10,8); g.stroke(); }
+  } else if (id === "laser") {
+    g.beginPath(); g.moveTo(-28,18); g.lineTo(-6,-18); g.lineTo(8,1); g.lineTo(29,-22); g.stroke(); g.beginPath(); g.arc(-22,22,7,0,Math.PI*2); g.fill();
+  } else if (id === "chain") {
+    g.beginPath(); g.moveTo(8,-32); g.lineTo(-22,5); g.lineTo(-4,3); g.lineTo(-13,32); g.lineTo(24,-12); g.lineTo(5,-9); g.closePath(); g.fill();
+  } else if (id === "gas") {
+    [[-15,5,15],[2,-10,18],[18,9,14],[-1,18,17]].forEach(([x,y,r])=>{ g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill(); });
+  } else if (id === "needle") {
+    g.rotate(-.65); g.fillRect(-30,-4,45,8); g.beginPath(); g.moveTo(15,-11); g.lineTo(32,0); g.lineTo(15,11); g.closePath(); g.fill(); g.fillRect(-26,-14,6,28);
+  } else if (id === "blade") {
+    for (let i=0;i<3;i++) { g.rotate(Math.PI*2/3); g.beginPath(); g.moveTo(0,-5); g.quadraticCurveTo(28,-22,30,-3); g.quadraticCurveTo(18,8,0,5); g.fill(); } g.fillStyle="#0b0d11"; g.beginPath(); g.arc(0,0,7,0,Math.PI*2); g.fill();
+  } else {
+    g.beginPath(); for (let i=0;i<6;i++) { const a=-Math.PI/2+i*Math.PI/3; const x=Math.cos(a)*28,y=Math.sin(a)*28; i?g.lineTo(x,y):g.moveTo(x,y); } g.closePath(); g.stroke(); g.beginPath(); g.moveTo(0,-18); g.lineTo(17,15); g.lineTo(-17,15); g.closePath(); g.fill();
+  }
+  g.restore();
 }
 
 function addTower(def) {
@@ -1680,19 +1776,38 @@ function kill(m) {
 
 function showMoneyReward(m, amount) {
   const elite = !!m.elite;
+  if (elite) showEliteDefeat(m, amount);
   effect(elite ? "eliteCoin" : "coin", {x:m.x,y:m.y,color: elite ? "#fff1a6" : "#f0bc4f"}, m, {
     text: `+${amount}`,
     amount,
-    radius: elite ? 25 : 14,
-    life: elite ? 1.08 : .72
+    radius: elite ? 34 : 14,
+    life: elite ? 1.36 : .72
   });
   if (elite) pulsePotMoney();
 }
 
+function showEliteDefeat(m, amount) {
+  effect("eliteDefeat", {x:m.x,y:m.y,color:"#ffd85c"}, m, { text:`菁英擊破 +${amount}`, amount, radius:72, life:1.28 });
+  for (let i = 0; i < 8; i += 1) {
+    const angle = i * Math.PI / 4 + Math.random() * .22;
+    const distance = 42 + Math.random() * 34;
+    effect("eliteShard", {x:m.x,y:m.y,color:i % 2 ? "#fff1a6" : "#ff9f43"}, {
+      x:m.x + Math.cos(angle) * distance,
+      y:m.y + Math.sin(angle) * distance
+    }, { life:.62 + Math.random() * .28 });
+  }
+  ui.phone?.classList.remove("elite-flash");
+  void ui.phone?.offsetWidth;
+  ui.phone?.classList.add("elite-flash");
+  try { navigator.vibrate?.([24, 24, 52]); } catch {}
+}
+
 function pulsePotMoney() {
   ui.potChip.classList.remove("money-pop");
+  ui.potChip.classList.remove("elite-pop");
   void ui.potChip.offsetWidth;
   ui.potChip.classList.add("money-pop");
+  ui.potChip.classList.add("elite-pop");
 }
 
 function showBossReward(add) {
@@ -1754,6 +1869,7 @@ function checkWaveClear() {
   if (state.bossRoll) return;
   if (!state.spawn && !state.monsters.length && state.waveActive) {
     state.waveActive = false;
+    effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, { text:"波次完成", life:.9 });
     prepareNextBossPreview();
     if (state.wave >= 30) showResult("30 波完成", `本局可結算 ${payout()}，後續可再擴充更深波次。`);
     else if (canLevelUp()) showUpgradeChoices();
@@ -1796,6 +1912,8 @@ function showUpgradeChoices() {
     choices.push({
       title: picked.up.name,
       tag: picked.tower.name,
+      towerId: picked.tower.id,
+      attrKey: towerAttr(picked.tower),
       rarity: picked.rarity,
       repeatTaken: picked.takenCount > 0,
       desc: `${requirementNote}${picked.up.desc}｜${picked.up.effect}${repeatNote}`,
@@ -2221,6 +2339,7 @@ function collect() {
   if (!canCollect()) return;
   const win = payout();
   state.wallet += win;
+  persistWallet();
   showResult("Collect", `帶走 ${win}。錢包餘額 ${state.wallet}。`);
 }
 function canCollect() { return state.started && !state.over && !state.waveActive && !state.monsters.length && !state.spawn && !state.choicesOpen && state.pot > 0; }
@@ -2257,50 +2376,96 @@ function buildFieldLayer() {
   layer.width = canvas.width;
   layer.height = canvas.height;
   const g = layer.getContext("2d", { alpha: false });
-  const sky = g.createLinearGradient(0, 0, 0, layer.height);
-  sky.addColorStop(0, "#18222c");
-  sky.addColorStop(.45, "#171b20");
-  sky.addColorStop(1, "#14171d");
-  g.fillStyle = sky;
+  const ground = g.createLinearGradient(0, 0, 0, layer.height);
+  ground.addColorStop(0, "#10141a");
+  ground.addColorStop(.5, "#17171a");
+  ground.addColorStop(1, "#080a0e");
+  g.fillStyle = ground;
   g.fillRect(0, 0, layer.width, layer.height);
 
-  g.strokeStyle = "#5a5149";
-  g.lineCap = "round";
-  g.lineJoin = "round";
-  g.lineWidth = 326;
-  g.beginPath();
-  g.moveTo(FIELD.pathX, -20);
-  g.lineTo(FIELD.pathX, FIELD.baseY);
-  g.stroke();
-  g.strokeStyle = "#2d2b2a";
-  g.lineWidth = 286;
-  g.stroke();
-  g.strokeStyle = "rgba(255,255,255,.10)";
+  const road = g.createLinearGradient(0, 0, layer.width, 0);
+  road.addColorStop(0, "#2b2624");
+  road.addColorStop(.08, "#17191d");
+  road.addColorStop(.5, "#232429");
+  road.addColorStop(.92, "#17191d");
+  road.addColorStop(1, "#2b2624");
+  g.fillStyle = road;
+  g.fillRect(8, 0, layer.width - 16, FIELD.baseY + 12);
+
+  g.fillStyle = "#090c11";
+  g.fillRect(20, 0, layer.width - 40, FIELD.baseY + 12);
+  const innerRoad = g.createLinearGradient(0, 0, layer.width, 0);
+  innerRoad.addColorStop(0, "#1b1d22");
+  innerRoad.addColorStop(.5, "#292a2f");
+  innerRoad.addColorStop(1, "#1b1d22");
+  g.fillStyle = innerRoad;
+  g.fillRect(27, 0, layer.width - 54, FIELD.baseY + 12);
+
+  g.strokeStyle = "rgba(126, 220, 255, .22)";
   g.lineWidth = 2;
-  [-116, -58, 0, 58, 116].forEach(offset => {
+  [-98, -49, 49, 98].forEach(offset => {
     g.beginPath();
-    g.moveTo(FIELD.pathX + offset, -20);
-    g.lineTo(FIELD.pathX + offset, FIELD.baseY - 28);
+    g.moveTo(FIELD.pathX + offset, 0);
+    g.lineTo(FIELD.pathX + offset, FIELD.baseY - 30);
     g.stroke();
   });
-  for (let y=26; y<FIELD.baseY-34; y+=46) {
-    const x = FIELD.pathX;
+
+  for (let y = 42; y < FIELD.baseY - 48; y += 62) {
+    g.fillStyle = y % 124 ? "rgba(255,255,255,.035)" : "rgba(255,138,68,.045)";
+    g.fillRect(29, y, layer.width - 58, 2);
+    g.strokeStyle = "rgba(137, 228, 255, .18)";
+    g.lineWidth = 3;
     g.beginPath();
-    g.moveTo(x - 12, y);
-    g.lineTo(x + 12, y - 5);
+    g.moveTo(FIELD.pathX - 10, y + 25);
+    g.lineTo(FIELD.pathX + 10, y + 20);
     g.stroke();
   }
 
-  g.fillStyle = "#171e28";
-  g.fillRect(34, FIELD.baseY-12, 282, 46);
-  g.fillStyle = "#252f3d";
-  g.fillRect(46, FIELD.baseY-4, 258, 14);
-  g.strokeStyle = "rgba(255,255,255,.38)";
+  for (let y = 10; y < FIELD.baseY - 24; y += 32) {
+    g.fillStyle = (y / 32) % 2 ? "#c98228" : "#282c32";
+    g.save();
+    g.translate(12, y);
+    g.rotate(-.42);
+    g.fillRect(-8, -5, 22, 8);
+    g.restore();
+    g.save();
+    g.translate(layer.width - 12, y);
+    g.rotate(.42);
+    g.fillRect(-14, -5, 22, 8);
+    g.restore();
+  }
+
+  const portalGlow = g.createRadialGradient(FIELD.pathX, 2, 0, FIELD.pathX, 2, 92);
+  portalGlow.addColorStop(0, "rgba(120, 225, 255, .34)");
+  portalGlow.addColorStop(1, "rgba(120, 225, 255, 0)");
+  g.fillStyle = portalGlow;
+  g.fillRect(72, 0, 206, 96);
+  g.fillStyle = "#0a0d12";
+  g.fillRect(112, 0, 126, 20);
+  g.strokeStyle = "#78dfff";
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(116, 18);
+  g.quadraticCurveTo(FIELD.pathX, 42, 234, 18);
+  g.stroke();
+
+  g.fillStyle = "#11161d";
+  g.fillRect(22, FIELD.baseY - 18, 306, 56);
+  g.fillStyle = "#242933";
+  g.fillRect(34, FIELD.baseY - 10, 282, 20);
+  g.strokeStyle = "rgba(255,255,255,.35)";
   g.lineWidth = 2;
-  g.strokeRect(34, FIELD.baseY-12, 282, 46);
-  g.fillStyle = "#f6f8ff";
-  g.font = "bold 13px Microsoft JhengHei";
-  g.fillText("基地防線", 144, FIELD.baseY-20);
+  g.strokeRect(22, FIELD.baseY - 18, 306, 56);
+  g.fillStyle = "#080c12";
+  for (let x = 44; x <= 306; x += 29) g.fillRect(x, FIELD.baseY - 14, 13, 8);
+  g.strokeStyle = "#7ee6ff";
+  g.shadowColor = "#7ee6ff";
+  g.shadowBlur = 14;
+  g.lineWidth = 4;
+  g.beginPath();
+  g.moveTo(38, FIELD.baseY - 21);
+  g.lineTo(312, FIELD.baseY - 21);
+  g.stroke();
   return layer;
 }
 function drawBaseHpBar() {
@@ -2331,15 +2496,56 @@ function drawBaseHpBar() {
 }
 function drawEnemy(m) {
   const size = m.boss ? 34 : m.elite ? 27 : m.size;
+  const hpPct = Math.max(0, m.hp / m.maxHp);
+  ctx.save();
+  if (m.boss || m.elite) {
+    ctx.strokeStyle = m.boss ? "rgba(255,83,69,.72)" : "rgba(255,216,92,.78)";
+    ctx.lineWidth = m.boss ? 4 : 3;
+    ctx.shadowColor = m.boss ? "#ff5345" : "#ffd85c";
+    ctx.shadowBlur = m.boss ? 18 : 12;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, size * .72, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    if (m.elite) {
+      for (let i = 0; i < 4; i += 1) {
+        const a = i * Math.PI / 2 + performance.now() / 900;
+        ctx.save();
+        ctx.translate(m.x + Math.cos(a) * size * .78, m.y + Math.sin(a) * size * .78);
+        ctx.rotate(a + Math.PI / 2);
+        ctx.fillStyle = "#fff1a6";
+        ctx.beginPath();
+        ctx.moveTo(0, -4); ctx.lineTo(5, 4); ctx.lineTo(-5, 4); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
   ctx.fillStyle = m.color;
+  ctx.strokeStyle = m.boss ? "#ffd4cf" : m.elite ? "#fff1a6" : "rgba(224,236,255,.66)";
+  ctx.lineWidth = m.boss ? 3 : m.elite ? 2.5 : 1.5;
+  ctx.shadowColor = m.color;
+  ctx.shadowBlur = m.boss ? 12 : m.elite ? 8 : 3;
   ctx.beginPath();
-  if (m.shape === "triangle") { ctx.moveTo(m.x,m.y-size/2); ctx.lineTo(m.x+size/2,m.y+size/2); ctx.lineTo(m.x-size/2,m.y+size/2); ctx.closePath(); ctx.fill(); }
-  else if (m.shape === "diamond") { ctx.moveTo(m.x,m.y-size/2); ctx.lineTo(m.x+size/2,m.y); ctx.lineTo(m.x,m.y+size/2); ctx.lineTo(m.x-size/2,m.y); ctx.closePath(); ctx.fill(); }
-  else ctx.fillRect(m.x-size/2,m.y-size/2,size,size);
+  if (m.shape === "triangle") {
+    ctx.moveTo(m.x,m.y-size/2); ctx.lineTo(m.x+size/2,m.y+size/2); ctx.lineTo(m.x-size/2,m.y+size/2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (m.shape === "diamond") {
+    ctx.moveTo(m.x,m.y-size/2); ctx.lineTo(m.x+size/2,m.y); ctx.lineTo(m.x,m.y+size/2); ctx.lineTo(m.x-size/2,m.y); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else {
+    ctx.fillRect(m.x-size/2,m.y-size/2,size,size);
+    ctx.strokeRect(m.x-size/2,m.y-size/2,size,size);
+  }
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(255,255,255,.72)";
+  ctx.beginPath();
+  ctx.arc(m.x - size*.14, m.y - size*.08, Math.max(1.5,size*.07), 0, Math.PI*2);
+  ctx.arc(m.x + size*.14, m.y - size*.08, Math.max(1.5,size*.07), 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = m.boss ? "#ffb347" : "rgba(8,12,18,.78)";
+  ctx.fillRect(m.x-size*.22,m.y+size*.15,size*.44,Math.max(2,size*.08));
+  ctx.restore();
   drawEnemyAttributeMarker(m, size);
   const bw = m.boss ? 58 : m.elite ? 46 : 32;
   if (m.boss) {
-    const hpPct = Math.max(0, m.hp / m.maxHp);
     const barW = 78;
     const barH = 7;
     const barX = m.x - barW / 2;
@@ -2367,9 +2573,15 @@ function drawEnemy(m) {
     ctx.restore();
     return;
   }
-  ctx.fillStyle = "#dfe6ef"; ctx.fillRect(m.x-bw/2,m.y-size/2-9,bw,4);
-  ctx.fillStyle = m.elite ? "#f0bc4f" : "#2fc45a";
-  ctx.fillRect(m.x-bw/2,m.y-size/2-9,bw*Math.max(0,m.hp/m.maxHp),4);
+  ctx.fillStyle = "rgba(5,8,12,.82)"; ctx.fillRect(m.x-bw/2-1,m.y-size/2-11,bw+2,6);
+  ctx.fillStyle = m.elite ? "#ffd85c" : "#41d47a";
+  ctx.fillRect(m.x-bw/2,m.y-size/2-10,bw*hpPct,4);
+  if (m.elite) {
+    ctx.fillStyle = "#fff4c6";
+    ctx.font = "900 9px Microsoft JhengHei";
+    ctx.textAlign = "center";
+    ctx.fillText("ELITE", m.x, m.y-size/2-15);
+  }
 }
 
 function drawAttributeGlyph(g, attr, x, y, size, color) {
@@ -2589,6 +2801,64 @@ function drawEffect(e) {
       ctx.stroke();
     }
   }
+  else if (e.type==="eliteDefeat") {
+    const progress = 1 - p;
+    ctx.globalAlpha = Math.min(1, p * 1.55);
+    ctx.translate(e.x, e.y);
+    ctx.strokeStyle = "#ffd85c";
+    ctx.lineWidth = 4 * p + 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18 + progress * 62, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,244,198,${.68*p})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i += 1) {
+      const a = i * Math.PI / 6 + progress * .34;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (22 + progress * 15), Math.sin(a) * (22 + progress * 15));
+      ctx.lineTo(Math.cos(a) * (50 + progress * 34), Math.sin(a) * (50 + progress * 34));
+      ctx.stroke();
+    }
+    const bannerY = -42 - progress * 24;
+    ctx.fillStyle = `rgba(15,10,5,${.82*p})`;
+    roundRect(-82, bannerY - 18, 164, 34, 5);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255,216,92,${p})`;
+    ctx.stroke();
+    ctx.font = "900 18px Microsoft JhengHei";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0,0,0,.82)";
+    ctx.fillStyle = "#fff1a6";
+    ctx.strokeText(e.text || "菁英擊破", 0, bannerY + 5);
+    ctx.fillText(e.text || "菁英擊破", 0, bannerY + 5);
+  }
+  else if (e.type==="eliteShard") {
+    const progress = 1 - p;
+    const x = e.x + (e.tx - e.x) * progress;
+    const y = e.y + (e.ty - e.y) * progress + progress * progress * 18;
+    ctx.translate(x, y);
+    ctx.rotate(progress * 5);
+    ctx.globalAlpha = p;
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.moveTo(0,-5); ctx.lineTo(4,0); ctx.lineTo(0,5); ctx.lineTo(-4,0); ctx.closePath(); ctx.fill();
+  }
+  else if (e.type==="waveClear") {
+    const progress = 1 - p;
+    ctx.translate(e.x, e.y - progress * 14);
+    ctx.globalAlpha = Math.min(1, p * 1.8);
+    ctx.fillStyle = `rgba(5,12,18,${.72*p})`;
+    roundRect(-70,-21,140,42,5);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(137,228,255,${p})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#dff8ff";
+    ctx.font = "900 19px Microsoft JhengHei";
+    ctx.textAlign = "center";
+    ctx.fillText(e.text || "波次完成", 0, 7);
+  }
   else if (e.type==="coin" || e.type==="eliteCoin") {
     const elite = e.type === "eliteCoin";
     const rise = (1 - p) * (elite ? 46 : 30);
@@ -2669,7 +2939,7 @@ function drawEffect(e) {
   }
   else if (e.type==="chain") { let from={x:e.x,y:e.y}; [ {x:e.tx,y:e.ty}, ...e.chain ].forEach(to=>{ jag(from,to); from=to; }); }
   else { ctx.lineWidth=e.type==="laser"?6:3; ctx.beginPath(); ctx.moveTo(e.x,e.y); ctx.lineTo(e.tx,e.ty); ctx.stroke(); }
-  if (e.text && !["damageText","coin","eliteCoin","bossReward"].includes(e.type)) { ctx.fillStyle="#fff3bf"; ctx.font="bold 18px Arial"; ctx.fillText(e.text,e.tx-24,e.ty-20); }
+  if (e.text && !["damageText","coin","eliteCoin","bossReward","eliteDefeat","waveClear"].includes(e.type)) { ctx.fillStyle="#fff3bf"; ctx.font="bold 18px Arial"; ctx.fillText(e.text,e.tx-24,e.ty-20); }
   ctx.restore();
 }
 function jag(a,b) {
@@ -2735,6 +3005,9 @@ function updateUi() {
           ? (bossWarning ? "危險：下一波 BOSS。" : "場上無怪，可以繼續 BET。")
           : "調整 BET 後按下 BET 開始。";
   ui.bet.disabled = state.over || state.choicesOpen || state.waveActive || state.monsters.length || state.wallet < currentBet();
+  const readyForNextWave = state.started && state.wave > 0 && !state.over && !state.choicesOpen && !state.waveActive && !state.monsters.length && !state.spawn && state.wallet >= currentBet();
+  ui.bet.classList.toggle("ready-next", readyForNextWave);
+  ui.bet.setAttribute?.("aria-label", readyForNextWave ? `繼續第 ${state.wave + 1} 波，BET ${currentBet()}` : `BET ${currentBet()}`);
   ui.collect.disabled = !canCollect();
   ui.betMinus.disabled = state.started || state.baseBetIndex <= 0;
   ui.betPlus.disabled = state.started || state.baseBetIndex >= BET_STEPS.length-1;
@@ -2746,17 +3019,20 @@ function renderSlots() {
   if (!slotViews.length) {
     for (let i=0; i<3; i++) {
       const root = document.createElement("div");
+      const icon = document.createElement("img");
       const name = document.createElement("div");
       const info = document.createElement("small");
       const cooldown = document.createElement("div");
       const fill = document.createElement("div");
+      icon.className = "slot-icon";
+      icon.alt = "";
       name.className = "slot-name";
       cooldown.className = "slot-cd";
       fill.className = "slot-cd-fill";
       cooldown.appendChild(fill);
-      root.append(name, info, cooldown);
+      root.append(icon, name, info, cooldown);
       ui.slots.appendChild(root);
-      slotViews.push({ root, name, info, cooldown, fill });
+      slotViews.push({ root, icon, name, info, cooldown, fill });
     }
   }
 
@@ -2766,12 +3042,22 @@ function renderSlots() {
     view.root.className = "slot" + (t ? "" : " empty");
     if (t) {
       const ready = Math.round(cooldownProgress(t) * 100);
+      view.root.dataset.attr = towerAttr(t);
+      view.icon.hidden = false;
+      if (view.icon.dataset.tower !== t.id) {
+        view.icon.src = towerIconDataUrl(t);
+        view.icon.dataset.tower = t.id;
+      }
       view.name.textContent = t.name;
       view.info.textContent = `${t.attr} Lv.${t.level}`;
       view.info.hidden = false;
       view.cooldown.hidden = false;
       view.fill.style.width = `${ready}%`;
     } else {
+      delete view.root.dataset.attr;
+      view.icon.hidden = true;
+      view.icon.removeAttribute?.("src");
+      view.icon.dataset.tower = "";
       view.name.textContent = `砲塔槽 ${i+1}`;
       view.info.hidden = true;
       view.cooldown.hidden = true;
