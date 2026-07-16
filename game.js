@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "rtp-balance1";
+const BUILD_VERSION = "attr-wave2";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -23,6 +23,9 @@ const ui = {
   betText: document.getElementById("betText"),
   waveBet: document.getElementById("waveBetText"),
   bet: document.getElementById("betBtn"),
+  nextAttrHint: document.getElementById("nextAttrHint"),
+  nextAttrCanvas: document.getElementById("nextAttrIcon"),
+  waveAttrCanvas: document.getElementById("waveAttrIcon"),
   collect: document.getElementById("collectBtn"),
   collectText: document.getElementById("collectText"),
   reset: document.getElementById("resetBtn"),
@@ -150,6 +153,7 @@ const ATTRIBUTE_DISPLAY = {
   poison:{ label:"毒", color:"#66d86f" },
   neutral:{ label:"無", color:"#d5dde8" },
 };
+const WAVE_ATTRIBUTE_CYCLE = ["fire", "ice", "electric", "poison", "neutral"];
 const ENEMY_ATTRIBUTE_DEFAULTS = {
   normal:  { fire:1,    ice:1,    electric:1,    poison:1,    neutral:1.25 },
   fast:    { fire:1,    ice:1.35, electric:1,    poison:.80,  neutral:1 },
@@ -417,6 +421,8 @@ const DEFAULT_PARAMS = {
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
   moneyMul: 1.2,
+  waveAttrBiasEarly: 0.72,
+  waveAttrBias: 0.58,
   eliteMoneyMul: 1.0,
   dropChanceMul: 1.0,
   expMul: 1.0,
@@ -492,7 +498,7 @@ function reset() {
   state = {
     wallet: 10000, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
     towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, waveActive: false, upgradeRepeatLocks: {},
-    spawn: null, bossWeight: 0, bossCd: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard",
+    spawn: null, bossWeight: 0, bossCd: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
   };
   hideChoices();
   hideResult();
@@ -554,6 +560,25 @@ function tunedTemplate(templateId) {
   const weights = {};
   Object.keys(base).forEach(monsterId => weights[monsterId] = paramNumber(`template_${templateId}_${monsterId}`, base[monsterId]));
   return weights;
+}
+function wavePrimaryAttribute(wave) {
+  if (wave <= 2) return "neutral";
+  return WAVE_ATTRIBUTE_CYCLE[(wave - 3) % WAVE_ATTRIBUTE_CYCLE.length];
+}
+function waveAttributeBias(wave) {
+  return clamp(paramNumber(wave <= 2 ? "waveAttrBiasEarly" : "waveAttrBias", wave <= 2 ? .72 : .58), 0, 1);
+}
+function pickWaveMonster(templateId) { return pickWeighted(tunedTemplate(templateId)); }
+function pickWaveAttribute(primaryAttr, wave, force=false) {
+  return force || Math.random() < waveAttributeBias(wave) ? primaryAttr : null;
+}
+function applyWaveAttributeBias(attrMultipliers, primaryAttr) {
+  if (!primaryAttr || !ATTRIBUTE_KEYS.includes(primaryAttr)) return attrMultipliers;
+  const weakAttr = ATTRIBUTE_KEYS.reduce((best, attr) => attrMultipliers[attr] > attrMultipliers[best] ? attr : best, ATTRIBUTE_KEYS[0]);
+  if (weakAttr === primaryAttr) return attrMultipliers;
+  const result = { ...attrMultipliers };
+  [result[weakAttr], result[primaryAttr]] = [result[primaryAttr], result[weakAttr]];
+  return result;
 }
 function currentBet() {
   const base = BET_STEPS[state.baseBetIndex];
@@ -706,10 +731,12 @@ function startWave() {
   const band = tunedBand(bandFor(state.wave), state.wave);
   const template = pickWeighted(band.templates);
   state.selectedTemplate = template;
+  const primaryAttr = wavePrimaryAttribute(state.wave);
+  state.currentWaveAttr = primaryAttr;
   const count = rand(band.count[0], band.count[1]);
   const boss = consumeBossPreview(state.wave, info);
   const elites = eliteCount(info);
-  state.spawn = { remain: count, timer: 0, every: 0.34, template, hpMul: info.hpMul, band, elites, boss };
+  state.spawn = { remain: count, timer: 0, every: 0.34, template, hpMul: info.hpMul, band, elites, boss, primaryAttr, wave:state.wave };
   state.waveActive = true;
   state.message = `第 ${state.wave} 波開始：${count} 隻怪${elites ? `，菁英 ${elites}` : ""}${boss ? "，Boss 接近" : ""}`;
   updateUi();
@@ -727,24 +754,24 @@ function eliteCount(info) {
   return info.e3 > 0 ? 3 : 1;
 }
 
-function spawnMonster(kind, hpMul, band) {
+function spawnMonster(kind, hpMul, band, primaryAttr, wave) {
   const base = MONSTERS[kind];
   const lane = base.special ? rand(-68, 68) : pick([-70, -35, 0, 35, 70]) + rand(-4, 4);
   const x = FIELD.pathX + lane;
   const curve = base.special ? rand(30, 54) * pick([-1, 1]) : 0;
-  state.monsters.push(makeEnemy(base, hpMul, x, curve, kind, band.drop[kind], false, false, base.special ? "sway" : "straight"));
+  state.monsters.push(makeEnemy(base, hpMul, x, curve, kind, band.drop[kind], false, false, base.special ? "sway" : "straight", kind, pickWaveAttribute(primaryAttr, wave)));
 }
-function spawnElite(hpMul) {
+function spawnElite(hpMul, primaryAttr, wave) {
   const index = rand(0, ELITES.length - 1);
   const base = ELITES[index];
-  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX + pick([-54, -18, 18, 54]) + rand(-4, 4), 0, "elite", 1, true, false, "straight", `elite_${index + 1}`));
+  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX + pick([-54, -18, 18, 54]) + rand(-4, 4), 0, "elite", 1, true, false, "straight", `elite_${index + 1}`, pickWaveAttribute(primaryAttr, wave)));
 }
-function spawnBoss(hpMul) {
+function spawnBoss(hpMul, primaryAttr, wave) {
   const index = rand(0, BOSSES.length - 1);
   const base = BOSSES[index];
-  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", `boss_${index + 1}`));
+  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", `boss_${index + 1}`, pickWaveAttribute(primaryAttr, wave, true)));
 }
-function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind) {
+function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind, primaryAttr=null) {
   const tunedBase = {
     ...base,
     hp: paramNumber(`monster_${tuneId}_hp`, base.hp),
@@ -769,10 +796,11 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   const minionSpeedMul = { normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 };
   const speed = elite || boss ? Math.max(1, Math.round(tunedBase.speed * classSpeedMul)) : Math.max(1, Math.round(tunedBase.speed * (minionSpeedMul[kind] || .72) * classSpeedMul));
   const attributeDefaults = ENEMY_ATTRIBUTE_DEFAULTS[tuneId] || {};
-  const attrMultipliers = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [
+  const baseAttrMultipliers = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [
     attr,
     paramNumber(`monster_${tuneId}_${attr}Mul`, attributeDefaults[attr] ?? 1)
   ]));
+  const attrMultipliers = applyWaveAttributeBias(baseAttrMultipliers, primaryAttr);
   return { ...tunedBase, kind, elite, boss, pathType, x, y: FIELD.spawnY, sx:x, curve, hp, maxHp:hp, atk, speed, atkCd:0, stopped:false,
     tuneId, attrMultipliers, burn:0, burnTime:0, poison:0, poisonTime:0, slowTime:0, stunTime:0, freezeTime:0, vulnerable:0, vulnerableAmount:0, dropChance };
 }
@@ -795,12 +823,12 @@ function updateSpawn(dt) {
   const s = state.spawn;
   s.timer -= dt;
   if (s.timer <= 0 && s.remain > 0) {
-    spawnMonster(pickWeighted(tunedTemplate(s.template)), s.hpMul, s.band);
+    spawnMonster(pickWaveMonster(s.template), s.hpMul, s.band, s.primaryAttr, s.wave);
     s.remain -= 1;
     s.timer = s.every;
   }
-  if (s.remain <= 0 && s.elites > 0) { spawnElite(s.hpMul); s.elites -= 1; }
-  if (s.remain <= 0 && s.elites <= 0 && s.boss) { spawnBoss(s.hpMul); s.boss = false; }
+  if (s.remain <= 0 && s.elites > 0) { spawnElite(s.hpMul, s.primaryAttr, s.wave); s.elites -= 1; }
+  if (s.remain <= 0 && s.elites <= 0 && s.boss) { spawnBoss(s.hpMul, s.primaryAttr, s.wave); s.boss = false; }
   if (s.remain <= 0 && s.elites <= 0 && !s.boss) state.spawn = null;
 }
 
@@ -2093,12 +2121,100 @@ function drawEnemy(m) {
   ctx.fillRect(m.x-bw/2,m.y-size/2-9,bw*Math.max(0,m.hp/m.maxHp),4);
 }
 
+function drawAttributeGlyph(g, attr, x, y, size, color) {
+  g.save();
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.lineWidth = Math.max(1.4, size * .16);
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  if (attr === "fire") {
+    g.beginPath();
+    g.moveTo(x, y + size * .78);
+    g.bezierCurveTo(x - size * .68, y + size * .36, x - size * .48, y - size * .18, x - size * .12, y - size * .82);
+    g.bezierCurveTo(x - size * .08, y - size * .30, x + size * .56, y - size * .20, x + size * .42, y - size * .72);
+    g.bezierCurveTo(x + size * .98, y - size * .08, x + size * .62, y + size * .62, x, y + size * .78);
+    g.closePath();
+    g.fill();
+  } else if (attr === "ice") {
+    for (let i = 0; i < 3; i += 1) {
+      const a = i * Math.PI / 3;
+      const dx = Math.cos(a), dy = Math.sin(a);
+      g.beginPath();
+      g.moveTo(x - dx * size * .82, y - dy * size * .82);
+      g.lineTo(x + dx * size * .82, y + dy * size * .82);
+      g.stroke();
+      for (const side of [-1, 1]) {
+        const bx = x + dx * size * .52 * side;
+        const by = y + dy * size * .52 * side;
+        const branch = a + (side > 0 ? Math.PI : 0);
+        for (const turn of [-.62, .62]) {
+          g.beginPath();
+          g.moveTo(bx, by);
+          g.lineTo(bx + Math.cos(branch + turn) * size * .28, by + Math.sin(branch + turn) * size * .28);
+          g.stroke();
+        }
+      }
+    }
+  } else if (attr === "electric") {
+    g.beginPath();
+    g.moveTo(x + size * .14, y - size * .90);
+    g.lineTo(x - size * .62, y + size * .08);
+    g.lineTo(x - size * .12, y + size * .02);
+    g.lineTo(x - size * .32, y + size * .92);
+    g.lineTo(x + size * .68, y - size * .22);
+    g.lineTo(x + size * .16, y - size * .12);
+    g.closePath();
+    g.fill();
+  } else if (attr === "poison") {
+    g.beginPath();
+    g.moveTo(x - size * .18, y - size * .84);
+    g.bezierCurveTo(x - size * .72, y - size * .10, x - size * .70, y + size * .62, x, y + size * .78);
+    g.bezierCurveTo(x + size * .70, y + size * .62, x + size * .72, y - size * .10, x + size * .18, y - size * .84);
+    g.bezierCurveTo(x + size * .08, y - size * .98, x - size * .08, y - size * .98, x - size * .18, y - size * .84);
+    g.closePath();
+    g.fill();
+    g.beginPath(); g.arc(x + size * .54, y - size * .55, size * .18, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(x + size * .76, y - size * .12, size * .11, 0, Math.PI * 2); g.fill();
+  } else {
+    g.beginPath();
+    for (let i = 0; i < 16; i += 1) {
+      const a = -Math.PI / 2 + i * Math.PI / 8;
+      const r = i % 2 ? size * .38 : size * .88;
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.fill();
+    g.fillStyle = "rgba(7,10,16,.82)";
+    g.beginPath(); g.arc(x, y, size * .20, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
+function renderAttributeCanvas(canvasEl, attr, boss=false) {
+  if (!canvasEl?.getContext) return;
+  const cacheKey = `${attr}:${boss}`;
+  if (canvasEl._attrCache === cacheKey) return;
+  canvasEl._attrCache = cacheKey;
+  const g = canvasEl.getContext("2d");
+  const w = canvasEl.width, h = canvasEl.height;
+  const display = ATTRIBUTE_DISPLAY[attr] || ATTRIBUTE_DISPLAY.neutral;
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = "rgba(7,10,16,.92)";
+  g.strokeStyle = boss ? "#ff5b52" : display.color;
+  g.lineWidth = boss ? 3 : 2;
+  g.beginPath(); g.arc(w / 2, h / 2, Math.min(w, h) * .42, 0, Math.PI * 2); g.fill(); g.stroke();
+  drawAttributeGlyph(g, attr, w / 2, h / 2, Math.min(w, h) * .25, display.color);
+}
+
 function drawEnemyAttributeMarker(m, size) {
   const entries = Object.entries(m.attrMultipliers || {});
   const weak = entries.reduce((best, entry) => !best || entry[1] > best[1] ? entry : best, null);
   if (!weak || weak[1] <= 1.001) return;
   const display = ATTRIBUTE_DISPLAY[weak[0]] || ATTRIBUTE_DISPLAY.neutral;
-  const radius = m.boss ? 9 : m.elite ? 8 : 7;
+  const radius = m.boss ? 11 : m.elite ? 9.5 : 8;
   const x = m.x - size / 2 - radius + 1;
   const y = m.y;
   ctx.save();
@@ -2109,11 +2225,7 @@ function drawEnemyAttributeMarker(m, size) {
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = display.color;
-  ctx.font = `900 ${m.boss ? 10 : 8}px Microsoft JhengHei`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(display.label, x, y + .5);
+  drawAttributeGlyph(ctx, weak[0], x, y, radius * .58, display.color);
   ctx.restore();
 }
 
@@ -2315,6 +2427,27 @@ function jag(a,b) {
   ctx.lineTo(b.x,b.y); ctx.stroke();
 }
 
+function updateAttributeIndicators(bossWarning) {
+  const previewWave = state.wave + 1;
+  const showNext = previewWave <= 30 && !state.waveActive && !state.choicesOpen && !state.over;
+  const nextAttr = wavePrimaryAttribute(previewWave);
+  if (ui.nextAttrHint) {
+    ui.nextAttrHint.hidden = !showNext;
+    ui.nextAttrHint.classList.toggle("boss", !!bossWarning);
+    ui.nextAttrHint.style.borderColor = (ATTRIBUTE_DISPLAY[nextAttr] || ATTRIBUTE_DISPLAY.neutral).color;
+    ui.nextAttrHint.style.color = bossWarning ? "#ff5b52" : (ATTRIBUTE_DISPLAY[nextAttr] || ATTRIBUTE_DISPLAY.neutral).color;
+    ui.nextAttrHint.setAttribute?.("aria-label", `下一波主要為${ATTRIBUTE_DISPLAY[nextAttr]?.label || "無"}屬性弱點`);
+  }
+  if (showNext) renderAttributeCanvas(ui.nextAttrCanvas, nextAttr, !!bossWarning);
+
+  const showCurrent = state.wave > 0 && (state.waveActive || state.monsters.length > 0);
+  if (ui.waveAttrCanvas) {
+    ui.waveAttrCanvas.hidden = !showCurrent;
+    ui.waveAttrCanvas.setAttribute?.("aria-label", `本波主要為${ATTRIBUTE_DISPLAY[state.currentWaveAttr]?.label || "無"}屬性弱點`);
+  }
+  if (showCurrent) renderAttributeCanvas(ui.waveAttrCanvas, state.currentWaveAttr, false);
+}
+
 function updateUi() {
   ui.wallet.textContent = Math.floor(state.wallet);
   ui.pot.textContent = Math.floor(state.pot);
@@ -2331,6 +2464,7 @@ function updateUi() {
   SPEED_STEPS.forEach(step => ui.speed.classList.toggle(`speed-${step}`, speedMultiplier() === step));
   const bossWarning = !!state.nextBoss && state.started && !state.waveActive && !state.choicesOpen && !state.over;
   ui.waveChip.classList.toggle("boss-next", bossWarning);
+  updateAttributeIndicators(bossWarning);
   const rollingMult = state.bossRoll ? state.bossRoll.value : null;
   ui.bossMult.textContent = rollingMult
     ? `x${rollingMult.toFixed(1)}`
@@ -2397,7 +2531,7 @@ function renderSlots() {
 function updateDebugSnapshot(now = performance.now()) {
   if (now - lastDebugFrame < DEBUG_FRAME_MS) return;
   lastDebugFrame = now;
-  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, hp:state.hp, pot:state.pot, monsters:state.monsters.length, spawn:!!state.spawn, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null });
+  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, spawn:!!state.spawn, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null });
   if (snapshot === lastDebugSnapshot) return;
   lastDebugSnapshot = snapshot;
   document.body.dataset.debug = snapshot;

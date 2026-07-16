@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防深追 Demo</title>
-  <link rel="stylesheet" href="styles.css?v=rtp-balance1">
+  <link rel="stylesheet" href="styles.css?v=attr-wave2">
 </head>
 <body>
   <main class="phone">
@@ -33,7 +33,7 @@
       </button>
       <div class="hud-chip">
         <span>波次</span>
-        <strong><b id="waveText">0</b></strong>
+        <strong class="wave-value"><b id="waveText">0</b><canvas id="waveAttrIcon" width="22" height="22" hidden></canvas></strong>
       </div>
       <div class="danger-chip" hidden>
         <span>基地 HP</span>
@@ -68,6 +68,7 @@
       </div>
       <div class="main-actions">
         <button id="betBtn" class="bet-button" type="button">
+          <span id="nextAttrHint" class="next-attr-hint" role="img"><canvas id="nextAttrIcon" width="40" height="40"></canvas></span>
           <span>BET</span>
           <small id="waveBetText">100</small>
         </button>
@@ -94,6 +95,6 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=rtp-balance1" charset="utf-8"></script>
+  <script src="game.js?v=attr-wave2" charset="utf-8"></script>
 </body>
 </html>
