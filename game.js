@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "bet-cue1";
+const BUILD_VERSION = "early-boss1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -458,15 +458,19 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  bossLowWeight: 30,
-  bossMidWeight: 50,
-  bossHighWeight: 20,
+  bossLowWeight: 55,
+  bossMidWeight: 38,
+  bossHighWeight: 7,
   bossLowMin: 1.0,
-  bossLowMax: 1.8,
-  bossMidMin: 2.2,
-  bossMidMax: 3.8,
+  bossLowMax: 1.6,
+  bossMidMin: 1.8,
+  bossMidMax: 3.0,
   bossHighMin: 4.0,
   bossHighMax: 8.0,
+  bossFirstMinWave: 3,
+  bossFirstChance: 28,
+  bossFirstChanceInc: 32,
+  bossFirstGuaranteeWave: 5,
   bossChanceMul: 1.0,
   bossChanceCap: 70,
   minionHpMul: 1.0,
@@ -474,8 +478,8 @@ const DEFAULT_PARAMS = {
   minionSpeedMul: 1.0,
   eliteHpMul: 1.0,
   eliteAtkMul: 1.0,
-  bossHpMul: 1.25,
-  bossAtkMul: 1.0,
+  bossHpMul: 2.0,
+  bossAtkMul: 1.1,
   bossSpeedMul: 1.0,
   moneyMul: 1.2,
   waveAttrBiasEarly: 0.72,
@@ -505,6 +509,10 @@ function cleanParams(input={}) {
   next.bossLowWeight = Math.max(0, next.bossLowWeight);
   next.bossMidWeight = Math.max(0, next.bossMidWeight);
   next.bossHighWeight = Math.max(0, next.bossHighWeight);
+  next.bossFirstMinWave = Math.max(1, Math.round(next.bossFirstMinWave));
+  next.bossFirstGuaranteeWave = Math.max(next.bossFirstMinWave, Math.round(next.bossFirstGuaranteeWave));
+  next.bossFirstChance = Math.max(0, Math.min(100, next.bossFirstChance));
+  next.bossFirstChanceInc = Math.max(0, Math.min(100, next.bossFirstChanceInc));
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
   next.baseHp = Math.max(1, Math.round(next.baseHp));
   if (next.tower_gas_duration <= 0) next.tower_gas_duration = DEFAULT_PARAMS.tower_gas_duration;
@@ -516,10 +524,22 @@ function cleanParams(input={}) {
 
 function loadParams() {
   try {
-    return cleanParams(JSON.parse(localStorage.getItem(PARAM_STORAGE_KEY) || "{}"));
+    const stored = JSON.parse(localStorage.getItem(PARAM_STORAGE_KEY) || "{}");
+    return cleanParams(migrateBossParams(stored));
   } catch {
     return cleanParams();
   }
+}
+
+function migrateBossParams(input={}) {
+  if (Object.prototype.hasOwnProperty.call(input, "bossFirstMinWave")) return input;
+  const next = { ...input };
+  [
+    "bossLowWeight", "bossMidWeight", "bossHighWeight",
+    "bossLowMin", "bossLowMax", "bossMidMin", "bossMidMax", "bossHighMin", "bossHighMax",
+    "bossHpMul", "bossAtkMul", "bossSpeedMul"
+  ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+  return next;
 }
 
 let params = loadParams();
@@ -556,7 +576,7 @@ function reset() {
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
     towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, waveActive: false, upgradeRepeatLocks: {},
-    spawn: null, bossWeight: 0, bossCd: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
+    spawn: null, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
   };
   hideChoices();
   hideResult();
@@ -678,13 +698,29 @@ function consumeBossPreview(wave, info) {
 }
 
 function rollBossForWave(wave, info) {
-  if (wave < 5 || state.bossCd > 0) {
+  if (state.bossRolled <= 0) {
+    const firstWave = params.bossFirstMinWave;
+    if (wave < firstWave) return false;
+    const guaranteeWave = Math.max(firstWave, params.bossFirstGuaranteeWave);
+    const chance = wave >= guaranteeWave
+      ? 100
+      : Math.min(100, params.bossFirstChance + Math.max(0, wave - firstWave) * params.bossFirstChanceInc);
+    const ok = Math.random() * 100 < chance;
+    if (ok) {
+      state.bossRolled += 1;
+      state.bossWeight = 0;
+      state.bossCd = info.bossCd;
+    }
+    return ok;
+  }
+  if (state.bossCd > 0) {
     if (state.bossCd > 0) state.bossCd -= 1;
     return false;
   }
   state.bossWeight += info.bossBase + info.bossInc;
   const ok = Math.random() * 100 < Math.min(params.bossChanceCap, state.bossWeight * params.bossChanceMul);
   if (ok) {
+    state.bossRolled += 1;
     state.bossWeight = 0;
     state.bossCd = info.bossCd;
   }
@@ -1907,7 +1943,6 @@ function showUpgradeChoices() {
     picked: pickedCandidates.map(c => ({ tower:c.tower.name, name:c.up.name, taken:c.takenCount }))
   };
   pickedCandidates.forEach(picked => {
-    const repeatNote = picked.takenCount > 0 ? `｜已拿 ${picked.takenCount} 次，權重降低` : "";
     const required = UPGRADE_REQUIREMENTS[picked.up.name];
     const requirementNote = required ? `前置已解鎖：${required}｜` : "";
     choices.push({
@@ -1917,7 +1952,7 @@ function showUpgradeChoices() {
       attrKey: towerAttr(picked.tower),
       rarity: picked.rarity,
       repeatTaken: picked.takenCount > 0,
-      desc: `${requirementNote}${picked.up.desc}｜${picked.up.effect}${repeatNote}`,
+      desc: `${requirementNote}${picked.up.desc}｜${picked.up.effect}`,
       onPick: () => { applyUpgrade(picked.tower, picked.up); hideChoices(); }
     });
   });
@@ -2495,37 +2530,23 @@ function drawBaseHpBar() {
   ctx.fillText(cleanHpLabel, x + w / 2, y + cleanH / 2 + .5);
   ctx.restore();
 }
-function drawEnemy(m) {
-  const size = m.boss ? 34 : m.elite ? 27 : m.size;
-  const hpPct = Math.max(0, m.hp / m.maxHp);
-  ctx.save();
-  if (m.boss || m.elite) {
-    ctx.strokeStyle = m.boss ? "rgba(255,83,69,.72)" : "rgba(255,216,92,.78)";
-    ctx.lineWidth = m.boss ? 4 : 3;
-    ctx.shadowColor = m.boss ? "#ff5345" : "#ffd85c";
-    ctx.shadowBlur = m.boss ? 18 : 12;
-    ctx.beginPath();
-    ctx.arc(m.x, m.y, size * .72, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    if (m.elite) {
-      for (let i = 0; i < 4; i += 1) {
-        const a = i * Math.PI / 2 + performance.now() / 900;
-        ctx.save();
-        ctx.translate(m.x + Math.cos(a) * size * .78, m.y + Math.sin(a) * size * .78);
-        ctx.rotate(a + Math.PI / 2);
-        ctx.fillStyle = "#fff1a6";
-        ctx.beginPath();
-        ctx.moveTo(0, -4); ctx.lineTo(5, 4); ctx.lineTo(-5, 4); ctx.closePath(); ctx.fill();
-        ctx.restore();
-      }
-    }
+function enemyPolygon(x, y, radius, sides, rotation=-Math.PI/2) {
+  ctx.beginPath();
+  for (let i = 0; i < sides; i += 1) {
+    const angle = rotation + i * Math.PI * 2 / sides;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
   }
+  ctx.closePath();
+}
+
+function drawMinionBody(m, size) {
   ctx.fillStyle = m.color;
-  ctx.strokeStyle = m.boss ? "#ffd4cf" : m.elite ? "#fff1a6" : "rgba(224,236,255,.66)";
-  ctx.lineWidth = m.boss ? 3 : m.elite ? 2.5 : 1.5;
+  ctx.strokeStyle = "rgba(224,236,255,.66)";
+  ctx.lineWidth = 1.5;
   ctx.shadowColor = m.color;
-  ctx.shadowBlur = m.boss ? 12 : m.elite ? 8 : 3;
+  ctx.shadowBlur = 3;
   ctx.beginPath();
   if (m.shape === "triangle") {
     ctx.moveTo(m.x,m.y-size/2); ctx.lineTo(m.x+size/2,m.y+size/2); ctx.lineTo(m.x-size/2,m.y+size/2); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -2541,13 +2562,122 @@ function drawEnemy(m) {
   ctx.arc(m.x - size*.14, m.y - size*.08, Math.max(1.5,size*.07), 0, Math.PI*2);
   ctx.arc(m.x + size*.14, m.y - size*.08, Math.max(1.5,size*.07), 0, Math.PI*2);
   ctx.fill();
-  ctx.fillStyle = m.boss ? "#ffb347" : "rgba(8,12,18,.78)";
+  ctx.fillStyle = "rgba(8,12,18,.78)";
   ctx.fillRect(m.x-size*.22,m.y+size*.15,size*.44,Math.max(2,size*.08));
+}
+
+function drawEliteBody(m, size) {
+  const spin = performance.now() / 850;
+  ctx.shadowColor = "#ffd85c";
+  ctx.shadowBlur = 14;
+  ctx.strokeStyle = "rgba(255,216,92,.88)";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, size * .72, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  for (let i = 0; i < 4; i += 1) {
+    const angle = spin + i * Math.PI / 2;
+    ctx.save();
+    ctx.translate(m.x + Math.cos(angle) * size * .78, m.y + Math.sin(angle) * size * .78);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = i % 2 ? "#fff1a6" : m.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -6); ctx.lineTo(6, 5); ctx.lineTo(-6, 5); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = "#17130d";
+  ctx.strokeStyle = "#fff1a6";
+  ctx.lineWidth = 3;
+  ctx.shadowColor = m.color;
+  ctx.shadowBlur = 10;
+  enemyPolygon(m.x, m.y, size * .55, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = .9;
+  ctx.fillStyle = m.color;
+  enemyPolygon(m.x, m.y + 1, size * .37, 6, Math.PI / 6);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#fff6cf";
+  ctx.beginPath();
+  ctx.moveTo(m.x - 10, m.y - 10); ctx.lineTo(m.x - 5, m.y - 18); ctx.lineTo(m.x, m.y - 11); ctx.lineTo(m.x + 6, m.y - 18); ctx.lineTo(m.x + 11, m.y - 9); ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#15100a";
+  ctx.fillRect(m.x - 9, m.y + 6, 18, 4);
+}
+
+function drawBossBody(m, size) {
+  const spin = performance.now() / 1300;
+  ctx.shadowColor = m.color;
+  ctx.shadowBlur = 22;
+  ctx.strokeStyle = "rgba(255,91,77,.82)";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, size * .68, spin, spin + Math.PI * 1.45);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, size * .78, -spin, -spin + Math.PI * 1.12);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  for (let i = 0; i < 8; i += 1) {
+    const angle = spin + i * Math.PI / 4;
+    ctx.save();
+    ctx.translate(m.x + Math.cos(angle) * size * .65, m.y + Math.sin(angle) * size * .65);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = i % 2 ? "#ffd0c8" : m.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -8); ctx.lineTo(7, 5); ctx.lineTo(-7, 5); ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = "#160d10";
+  ctx.strokeStyle = "#ffd4cf";
+  ctx.lineWidth = 3.5;
+  ctx.shadowColor = m.color;
+  ctx.shadowBlur = 14;
+  enemyPolygon(m.x, m.y, size * .54, 8, Math.PI / 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#2a171b";
+  ctx.fillRect(m.x - size * .72, m.y - 9, size * .22, 18);
+  ctx.fillRect(m.x + size * .5, m.y - 9, size * .22, 18);
+  ctx.strokeStyle = "#ffb9ae";
+  ctx.strokeRect(m.x - size * .72, m.y - 9, size * .22, 18);
+  ctx.strokeRect(m.x + size * .5, m.y - 9, size * .22, 18);
+  const core = ctx.createRadialGradient(m.x - 3, m.y - 4, 2, m.x, m.y, size * .35);
+  core.addColorStop(0, "#fff4cf");
+  core.addColorStop(.28, m.color);
+  core.addColorStop(1, "#3b0710");
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, size * .31, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,.7)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = "#13060a";
+  ctx.beginPath();
+  ctx.arc(m.x - 8, m.y - 3, 3.5, 0, Math.PI * 2);
+  ctx.arc(m.x + 8, m.y - 3, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(m.x - 10, m.y + 9, 20, 4);
+}
+
+function drawEnemy(m) {
+  const size = m.boss ? 44 : m.elite ? 32 : m.size;
+  const hpPct = Math.max(0, m.hp / m.maxHp);
+  ctx.save();
+  if (m.boss) drawBossBody(m, size);
+  else if (m.elite) drawEliteBody(m, size);
+  else drawMinionBody(m, size);
   ctx.restore();
   drawEnemyAttributeMarker(m, size);
   const bw = m.boss ? 58 : m.elite ? 46 : 32;
   if (m.boss) {
-    const barW = 78;
+    const barW = 92;
     const barH = 7;
     const barX = m.x - barW / 2;
     const barY = Math.max(20, m.y - size / 2 - 15);

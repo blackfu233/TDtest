@@ -891,7 +891,9 @@ body {
   align-self: start;
   margin: 0;
   color: var(--slot-color);
-  font-size: 9px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 1000;
 }
 
 .slot.empty {
