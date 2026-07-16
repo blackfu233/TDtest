@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "flame-lock1";
+const BUILD_VERSION = "balance-attr2";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -44,16 +44,16 @@ const TOWER_SLOTS = [{ x: 62, y: 700 }, { x: 175, y: 678 }, { x: 288, y: 700 }];
 const EXP_TABLE = [60,80,100,120,140,170,200,230,260,300,340,390,440,500,570,650,740,840,950,1070,1200,1340,1490,1650,1820,2000,2190,2390,2600,2820,3050,3290,3540,3800,4070,4350,4640,4940,5250];
 
 const TOWERS = [
-  { id:"flame", name:"噴火槍", attr:"火", damage:70, range:420, rate:4.00, mode:"flame", color:"#ff5c2d", desc:"1.5秒持續噴灑，扇形群體傷害。" },
-  { id:"grenade", name:"榴彈", attr:"火", damage:270, range:680, rate:0.65, mode:"grenade", color:"#ff9b35", splash:54, desc:"拋物線爆炸，指定地點範圍傷害。" },
-  { id:"cryo", name:"急凍狙擊", attr:"冰", damage:520, range:900, rate:0.45, mode:"cryo", color:"#67c5ff", pierce:2, desc:"穿透單發，直線點殺高威脅目標。" },
-  { id:"frostbomb", name:"冰晶炸彈", attr:"冰", damage:220, range:700, rate:0.52, mode:"frostbomb", color:"#9fe7ff", splash:62, freeze:0.32, desc:"指定地點爆炸並凍結。" },
-  { id:"laser", name:"雷射光線", attr:"電", damage:78, range:850, rate:3.50, mode:"laser", color:"#ffe066", lockTime:3.0, desc:"3秒單體鎖定，持續命中。" },
-  { id:"chain", name:"閃電鎖鏈", attr:"電", damage:145, range:720, rate:0.90, mode:"chain", color:"#b67cff", chains:4, desc:"瞬間連鎖多目標。" },
-  { id:"gas", name:"毒氣彈", attr:"毒", damage:85, range:720, rate:0.45, mode:"gas", color:"#55d65a", splash:46, zoneTime:2.1, desc:"定點毒霧，範圍持續傷害。" },
-  { id:"needle", name:"毒針彈", attr:"毒", damage:230, range:680, rate:0.75, mode:"needle", color:"#41d08a", splash:36, desc:"命中後小範圍爆裂毒針。" },
-  { id:"blade", name:"旋刃", attr:"無", damage:520, range:650, rate:0.70, mode:"blade", color:"#d5dde8", splash:38, desc:"旋刃投射，單體兼小範圍。" },
-  { id:"trap", name:"陷阱", attr:"無", damage:130, range:650, rate:0.55, mode:"trap", color:"#9aa3b6", splash:62, desc:"定點設置，觸發持續作用。" },
+  { id:"flame", name:"噴火槍", attr:"火", damage:66, range:460, rate:4.00, mode:"flame", color:"#ff5c2d", desc:"1.5秒持續噴灑，擅長壓制小怪群。" },
+  { id:"grenade", name:"榴彈", attr:"火", damage:250, range:700, rate:0.55, mode:"grenade", color:"#ff9b35", splash:48, desc:"拋物線爆炸，穩定清理密集小怪。" },
+  { id:"cryo", name:"急凍狙擊", attr:"冰", damage:410, range:900, rate:0.45, mode:"cryo", color:"#67c5ff", pierce:2, desc:"高傷穿透單發，專門點殺菁英與 BOSS。" },
+  { id:"frostbomb", name:"冰晶炸彈", attr:"冰", damage:220, range:720, rate:0.45, mode:"frostbomb", color:"#9fe7ff", splash:52, freeze:0.32, desc:"指定地點爆炸並減速，重點是群體減壓。" },
+  { id:"laser", name:"雷射光線", attr:"電", damage:105, range:860, rate:3.50, mode:"laser", color:"#ffe066", lockTime:3.0, desc:"持續鎖定高血量目標，對菁英與 BOSS 強。" },
+  { id:"chain", name:"閃電鎖鏈", attr:"電", damage:105, range:760, rate:0.75, mode:"chain", color:"#b67cff", chains:4, desc:"瞬間連鎖多目標，清群穩定但打王較弱。" },
+  { id:"gas", name:"毒氣彈", attr:"毒", damage:100, range:740, rate:0.38, mode:"gas", color:"#55d65a", splash:42, zoneTime:2.4, desc:"定點毒霧，以持續範圍傷害封鎖路線。" },
+  { id:"needle", name:"毒針彈", attr:"毒", damage:285, range:700, rate:0.65, mode:"needle", color:"#41d08a", splash:30, desc:"中高單體傷害兼小範圍爆裂，偏菁英戰。" },
+  { id:"blade", name:"旋刃", attr:"無", damage:320, range:680, rate:0.85, mode:"blade", color:"#d5dde8", splash:28, desc:"高頻泛用輸出，不依賴屬性相剋。" },
+  { id:"trap", name:"陷阱", attr:"無", damage:120, range:700, rate:0.40, mode:"trap", color:"#9aa3b6", splash:52, desc:"定點控場與聚怪，輸出不是主要價值。" },
 ];
 
 const UPGRADE_REQUIREMENTS = {
@@ -142,28 +142,43 @@ const TOWER_ATTR = {
   gas:"poison", needle:"poison",
   blade:"neutral", trap:"neutral",
 };
-const ENEMY_WEAKNESS = {
-  normal:"neutral",
-  fast:"ice",
-  tank:"fire",
-  ranged:"electric",
-  special:"poison",
+const ATTRIBUTE_KEYS = ["fire", "ice", "electric", "poison", "neutral"];
+const ATTRIBUTE_DISPLAY = {
+  fire:{ label:"火", color:"#ff6b3d" },
+  ice:{ label:"冰", color:"#72d4ff" },
+  electric:{ label:"電", color:"#d89cff" },
+  poison:{ label:"毒", color:"#66d86f" },
+  neutral:{ label:"無", color:"#d5dde8" },
 };
-const ATTR_BONUS = 1.35;
-const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v1";
+const ENEMY_ATTRIBUTE_DEFAULTS = {
+  normal:  { fire:1,    ice:1,    electric:1,    poison:1,    neutral:1.25 },
+  fast:    { fire:1,    ice:1.35, electric:1,    poison:.80,  neutral:1 },
+  tank:    { fire:1.35, ice:1,    electric:.80,  poison:1,    neutral:1 },
+  ranged:  { fire:.80,  ice:1,    electric:1.35, poison:1,    neutral:1 },
+  special: { fire:1,    ice:.80,  electric:1,    poison:1.35, neutral:1 },
+  elite_1: { fire:1.35, ice:.80,  electric:1,    poison:1,    neutral:1 },
+  elite_2: { fire:1,    ice:1.35, electric:1,    poison:.80,  neutral:1 },
+  elite_3: { fire:.80,  ice:1,    electric:1.35, poison:1,    neutral:1 },
+  boss_1:  { fire:1,    ice:1,    electric:1,    poison:1,    neutral:1.25 },
+  boss_2:  { fire:1,    ice:1.35, electric:1,    poison:.80,  neutral:1 },
+  boss_3:  { fire:.80,  ice:1,    electric:1.35, poison:1,    neutral:1 },
+  boss_4:  { fire:1,    ice:1,    electric:.80,  poison:1.35, neutral:1 },
+  boss_5:  { fire:1.35, ice:.80,  electric:1,    poison:1,    neutral:1 },
+};
+const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v2";
 const PARAM_CHANNEL = "tower-defense-param-sync";
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
-  flame: { damage:70, rate:4.00, range:420, splash:0, duration:1.5, cooldown:2.0, tick:0.5 },
-  grenade: { damage:270, rate:0.65, range:680, splash:54, duration:0, cooldown:0, tick:0.5 },
-  cryo: { damage:520, rate:0.45, range:900, splash:0, duration:0, cooldown:0, tick:0.5 },
-  frostbomb: { damage:220, rate:0.52, range:700, splash:62, duration:0, cooldown:0, tick:0.5 },
-  laser: { damage:78, rate:3.50, range:850, splash:0, duration:3.0, cooldown:2.5, tick:0.5 },
-  chain: { damage:145, rate:0.90, range:720, splash:0, duration:0, cooldown:0, tick:0.5 },
-  gas: { damage:85, rate:0.45, range:720, splash:46, duration:2.1, cooldown:0, tick:0.5 },
-  needle: { damage:230, rate:0.75, range:680, splash:36, duration:0, cooldown:0, tick:0.5 },
-  blade: { damage:520, rate:0.70, range:650, splash:38, duration:0, cooldown:0, tick:0.5 },
-  trap: { damage:130, rate:0.55, range:650, splash:62, duration:1.25, cooldown:0, tick:0.5 },
+  flame: { damage:66, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.15, eliteMul:.85, bossMul:.65 },
+  grenade: { damage:250, rate:.55, range:700, splash:48, duration:0, cooldown:0, tick:.5, minionMul:1.20, eliteMul:.80, bossMul:.55 },
+  cryo: { damage:410, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.80, eliteMul:1.25, bossMul:1.55 },
+  frostbomb: { damage:220, rate:.45, range:720, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.15, eliteMul:.75, bossMul:.50 },
+  laser: { damage:105, rate:3.50, range:860, splash:0, duration:3.0, cooldown:2.8, tick:.5, minionMul:.80, eliteMul:1.25, bossMul:1.55 },
+  chain: { damage:105, rate:.75, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.20, eliteMul:.75, bossMul:.50 },
+  gas: { damage:100, rate:.38, range:740, splash:42, duration:2.4, cooldown:0, tick:.5, minionMul:1.15, eliteMul:.90, bossMul:.70 },
+  needle: { damage:285, rate:.65, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.90, eliteMul:1.15, bossMul:1.30 },
+  blade: { damage:320, rate:.85, range:680, splash:28, duration:0, cooldown:0, tick:.5, minionMul:1.00, eliteMul:1.00, bossMul:.95 },
+  trap: { damage:120, rate:.40, range:700, splash:52, duration:1.5, cooldown:0, tick:.5, minionMul:.95, eliteMul:.75, bossMul:.45 },
 };
 
 function towerDefaultParams() {
@@ -177,6 +192,9 @@ function towerDefaultParams() {
     result[`tower_${id}_duration`] = base.duration;
     result[`tower_${id}_cooldown`] = base.cooldown;
     result[`tower_${id}_tick`] = base.tick;
+    result[`tower_${id}_minionMul`] = base.minionMul;
+    result[`tower_${id}_eliteMul`] = base.eliteMul;
+    result[`tower_${id}_bossMul`] = base.bossMul;
   });
   return result;
 }
@@ -190,6 +208,8 @@ function monsterDefaultParams() {
     result[`monster_${id}_atk`] = base.atk;
     result[`monster_${id}_interval`] = base.interval;
     result[`monster_${id}_exp`] = base.exp || 120;
+    const attributes = ENEMY_ATTRIBUTE_DEFAULTS[id] || {};
+    ATTRIBUTE_KEYS.forEach(attr => result[`monster_${id}_${attr}Mul`] = attributes[attr] ?? 1);
     if (base.money) {
       result[`monster_${id}_moneyMin`] = base.money[0];
       result[`monster_${id}_moneyMax`] = base.money[1];
@@ -748,14 +768,13 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   const atk = elite || boss ? Math.round(tunedBase.atk * classAtkMul) : Math.max(1, Math.round(tunedBase.atk * (minionAtkMul[kind] || .3) * classAtkMul));
   const minionSpeedMul = { normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 };
   const speed = elite || boss ? Math.max(1, Math.round(tunedBase.speed * classSpeedMul)) : Math.max(1, Math.round(tunedBase.speed * (minionSpeedMul[kind] || .72) * classSpeedMul));
-  const weak = enemyWeakness(kind, elite, boss);
+  const attributeDefaults = ENEMY_ATTRIBUTE_DEFAULTS[tuneId] || {};
+  const attrMultipliers = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [
+    attr,
+    paramNumber(`monster_${tuneId}_${attr}Mul`, attributeDefaults[attr] ?? 1)
+  ]));
   return { ...tunedBase, kind, elite, boss, pathType, x, y: FIELD.spawnY, sx:x, curve, hp, maxHp:hp, atk, speed, atkCd:0, stopped:false,
-    weak, burn:0, burnTime:0, poison:0, poisonTime:0, slowTime:0, stunTime:0, freezeTime:0, vulnerable:0, vulnerableAmount:0, dropChance };
-}
-
-function enemyWeakness(kind, elite, boss) {
-  if (boss || elite) return pick(["fire", "ice", "electric", "poison", "neutral"]);
-  return ENEMY_WEAKNESS[kind] || "neutral";
+    tuneId, attrMultipliers, burn:0, burnTime:0, poison:0, poisonTime:0, slowTime:0, stunTime:0, freezeTime:0, vulnerable:0, vulnerableAmount:0, dropChance };
 }
 
 function update(dt) {
@@ -811,7 +830,7 @@ function updateZones(dt) {
           }
           zoneControls.set(m, control);
         }
-        if (tickCount > 0 && z.burn) { m.burn = Math.max(m.burn, z.burn); m.burnTime = Math.max(m.burnTime, 1); }
+        if (tickCount > 0 && z.burn) applyBurn(m, z.burn, 1, z.tower);
         if (tickCount > 0 && z.poison) applyPoison(m, z.poison, 1, z.tower, z.tower?.poisonTick || .5);
       }
     }
@@ -962,7 +981,6 @@ function flame(t, targets, channel) {
       const lateral = Math.abs(-dx * direction.y + dy * direction.x);
       if (lateral <= width) {
         damageEnemy(o.m, dmg, t);
-        if (t.burn) applyBurn(o.m, towerBurnDps(t), towerBurnTime(t));
         if (t.burnArea) addZone(o.m.x, o.m.y, 42, towerBurnAreaTime(t), 24*t.dotMul, t, { burn:towerBurnDps(t) });
       }
     });
@@ -1056,7 +1074,6 @@ function frostbomb(t, targets) {
 function blade(t, primary) {
   damageEnemy(primary, scaledDamage(t), t);
   state.monsters.forEach(m => { if (m !== primary && dist(m,primary) < scaledSplash(t,36)) damageEnemy(m, scaledDamage(t)*.42, t); });
-  if (t.burn) applyBurn(primary, towerBurnDps(t), towerBurnTime(t));
   if (t.poison) applyPoison(primary, towerPoisonDps(t), towerPoisonTime(t), t, t.poisonTick || .5);
   if (t.ricochet && Math.random() < ((t.ricochetChancePct || 45) / 100)) {
     const hits = state.monsters
@@ -1244,19 +1261,38 @@ function applyHardControl(m, key, time) {
   m[key] = Math.max(m[key], duration);
 }
 function damageEnemy(m, amount, t) {
+  const dealt = resolveDamage(m, amount, t);
+  if (t.burn) applyBurn(m, towerBurnDps(t), towerBurnTime(t), t);
+  if (t.poison) applyPoison(m, towerPoisonDps(t), towerPoisonTime(t), t, t.poisonTick || .5);
+  return dealt;
+}
+function resolveDamage(m, amount, t) {
   const vuln = m.vulnerable > 0 ? 1 + (m.vulnerableAmount || 0) : 1;
   const attrMul = attributeMultiplier(t, m);
-  const dealt = amount * vuln * attrMul;
+  const classMul = targetClassMultiplier(t, m);
+  const dealt = amount * vuln * attrMul * classMul;
   m.hp -= dealt;
-  showDamageNumber(m, dealt, t, attrMul > 1);
-  if (t.burn) applyBurn(m, towerBurnDps(t), towerBurnTime(t));
-  if (t.poison) applyPoison(m, towerPoisonDps(t), towerPoisonTime(t), t, t.poisonTick || .5);
+  const attrState = attrMul > 1.001 ? 1 : attrMul < .999 ? -1 : 0;
+  showDamageNumber(m, dealt, t, attrState);
+  return dealt;
 }
 function towerAttr(t) { return TOWER_ATTR[t.id] || t.attrKey || "neutral"; }
 function attributeMultiplier(t, m) {
-  return m.weak && towerAttr(t) === m.weak ? ATTR_BONUS : 1;
+  const value = Number(m.attrMultipliers?.[towerAttr(t)]);
+  return Number.isFinite(value) ? Math.max(0, value) : 1;
 }
-function applyBurn(m,dps,time) { m.burn = Math.max(m.burn,dps); m.burnTime = Math.max(m.burnTime,time); }
+function targetClassMultiplier(t, m) {
+  const key = m.boss ? "bossMul" : m.elite ? "eliteMul" : "minionMul";
+  const fallback = TOWER_BASE_PARAMS[t.id]?.[key] ?? 1;
+  return Math.max(0, towerParam(t, key, fallback));
+}
+function applyBurn(m,dps,time,tower=null) {
+  if (dps >= (m.burn || 0)) {
+    m.burn = dps;
+    m.burnTower = tower;
+  }
+  m.burnTime = Math.max(m.burnTime,time);
+}
 function applyPoison(m, damage, time, tower=null, tick=.5) {
   if (damage >= (m.poison || 0)) {
     m.poison = damage;
@@ -1267,7 +1303,7 @@ function applyPoison(m, damage, time, tower=null, tick=.5) {
   if (!Number.isFinite(m.poisonTickTimer)) m.poisonTickTimer = m.poisonTick || .5;
 }
 
-function showDamageNumber(m, amount, t, weak=false) {
+function showDamageNumber(m, amount, t, attrState=0) {
   if (!amount) return;
   if (amount < 30) {
     m.pendingDamageText = (m.pendingDamageText || 0) + amount;
@@ -1276,7 +1312,8 @@ function showDamageNumber(m, amount, t, weak=false) {
     m.pendingDamageText = 0;
   }
   m.damageTextCd = amount < 30 ? .28 : .08;
-  effect("damageText", { x:m.x + rand(-8, 8), y:m.y - 8, color: weak ? "#ffe66a" : (t.color || "#fff") }, m, { life:.55, text:Math.max(1, Math.round(amount)).toString(), weak });
+  const color = attrState > 0 ? "#ffe66a" : attrState < 0 ? "#aeb8ca" : (t.color || "#fff");
+  effect("damageText", { x:m.x + rand(-8, 8), y:m.y - 8, color }, m, { life:.55, text:Math.max(1, Math.round(amount)).toString(), weak:attrState > 0, resisted:attrState < 0 });
 }
 function nearestEnemy(point, radius = Infinity) {
   let best = null;
@@ -1332,13 +1369,15 @@ function projectileCollision(p, from, to) {
 }
 function updateEnemies(dt) {
   for (const m of state.monsters) {
-    if (m.burnTime > 0) { m.hp -= m.burn * dt; m.burnTime -= dt; }
+    if (m.burnTime > 0) {
+      resolveDamage(m, m.burn * dt, m.burnTower || { color:"#ff6b35", attrKey:"fire" });
+      m.burnTime -= dt;
+    }
     if (m.poisonTime > 0) {
       const tick = Math.max(.05, m.poisonTick || .5);
       m.poisonTickTimer = (m.poisonTickTimer ?? tick) - dt;
       while (m.poisonTickTimer <= 0 && m.poisonTime > 0) {
-        m.hp -= m.poison;
-        showDamageNumber(m, m.poison, m.poisonTower || { color:"#41d08a" });
+        resolveDamage(m, m.poison, m.poisonTower || { color:"#41d08a", attrKey:"poison" });
         m.poisonTickTimer += tick;
       }
       m.poisonTime -= dt;
@@ -2018,6 +2057,7 @@ function drawEnemy(m) {
   if (m.shape === "triangle") { ctx.moveTo(m.x,m.y-size/2); ctx.lineTo(m.x+size/2,m.y+size/2); ctx.lineTo(m.x-size/2,m.y+size/2); ctx.closePath(); ctx.fill(); }
   else if (m.shape === "diamond") { ctx.moveTo(m.x,m.y-size/2); ctx.lineTo(m.x+size/2,m.y); ctx.lineTo(m.x,m.y+size/2); ctx.lineTo(m.x-size/2,m.y); ctx.closePath(); ctx.fill(); }
   else ctx.fillRect(m.x-size/2,m.y-size/2,size,size);
+  drawEnemyAttributeMarker(m, size);
   const bw = m.boss ? 58 : m.elite ? 46 : 32;
   if (m.boss) {
     const hpPct = Math.max(0, m.hp / m.maxHp);
@@ -2051,6 +2091,30 @@ function drawEnemy(m) {
   ctx.fillStyle = "#dfe6ef"; ctx.fillRect(m.x-bw/2,m.y-size/2-9,bw,4);
   ctx.fillStyle = m.elite ? "#f0bc4f" : "#2fc45a";
   ctx.fillRect(m.x-bw/2,m.y-size/2-9,bw*Math.max(0,m.hp/m.maxHp),4);
+}
+
+function drawEnemyAttributeMarker(m, size) {
+  const entries = Object.entries(m.attrMultipliers || {});
+  const weak = entries.reduce((best, entry) => !best || entry[1] > best[1] ? entry : best, null);
+  if (!weak || weak[1] <= 1.001) return;
+  const display = ATTRIBUTE_DISPLAY[weak[0]] || ATTRIBUTE_DISPLAY.neutral;
+  const radius = m.boss ? 9 : m.elite ? 8 : 7;
+  const x = m.x - size / 2 - radius + 1;
+  const y = m.y;
+  ctx.save();
+  ctx.fillStyle = "rgba(8, 12, 18, .88)";
+  ctx.strokeStyle = display.color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = display.color;
+  ctx.font = `900 ${m.boss ? 10 : 8}px Microsoft JhengHei`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(display.label, x, y + .5);
+  ctx.restore();
 }
 
 function drawProjectile(p) {
