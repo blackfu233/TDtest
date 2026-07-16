@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "mobile-publish1";
+const BUILD_VERSION = "mobile-viewport2";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -2354,6 +2354,20 @@ ui.speed.onclick = toggleSpeed;
 ui.newRun.onclick = reset;
 
 document.body.dataset.build = BUILD_VERSION;
+let viewportSyncFrame = 0;
+function syncViewportHeight() {
+  viewportSyncFrame = 0;
+  const height = Math.round(window.visualViewport?.height || window.innerHeight);
+  document.documentElement.style.setProperty("--app-height", `${height}px`);
+}
+function queueViewportSync() {
+  if (viewportSyncFrame) return;
+  viewportSyncFrame = requestAnimationFrame(syncViewportHeight);
+}
+syncViewportHeight();
+window.addEventListener("resize", queueViewportSync, { passive:true });
+window.addEventListener("orientationchange", queueViewportSync, { passive:true });
+window.visualViewport?.addEventListener("resize", queueViewportSync, { passive:true });
 document.addEventListener("visibilitychange", () => { last = performance.now(); });
 document.addEventListener("dblclick", event => event.preventDefault(), { passive:false });
 document.addEventListener("gesturestart", event => event.preventDefault(), { passive:false });
