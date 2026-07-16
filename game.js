@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "mobile-viewport2";
+const BUILD_VERSION = "flame-lock1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -907,11 +907,13 @@ function scaledSplash(t, base) { return towerParam(t, "splash", base) * (t.splas
 function fireOrigin() { return { x: FIELD.pathX, y: FIELD.h - 8 }; }
 
 function startChannel(t, primary) {
+  const origin = fireOrigin();
   t.channel = {
     time: channelDuration(t),
     tick: 0,
     target: primary,
-    lockElapsed: 0
+    lockElapsed: 0,
+    aimAngle: Math.atan2(primary.y - origin.y, primary.x - origin.x)
   };
   t.cd = 0;
 }
@@ -922,10 +924,10 @@ function updateChannel(t, dt) {
   c.tick -= dt;
   while (c.tick <= 0 && c.time > 0) {
     const targets = findTargets(t);
-    if (!targets.length) break;
     if (t.mode === "flame") {
-      flame(t, targets);
+      flame(t, targets, c);
     } else if (t.mode === "laser") {
+      if (!targets.length) break;
       const target = c.target && c.target.hp > 0 && dist(fireOrigin(), c.target) <= scaledRange(t)
         ? c.target
         : targets[0].m;
@@ -942,17 +944,23 @@ function updateChannel(t, dt) {
   }
 }
 
-function flame(t, targets) {
+function flame(t, targets, channel) {
   const dmg = scaledDamage(t);
   const origin = fireOrigin();
   const reach = Math.min(scaledRange(t), 310);
-  spreadOffsets(1 + (t.extraShots || 0), 58).forEach(offset => {
-    const center = { x: clamp(origin.x + offset, 28, FIELD.w - 28), y: origin.y - reach };
+  const baseAngle = channel?.aimAngle ?? -Math.PI / 2;
+  spreadOffsets(1 + (t.extraShots || 0), Math.PI / 10).forEach(angleOffset => {
+    const angle = baseAngle + angleOffset;
+    const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+    const center = { x: origin.x + direction.x * reach, y: origin.y + direction.y * reach };
     targets.forEach(o => {
-      const forward = origin.y - o.m.y;
+      const dx = o.m.x - origin.x;
+      const dy = o.m.y - origin.y;
+      const forward = dx * direction.x + dy * direction.y;
       if (forward < 0 || forward > reach) return;
       const width = 34 + (forward / reach) * 46;
-      if (Math.abs(o.m.x - (origin.x + offset)) <= width) {
+      const lateral = Math.abs(-dx * direction.y + dy * direction.x);
+      if (lateral <= width) {
         damageEnemy(o.m, dmg, t);
         if (t.burn) applyBurn(o.m, towerBurnDps(t), towerBurnTime(t));
         if (t.burnArea) addZone(o.m.x, o.m.y, 42, towerBurnAreaTime(t), 24*t.dotMul, t, { burn:towerBurnDps(t) });
@@ -2208,7 +2216,20 @@ function drawEffect(e) {
     ctx.strokeText(e.text, e.x, e.y - rise);
     ctx.fillText(e.text, e.x, e.y - rise);
   }
-  else if (e.type==="cone") { ctx.fillStyle=`rgba(255,92,45,${.24*p})`; ctx.beginPath(); ctx.moveTo(e.x,e.y); ctx.lineTo(e.tx-e.width,e.ty); ctx.lineTo(e.tx+e.width,e.ty); ctx.closePath(); ctx.fill(); }
+  else if (e.type==="cone") {
+    const dx = e.tx - e.x;
+    const dy = e.ty - e.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const px = -dy / length * e.width;
+    const py = dx / length * e.width;
+    ctx.fillStyle=`rgba(255,92,45,${.24*p})`;
+    ctx.beginPath();
+    ctx.moveTo(e.x,e.y);
+    ctx.lineTo(e.tx + px,e.ty + py);
+    ctx.lineTo(e.tx - px,e.ty - py);
+    ctx.closePath();
+    ctx.fill();
+  }
   else if (["grenade","frost","gas","trap","needle","blade","impact"].includes(e.type)) { ctx.beginPath(); ctx.arc(e.tx,e.ty,(e.radius || 18)*(1.1-p*.2),0,Math.PI*2); ctx.fillStyle=e.type==="gas"?`rgba(85,214,90,${.2*p})`:e.type==="frost"||e.type==="impact"?`rgba(159,231,255,${.2*p})`:`rgba(255,155,53,${.2*p})`; ctx.fill(); ctx.stroke(); }
   else if (e.type==="spark") {
     ctx.lineWidth = 2;
