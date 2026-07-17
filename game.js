@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "synergy-prereq1";
+const BUILD_VERSION = "strategy-luck-balance2";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -46,19 +46,19 @@ const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
 const SPEED_STEPS = [1, 2, 3];
 const FIELD = { w: 350, h: 760, pathX: 175, spawnY: -18, baseY: 720, attackLineY: 720 };
 const TOWER_SLOTS = [{ x: 62, y: 700 }, { x: 175, y: 678 }, { x: 288, y: 700 }];
-const EXP_TABLE = [60,80,100,120,140,170,200,230,260,300,340,390,440,500,570,650,740,840,950,1070,1200,1340,1490,1650,1820,2000,2190,2390,2600,2820,3050,3290,3540,3800,4070,4350,4640,4940,5250];
+const EXP_TABLE = [95,125,155,190,225,290,330,370,415,460,510,565,625,690,760,835,915,1000,1090,1185,1285,1390,1500,1615,1735,1860,1990,2125,2265,2410,2560,2715,2875,3040,3210,3385,3565,3750,3940];
 
 const TOWERS = [
-  { id:"flame", name:"噴火槍", attr:"火", damage:66, range:460, rate:4.00, mode:"flame", color:"#ff5c2d", desc:"1.5秒持續噴灑，擅長壓制小怪群。" },
-  { id:"grenade", name:"榴彈", attr:"火", damage:250, range:700, rate:0.55, mode:"grenade", color:"#ff9b35", splash:48, desc:"拋物線爆炸，穩定清理密集小怪。" },
-  { id:"cryo", name:"急凍狙擊", attr:"冰", damage:410, range:900, rate:0.45, mode:"cryo", color:"#67c5ff", pierce:2, desc:"高傷穿透單發，專門點殺菁英與 BOSS。" },
-  { id:"frostbomb", name:"冰晶炸彈", attr:"冰", damage:220, range:720, rate:0.45, mode:"frostbomb", color:"#9fe7ff", splash:52, freeze:0.32, desc:"指定地點爆炸並減速，重點是群體減壓。" },
-  { id:"laser", name:"雷射光線", attr:"電", damage:105, range:860, rate:3.50, mode:"laser", color:"#ffe066", lockTime:3.0, desc:"持續鎖定高血量目標，對菁英與 BOSS 強。" },
-  { id:"chain", name:"閃電鎖鏈", attr:"電", damage:105, range:760, rate:0.75, mode:"chain", color:"#b67cff", chains:4, desc:"瞬間連鎖多目標，清群穩定但打王較弱。" },
-  { id:"gas", name:"毒氣彈", attr:"毒", damage:100, range:740, rate:0.38, mode:"gas", color:"#55d65a", splash:42, zoneTime:2.4, desc:"定點毒霧，以持續範圍傷害封鎖路線。" },
-  { id:"needle", name:"毒針彈", attr:"毒", damage:285, range:700, rate:0.65, mode:"needle", color:"#41d08a", splash:30, desc:"中高單體傷害兼小範圍爆裂，偏菁英戰。" },
-  { id:"blade", name:"旋刃", attr:"無", damage:320, range:680, rate:0.85, mode:"blade", color:"#d5dde8", splash:28, desc:"高頻泛用輸出，不依賴屬性相剋。" },
-  { id:"trap", name:"陷阱", attr:"無", damage:120, range:700, rate:0.40, mode:"trap", color:"#9aa3b6", splash:52, desc:"定點控場與聚怪，輸出不是主要價值。" },
+  { id:"flame", name:"噴火槍", attr:"火", damage:80, range:460, rate:4.00, mode:"flame", color:"#ff5c2d", desc:"1.5秒持續噴灑，擅長壓制小怪群。" },
+  { id:"grenade", name:"榴彈", attr:"火", damage:275, range:700, rate:0.55, mode:"grenade", color:"#ff9b35", splash:52, desc:"拋物線爆炸，穩定清理密集小怪。" },
+  { id:"cryo", name:"急凍狙擊", attr:"冰", damage:345, range:900, rate:0.45, mode:"cryo", color:"#67c5ff", pierce:2, desc:"高傷穿透單發，專門點殺菁英與 BOSS。" },
+  { id:"frostbomb", name:"冰晶炸彈", attr:"冰", damage:245, range:720, rate:0.45, mode:"frostbomb", color:"#9fe7ff", splash:56, freeze:0.32, desc:"指定地點爆炸並減速，重點是群體減壓。" },
+  { id:"laser", name:"雷射光線", attr:"電", damage:98, range:860, rate:3.40, mode:"laser", color:"#ffe066", lockTime:3.0, desc:"持續鎖定高血量目標，對菁英與 BOSS 強。" },
+  { id:"chain", name:"閃電鎖鏈", attr:"電", damage:118, range:760, rate:0.80, mode:"chain", color:"#b67cff", chains:4, desc:"瞬間連鎖多目標，清群穩定但打王較弱。" },
+  { id:"gas", name:"毒氣彈", attr:"毒", damage:118, range:740, rate:0.42, mode:"gas", color:"#55d65a", splash:46, zoneTime:2.7, desc:"定點毒霧，以持續範圍傷害封鎖路線。" },
+  { id:"needle", name:"毒針彈", attr:"毒", damage:300, range:700, rate:0.67, mode:"needle", color:"#41d08a", splash:30, desc:"中高單體傷害兼小範圍爆裂，偏菁英戰。" },
+  { id:"blade", name:"旋刃", attr:"無", damage:245, range:680, rate:0.78, mode:"blade", color:"#d5dde8", splash:26, desc:"高頻泛用輸出，不依賴屬性相剋。" },
+  { id:"trap", name:"陷阱", attr:"無", damage:130, range:700, rate:0.44, mode:"trap", color:"#9aa3b6", splash:54, desc:"定點控場與聚怪，輸出不是主要價值。" },
 ];
 
 const POISON_SOURCE_UPGRADES = ["神經毒素", "腐蝕毒霧", "毒爆榴彈", "毒刃穿刺", "毒化陷阱"];
@@ -146,18 +146,18 @@ const BOSSES = [
 ];
 
 const WAVE = [
-  [1,.72,0,0,0,0,0,0,2],[2,.82,0,0,0,0,0,0,2],[3,.95,2,1,0,0,0,0,2],[4,1.10,4,1,0,0,0,0,2],[5,1.28,6,1,0,0,1,1,2],
-  [6,1.48,8,.9,.1,0,2,1,2],[7,1.70,10,.85,.15,0,3,2,2],[8,1.95,11,.8,.2,0,4,2,2],[9,2.22,12,.75,.25,0,5,2,2],[10,2.52,13,.7,.3,0,6,3,2],
-  [11,2.86,14,.65,.3,.05,7,3,2],[12,3.24,15,.65,.3,.05,8,3,2],[13,3.66,16,.6,.35,.05,9,3,2],[14,4.12,17,.6,.35,.05,10,4,2],[15,4.62,18,.55,.4,.05,11,4,2],
-  [16,5.16,19,.5,.4,.1,12,4,2],[17,5.75,20,.5,.4,.1,13,4,2],[18,6.40,21,.45,.45,.1,14,5,2],[19,7.10,22,.45,.45,.1,15,5,2],[20,7.85,24,.45,.45,.1,16,5,2],
-  [21,8.45,25,.4,.45,.15,17,5,2],[22,9.10,26,.4,.44,.16,18,6,2],[23,9.80,27,.4,.43,.17,19,6,2],[24,10.55,28,.4,.42,.18,20,6,2],[25,11.35,29,.4,.41,.19,21,6,2],
-  [26,12.20,30,.3,.45,.25,22,7,2],[27,13.10,31,.3,.44,.26,23,7,2],[28,14.05,32,.3,.43,.27,24,7,2],[29,15.05,33,.3,.42,.28,25,7,2],[30,16.10,35,.3,.41,.29,26,8,2],
+  [1,.42,0,0,0,0,0,0,2],[2,.60,0,0,0,0,0,0,2],[3,.95,2,1,0,0,0,0,2],[4,1.08,4,1,0,0,0,0,2],[5,1.22,6,1,0,0,1,1,2],
+  [6,1.38,8,.9,.1,0,2,1,2],[7,1.55,10,.85,.15,0,3,2,2],[8,1.73,11,.8,.2,0,4,2,2],[9,1.93,12,.75,.25,0,5,2,2],[10,2.15,13,.7,.3,0,6,3,2],
+  [11,2.36,14,.65,.3,.05,7,3,2],[12,2.58,15,.65,.3,.05,8,3,2],[13,2.81,16,.6,.35,.05,9,3,2],[14,3.05,17,.6,.35,.05,10,4,2],[15,3.30,18,.55,.4,.05,11,4,2],
+  [16,3.56,19,.5,.4,.1,12,4,2],[17,3.83,20,.5,.4,.1,13,4,2],[18,4.11,21,.45,.45,.1,14,5,2],[19,4.40,22,.45,.45,.1,15,5,2],[20,4.70,24,.45,.45,.1,16,5,2],
+  [21,5.02,25,.4,.45,.15,17,5,2],[22,5.35,26,.4,.44,.16,18,6,2],[23,5.69,27,.4,.43,.17,19,6,2],[24,6.04,28,.4,.42,.18,20,6,2],[25,6.40,29,.4,.41,.19,21,6,2],
+  [26,6.77,30,.3,.45,.25,22,7,2],[27,7.15,31,.3,.44,.26,23,7,2],[28,7.54,32,.3,.43,.27,24,7,2],[29,7.94,33,.3,.42,.28,25,7,2],[30,8.35,35,.3,.41,.29,26,8,2],
 ].map(r => ({ wave:r[0], hpMul:r[1], eliteWeight:r[2], e1:r[3], e2:r[4], e3:r[5], bossBase:r[6], bossInc:r[7], bossCd:r[8] }));
 
 const BANDS = [
-  { from:1, to:2, count:[16,24], drop:{normal:.7,fast:.4,tank:1,ranged:.5,special:.5}, templates:{standard:700,fast:300} },
-  { from:3, to:5, count:[20,30], drop:{normal:.65,fast:.35,tank:1,ranged:.45,special:.45}, templates:{standard:400,tank:250,ranged:200,disrupt:150} },
-  { from:6, to:10, count:[28,40], drop:{normal:.55,fast:.3,tank:1,ranged:.4,special:.4}, templates:{standard:250,fast:200,tank:200,ranged:150,disrupt:200} },
+  { from:1, to:2, count:[16,24], drop:{normal:.63,fast:.36,tank:.9,ranged:.45,special:.45}, templates:{standard:700,fast:300} },
+  { from:3, to:5, count:[20,30], drop:{normal:.585,fast:.315,tank:.9,ranged:.405,special:.405}, templates:{standard:400,tank:250,ranged:200,disrupt:150} },
+  { from:6, to:10, count:[28,40], drop:{normal:.44,fast:.24,tank:.8,ranged:.32,special:.32}, templates:{standard:250,fast:200,tank:200,ranged:150,disrupt:200} },
   { from:11, to:20, count:[34,50], drop:{normal:.45,fast:.2,tank:1,ranged:.3,special:.3}, templates:{standard:200,fast:150,tank:200,ranged:150,disrupt:150,mixed:150} },
   { from:21, to:30, count:[42,62], drop:{normal:.4,fast:.15,tank:1,ranged:.25,special:.25}, templates:{standard:100,fast:150,tank:200,ranged:150,disrupt:150,mixed:250} },
 ];
@@ -177,6 +177,10 @@ const TOWER_ATTR = {
   laser:"electric", chain:"electric",
   gas:"poison", needle:"poison",
   blade:"neutral", trap:"neutral",
+};
+const TOWER_ROLE = {
+  flame:"area", grenade:"area", cryo:"single", frostbomb:"control", laser:"single",
+  chain:"area", gas:"area", needle:"single", blade:"general", trap:"control",
 };
 const ATTRIBUTE_KEYS = ["fire", "ice", "electric", "poison", "neutral"];
 const ATTRIBUTE_DISPLAY = {
@@ -207,16 +211,16 @@ const WALLET_STORAGE_KEY = "towerDefenseWallet.v1";
 const PARAM_CHANNEL = "tower-defense-param-sync";
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
-  flame: { damage:66, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.15, eliteMul:.85, bossMul:.65 },
-  grenade: { damage:250, rate:.55, range:700, splash:48, duration:0, cooldown:0, tick:.5, minionMul:1.20, eliteMul:.80, bossMul:.55 },
-  cryo: { damage:410, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.80, eliteMul:1.25, bossMul:1.55 },
-  frostbomb: { damage:220, rate:.45, range:720, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.15, eliteMul:.75, bossMul:.50 },
-  laser: { damage:105, rate:3.50, range:860, splash:0, duration:3.0, cooldown:2.8, tick:.5, minionMul:.80, eliteMul:1.25, bossMul:1.55 },
-  chain: { damage:105, rate:.75, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.20, eliteMul:.75, bossMul:.50 },
-  gas: { damage:100, rate:.38, range:740, splash:42, duration:2.4, cooldown:0, tick:.5, minionMul:1.15, eliteMul:.90, bossMul:.70 },
-  needle: { damage:285, rate:.65, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.90, eliteMul:1.15, bossMul:1.30 },
-  blade: { damage:320, rate:.85, range:680, splash:28, duration:0, cooldown:0, tick:.5, minionMul:1.00, eliteMul:1.00, bossMul:.95 },
-  trap: { damage:120, rate:.40, range:700, splash:52, duration:1.5, cooldown:0, tick:.5, minionMul:.95, eliteMul:.75, bossMul:.45 },
+  flame: { damage:80, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.40, eliteMul:.85, bossMul:.85 },
+  grenade: { damage:275, rate:.55, range:700, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.85, bossMul:.58 },
+  cryo: { damage:345, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.65, eliteMul:1.25, bossMul:1.32 },
+  frostbomb: { damage:245, rate:.45, range:720, splash:56, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.60 },
+  laser: { damage:98, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.72, eliteMul:1.25, bossMul:1.45 },
+  chain: { damage:118, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.60 },
+  gas: { damage:118, rate:.42, range:740, splash:46, duration:2.7, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.90, bossMul:.75 },
+  needle: { damage:300, rate:.67, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.82, eliteMul:1.20, bossMul:1.55 },
+  blade: { damage:245, rate:.78, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:.90, eliteMul:1.00, bossMul:.75 },
+  trap: { damage:130, rate:.44, range:700, splash:54, duration:1.5, cooldown:0, tick:.5, minionMul:1.15, eliteMul:.78, bossMul:.55 },
 };
 
 function towerDefaultParams() {
@@ -465,7 +469,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 1,
+  balanceRevision: 3,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -483,21 +487,22 @@ const DEFAULT_PARAMS = {
   bossChanceMul: 1.0,
   bossChanceCap: 70,
   minionHpMul: 1.0,
-  minionAtkMul: 1.0,
-  minionSpeedMul: 1.0,
-  eliteHpMul: 1.0,
-  eliteAtkMul: 1.0,
-  bossFirstHpMul: 1.25,
-  bossHpMul: 2.0,
-  bossAtkMul: 1.1,
+  minionAtkMul: .82,
+  minionSpeedMul: .90,
+  eliteHpMul: 1.05,
+  eliteAtkMul: 1.05,
+  bossFirstHpMul: 1.10,
+  bossHpMul: .70,
+  bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
-  moneyMul: 1.3,
+  moneyMul: 1.24,
   waveAttrBiasEarly: 0.72,
   waveAttrBias: 0.58,
   eliteMoneyMul: 1.0,
   dropChanceMul: 1.0,
   expMul: 1.0,
   towerDamageMul: 1.0,
+  bossBetStepMul: 1.6,
   betMidMul: 1.5,
   betDeepMul: 2.0,
   baseHp: 1000,
@@ -556,6 +561,12 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstHpMul") || Number(input.bossFirstHpMul) === 1.45) next.bossFirstHpMul = DEFAULT_PARAMS.bossFirstHpMul;
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
+  }
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:3 };
+  if ((Number(input.balanceRevision) || 0) < 3) {
+    next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
+    next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
+    next.balanceRevision = 3;
   }
   return next;
 }
@@ -692,9 +703,10 @@ function applyWaveAttributeBias(attrMultipliers, primaryAttr) {
 }
 function currentBet() {
   const base = BET_STEPS[state.baseBetIndex];
-  if (state.wave + 1 >= 21) return Math.round(base * params.betDeepMul);
-  if (state.wave + 1 >= 11) return Math.round(base * params.betMidMul);
-  return base;
+  const depthMul = state.wave + 1 >= 21 ? params.betDeepMul : state.wave + 1 >= 11 ? params.betMidMul : 1;
+  const bossStep = Math.max(1, params.bossBetStepMul);
+  const bossMul = 1 + state.bossSeen * (bossStep - 1);
+  return Math.round(base * depthMul * bossMul);
 }
 function payout() { return Math.floor(state.pot * (1 + state.bossAdd)); }
 
@@ -831,16 +843,34 @@ function showStartingTowerDraft() {
 function randomTowerChoices(n, excluded = new Set()) {
   const owned = new Set(state.towers.map(t => t.id));
   const pool = TOWERS.filter(t => !owned.has(t.id) && !excluded.has(t.id));
+  const ownedRoles = new Set(state.towers.map(t => TOWER_ROLE[t.id]));
   const picks = [];
   while (picks.length < n && picks.length < pool.length) {
-    const t = pool[rand(0, pool.length - 1)];
-    if (!picks.includes(t)) picks.push(t);
+    const available = pool.filter(t => !picks.includes(t));
+    const weighted = available.map(t => {
+      const role = TOWER_ROLE[t.id];
+      const weight = role === "single" && !ownedRoles.has("single") ? 1.45
+        : role === "area" && !ownedRoles.has("area") ? 1.45
+        : role === "control" && !ownedRoles.has("control") ? 1.15
+        : role === "general" ? 1.05 : 1;
+      return { t, weight };
+    });
+    let roll = Math.random() * weighted.reduce((sum, item) => sum + item.weight, 0);
+    let chosen = weighted[weighted.length - 1].t;
+    for (const item of weighted) {
+      roll -= item.weight;
+      if (roll <= 0) { chosen = item.t; break; }
+    }
+    picks.push(chosen);
   }
   return picks;
 }
 
 function towerChoice(t, onPick) {
-  return { title: t.name, tag: `${t.attr}屬性｜${towerRoleLabel(t)}`, towerId:t.id, attrKey:towerAttr(t), rarity:"newTower", desc: `傷害 ${t.damage}｜射程 ${t.range}｜攻速 ${t.rate}/秒。${t.desc}`, onPick };
+  const damage = towerParam(t, "damage", t.damage);
+  const range = towerParam(t, "range", t.range);
+  const rate = towerParam(t, "rate", t.rate);
+  return { title: t.name, tag: `${t.attr}屬性｜${towerRoleLabel(t)}`, towerId:t.id, attrKey:towerAttr(t), rarity:"newTower", desc: `傷害 ${damage}｜射程 ${range}｜攻速 ${rate}/秒。${t.desc}`, onPick };
 }
 
 function towerRoleLabel(t) {
@@ -2034,7 +2064,8 @@ function rarityPriority(rarity) {
 function upgradeChoiceWeight(rarity, repeat, takenCount, rowIndex, recentLock = 0) {
   const base = { synergy:140, deepen:112, tower:106, common:92, newTower:90 }[rarity] || 90;
   const depthBonus = Math.max(0, 5 - Math.abs(rowIndex - Math.min(state.level, 6))) * 3;
-  let weight = base + depthBonus;
+  const corePity = rarity === "tower" && takenCount <= 0 ? Math.max(0, state.level - 4) * 7 : 0;
+  let weight = base + depthBonus + corePity;
   if (repeat.repeatable && takenCount > 0) weight *= Math.pow(0.22, takenCount);
   if (recentLock > 0) weight *= Math.pow(0.35, recentLock);
   const floor = takenCount > 0 ? 3 : 12;
