@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "combat-vfx1";
+const BUILD_VERSION = "first-boss50-1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -458,6 +458,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
+  balanceRevision: 1,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -471,6 +472,7 @@ const DEFAULT_PARAMS = {
   bossFirstChance: 28,
   bossFirstChanceInc: 32,
   bossFirstGuaranteeWave: 5,
+  bossFirstRewardMul: 1.0,
   bossChanceMul: 1.0,
   bossChanceCap: 70,
   minionHpMul: 1.0,
@@ -478,10 +480,11 @@ const DEFAULT_PARAMS = {
   minionSpeedMul: 1.0,
   eliteHpMul: 1.0,
   eliteAtkMul: 1.0,
+  bossFirstHpMul: 1.25,
   bossHpMul: 2.0,
   bossAtkMul: 1.1,
   bossSpeedMul: 1.0,
-  moneyMul: 1.2,
+  moneyMul: 1.3,
   waveAttrBiasEarly: 0.72,
   waveAttrBias: 0.58,
   eliteMoneyMul: 1.0,
@@ -513,6 +516,7 @@ function cleanParams(input={}) {
   next.bossFirstGuaranteeWave = Math.max(next.bossFirstMinWave, Math.round(next.bossFirstGuaranteeWave));
   next.bossFirstChance = Math.max(0, Math.min(100, next.bossFirstChance));
   next.bossFirstChanceInc = Math.max(0, Math.min(100, next.bossFirstChanceInc));
+  next.bossFirstRewardMul = Math.max(0, next.bossFirstRewardMul);
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
   next.baseHp = Math.max(1, Math.round(next.baseHp));
   if (next.tower_gas_duration <= 0) next.tower_gas_duration = DEFAULT_PARAMS.tower_gas_duration;
@@ -532,13 +536,20 @@ function loadParams() {
 }
 
 function migrateBossParams(input={}) {
-  if (Object.prototype.hasOwnProperty.call(input, "bossFirstMinWave")) return input;
   const next = { ...input };
-  [
-    "bossLowWeight", "bossMidWeight", "bossHighWeight",
-    "bossLowMin", "bossLowMax", "bossMidMin", "bossMidMax", "bossHighMin", "bossHighMax",
-    "bossHpMul", "bossAtkMul", "bossSpeedMul"
-  ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+  if (!Object.prototype.hasOwnProperty.call(input, "bossFirstMinWave")) {
+    [
+      "bossLowWeight", "bossMidWeight", "bossHighWeight",
+      "bossLowMin", "bossLowMax", "bossMidMin", "bossMidMax", "bossHighMin", "bossHighMax",
+      "bossHpMul", "bossAtkMul", "bossSpeedMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+  }
+  if ((Number(input.balanceRevision) || 0) < 1) {
+    if (!Object.prototype.hasOwnProperty.call(input, "moneyMul") || Number(input.moneyMul) === 1.2) next.moneyMul = DEFAULT_PARAMS.moneyMul;
+    if (!Object.prototype.hasOwnProperty.call(input, "bossFirstHpMul") || Number(input.bossFirstHpMul) === 1.45) next.bossFirstHpMul = DEFAULT_PARAMS.bossFirstHpMul;
+    if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
+    next.balanceRevision = 1;
+  }
   return next;
 }
 
@@ -956,9 +967,9 @@ function spawnElite(hpMul, primaryAttr, wave) {
 function spawnBoss(hpMul, primaryAttr, wave) {
   const index = rand(0, BOSSES.length - 1);
   const base = BOSSES[index];
-  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", `boss_${index + 1}`, pickWaveAttribute(primaryAttr, wave, true)));
+  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", `boss_${index + 1}`, pickWaveAttribute(primaryAttr, wave, true), state.bossRolled));
 }
-function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind, primaryAttr=null) {
+function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind, primaryAttr=null, bossOrdinal=0) {
   const tunedBase = {
     ...base,
     hp: paramNumber(`monster_${tuneId}_hp`, base.hp),
@@ -974,7 +985,9 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
       paramNumber(`monster_${tuneId}_moneyMax`, base.money[1]),
     ];
   }
-  const classHpMul = boss ? params.bossHpMul : elite ? params.eliteHpMul : params.minionHpMul;
+  const classHpMul = boss
+    ? (bossOrdinal === 1 ? params.bossFirstHpMul : params.bossHpMul)
+    : elite ? params.eliteHpMul : params.minionHpMul;
   const classAtkMul = boss ? params.bossAtkMul : elite ? params.eliteAtkMul : params.minionAtkMul;
   const classSpeedMul = boss ? params.bossSpeedMul : elite ? 1 : params.minionSpeedMul;
   const hp = Math.round(tunedBase.hp * hpMul * classHpMul);
@@ -1800,7 +1813,9 @@ function updateEnemies(dt) {
 
 function kill(m) {
   if (m.boss) {
-    const add = bossMultiplier();
+    const rawAdd = bossMultiplier();
+    const rewardMul = state.bossSeen === 0 ? params.bossFirstRewardMul : 1;
+    const add = Math.round(Math.max(1, rawAdd * rewardMul) * 10) / 10;
     state.bossSeen += 1;
     state.exp += (m.exp || 120) * params.expMul;
     showBossReward(add);
