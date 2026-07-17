@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "strategy-luck-balance2";
+const BUILD_VERSION = "strategy-luck-balance4";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -56,7 +56,7 @@ const TOWERS = [
   { id:"laser", name:"雷射光線", attr:"電", damage:98, range:860, rate:3.40, mode:"laser", color:"#ffe066", lockTime:3.0, desc:"持續鎖定高血量目標，對菁英與 BOSS 強。" },
   { id:"chain", name:"閃電鎖鏈", attr:"電", damage:118, range:760, rate:0.80, mode:"chain", color:"#b67cff", chains:4, desc:"瞬間連鎖多目標，清群穩定但打王較弱。" },
   { id:"gas", name:"毒氣彈", attr:"毒", damage:118, range:740, rate:0.42, mode:"gas", color:"#55d65a", splash:46, zoneTime:2.7, desc:"定點毒霧，以持續範圍傷害封鎖路線。" },
-  { id:"needle", name:"毒針彈", attr:"毒", damage:300, range:700, rate:0.67, mode:"needle", color:"#41d08a", splash:30, desc:"中高單體傷害兼小範圍爆裂，偏菁英戰。" },
+  { id:"needle", name:"毒針彈", attr:"毒", damage:300, range:700, rate:0.75, mode:"needle", color:"#41d08a", splash:30, desc:"中高單體傷害兼小範圍爆裂，偏菁英戰。" },
   { id:"blade", name:"旋刃", attr:"無", damage:245, range:680, rate:0.78, mode:"blade", color:"#d5dde8", splash:26, desc:"高頻泛用輸出，不依賴屬性相剋。" },
   { id:"trap", name:"陷阱", attr:"無", damage:130, range:700, rate:0.44, mode:"trap", color:"#9aa3b6", splash:54, desc:"定點控場與聚怪，輸出不是主要價值。" },
 ];
@@ -148,18 +148,18 @@ const BOSSES = [
 const WAVE = [
   [1,.42,0,0,0,0,0,0,2],[2,.60,0,0,0,0,0,0,2],[3,.95,2,1,0,0,0,0,2],[4,1.08,4,1,0,0,0,0,2],[5,1.22,6,1,0,0,1,1,2],
   [6,1.38,8,.9,.1,0,2,1,2],[7,1.55,10,.85,.15,0,3,2,2],[8,1.73,11,.8,.2,0,4,2,2],[9,1.93,12,.75,.25,0,5,2,2],[10,2.15,13,.7,.3,0,6,3,2],
-  [11,2.36,14,.65,.3,.05,7,3,2],[12,2.58,15,.65,.3,.05,8,3,2],[13,2.81,16,.6,.35,.05,9,3,2],[14,3.05,17,.6,.35,.05,10,4,2],[15,3.30,18,.55,.4,.05,11,4,2],
-  [16,3.56,19,.5,.4,.1,12,4,2],[17,3.83,20,.5,.4,.1,13,4,2],[18,4.11,21,.45,.45,.1,14,5,2],[19,4.40,22,.45,.45,.1,15,5,2],[20,4.70,24,.45,.45,.1,16,5,2],
-  [21,5.02,25,.4,.45,.15,17,5,2],[22,5.35,26,.4,.44,.16,18,6,2],[23,5.69,27,.4,.43,.17,19,6,2],[24,6.04,28,.4,.42,.18,20,6,2],[25,6.40,29,.4,.41,.19,21,6,2],
-  [26,6.77,30,.3,.45,.25,22,7,2],[27,7.15,31,.3,.44,.26,23,7,2],[28,7.54,32,.3,.43,.27,24,7,2],[29,7.94,33,.3,.42,.28,25,7,2],[30,8.35,35,.3,.41,.29,26,8,2],
+  [11,2.30,14,.65,.3,.05,7,3,2],[12,2.47,15,.65,.3,.05,8,3,2],[13,2.64,16,.6,.35,.05,9,3,2],[14,2.82,17,.6,.35,.05,10,4,2],[15,3.00,18,.55,.4,.05,11,4,2],
+  [16,3.08,19,.5,.4,.1,12,4,2],[17,3.16,20,.5,.4,.1,13,4,2],[18,3.24,21,.45,.45,.1,14,5,2],[19,3.32,22,.45,.45,.1,15,5,2],[20,3.40,24,.45,.45,.1,16,5,2],
+  [21,3.40,25,.4,.45,.15,17,5,2],[22,3.42,26,.4,.44,.16,18,6,2],[23,3.44,27,.4,.43,.17,19,6,2],[24,3.46,28,.4,.42,.18,20,6,2],[25,3.48,29,.4,.41,.19,21,6,2],
+  [26,3.50,30,.3,.45,.25,22,7,2],[27,3.52,31,.3,.44,.26,23,7,2],[28,3.54,32,.3,.43,.27,24,7,2],[29,3.56,33,.3,.42,.28,25,7,2],[30,3.58,35,.3,.41,.29,26,8,2],
 ].map(r => ({ wave:r[0], hpMul:r[1], eliteWeight:r[2], e1:r[3], e2:r[4], e3:r[5], bossBase:r[6], bossInc:r[7], bossCd:r[8] }));
 
 const BANDS = [
   { from:1, to:2, count:[16,24], drop:{normal:.63,fast:.36,tank:.9,ranged:.45,special:.45}, templates:{standard:700,fast:300} },
   { from:3, to:5, count:[20,30], drop:{normal:.585,fast:.315,tank:.9,ranged:.405,special:.405}, templates:{standard:400,tank:250,ranged:200,disrupt:150} },
   { from:6, to:10, count:[28,40], drop:{normal:.44,fast:.24,tank:.8,ranged:.32,special:.32}, templates:{standard:250,fast:200,tank:200,ranged:150,disrupt:200} },
-  { from:11, to:20, count:[34,50], drop:{normal:.45,fast:.2,tank:1,ranged:.3,special:.3}, templates:{standard:200,fast:150,tank:200,ranged:150,disrupt:150,mixed:150} },
-  { from:21, to:30, count:[42,62], drop:{normal:.4,fast:.15,tank:1,ranged:.25,special:.25}, templates:{standard:100,fast:150,tank:200,ranged:150,disrupt:150,mixed:250} },
+  { from:11, to:20, count:[34,50], drop:{normal:.50,fast:.24,tank:1,ranged:.34,special:.34}, templates:{standard:200,fast:150,tank:200,ranged:150,disrupt:150,mixed:150} },
+  { from:21, to:30, count:[42,62], drop:{normal:.46,fast:.19,tank:1,ranged:.30,special:.30}, templates:{standard:100,fast:150,tank:200,ranged:150,disrupt:150,mixed:250} },
 ];
 
 const TEMPLATE = {
@@ -211,16 +211,16 @@ const WALLET_STORAGE_KEY = "towerDefenseWallet.v1";
 const PARAM_CHANNEL = "tower-defense-param-sync";
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
-  flame: { damage:80, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.40, eliteMul:.85, bossMul:.85 },
+  flame: { damage:80, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.40, eliteMul:.85, bossMul:.95 },
   grenade: { damage:275, rate:.55, range:700, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.85, bossMul:.58 },
-  cryo: { damage:345, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.65, eliteMul:1.25, bossMul:1.32 },
-  frostbomb: { damage:245, rate:.45, range:720, splash:56, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.60 },
-  laser: { damage:98, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.72, eliteMul:1.25, bossMul:1.45 },
-  chain: { damage:118, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.60 },
+  cryo: { damage:345, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.65, eliteMul:1.25, bossMul:1.10 },
+  frostbomb: { damage:245, rate:.45, range:720, splash:56, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.82 },
+  laser: { damage:98, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.72, eliteMul:1.25, bossMul:1.25 },
+  chain: { damage:118, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.90 },
   gas: { damage:118, rate:.42, range:740, splash:46, duration:2.7, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.90, bossMul:.75 },
-  needle: { damage:300, rate:.67, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.82, eliteMul:1.20, bossMul:1.55 },
+  needle: { damage:300, rate:.75, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:1.05, eliteMul:1.20, bossMul:1.40 },
   blade: { damage:245, rate:.78, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:.90, eliteMul:1.00, bossMul:.75 },
-  trap: { damage:130, rate:.44, range:700, splash:54, duration:1.5, cooldown:0, tick:.5, minionMul:1.15, eliteMul:.78, bossMul:.55 },
+  trap: { damage:130, rate:.44, range:700, splash:54, duration:1.5, cooldown:0, tick:.5, minionMul:1.15, eliteMul:.78, bossMul:.95 },
 };
 
 function towerDefaultParams() {
@@ -469,7 +469,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 3,
+  balanceRevision: 5,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -492,19 +492,21 @@ const DEFAULT_PARAMS = {
   eliteHpMul: 1.05,
   eliteAtkMul: 1.05,
   bossFirstHpMul: 1.10,
-  bossHpMul: .70,
+  bossHpMul: .68,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
-  moneyMul: 1.24,
+  moneyMul: 1.12,
+  deepMoneyRamp: .18,
+  deepMoneyCap: 4.5,
   waveAttrBiasEarly: 0.72,
   waveAttrBias: 0.58,
   eliteMoneyMul: 1.0,
   dropChanceMul: 1.0,
   expMul: 1.0,
   towerDamageMul: 1.0,
-  bossBetStepMul: 1.6,
-  betMidMul: 1.5,
-  betDeepMul: 2.0,
+  bossBetStepMul: 1.5,
+  betMidMul: 1.45,
+  betDeepMul: 1.85,
   baseHp: 1000,
   ...towerDefaultParams(),
   ...monsterDefaultParams(),
@@ -530,6 +532,8 @@ function cleanParams(input={}) {
   next.bossFirstChanceInc = Math.max(0, Math.min(100, next.bossFirstChanceInc));
   next.bossFirstRewardMul = Math.max(0, next.bossFirstRewardMul);
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
+  next.deepMoneyRamp = Math.max(0, next.deepMoneyRamp);
+  next.deepMoneyCap = Math.max(1, next.deepMoneyCap);
   next.baseHp = Math.max(1, Math.round(next.baseHp));
   if (next.tower_gas_duration <= 0) next.tower_gas_duration = DEFAULT_PARAMS.tower_gas_duration;
   if (next.tower_trap_duration <= 0) next.tower_trap_duration = DEFAULT_PARAMS.tower_trap_duration;
@@ -562,12 +566,14 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:3 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:5 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:5 };
+  if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   return next;
 }
 
@@ -831,7 +837,16 @@ function startBet() {
 }
 
 function showStartingTowerDraft() {
-  const choices = randomTowerChoices(3).map(t => towerChoice(t, () => {
+  const singlePool = TOWERS.filter(t => TOWER_ROLE[t.id] === "single");
+  const areaPool = TOWERS.filter(t => ["flame", "grenade", "frostbomb", "chain", "gas"].includes(t.id));
+  const drafted = [pick(singlePool), pick(areaPool)];
+  const remaining = TOWERS.filter(t => !drafted.includes(t));
+  drafted.push(pick(remaining));
+  for (let i = drafted.length - 1; i > 0; i--) {
+    const j = rand(0, i);
+    [drafted[i], drafted[j]] = [drafted[j], drafted[i]];
+  }
+  const choices = drafted.map(t => towerChoice(t, () => {
     addTower(t);
     hideChoices();
     state.started = true;
@@ -1864,7 +1879,10 @@ function kill(m) {
   }
   state.exp += (m.exp || 0) * params.expMul;
   if (Math.random() < clamp((m.dropChance ?? 1) * params.dropChanceMul, 0, 1)) {
-    const moneyMul = params.moneyMul * (m.elite ? params.eliteMoneyMul : 1);
+    const deepMoneyMul = state.wave >= 11
+      ? Math.min(params.deepMoneyCap, 1 + (state.wave - 10) * params.deepMoneyRamp)
+      : 1;
+    const moneyMul = params.moneyMul * deepMoneyMul * (m.elite ? params.eliteMoneyMul : 1);
     const amount = Math.max(1, Math.round(rand(m.money[0], m.money[1]) * moneyMul));
     state.pot += amount;
     showMoneyReward(m, amount);
