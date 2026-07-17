@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "first-boss50-1";
+const BUILD_VERSION = "synergy-prereq1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -61,6 +61,8 @@ const TOWERS = [
   { id:"trap", name:"陷阱", attr:"無", damage:120, range:700, rate:0.40, mode:"trap", color:"#9aa3b6", splash:52, desc:"定點控場與聚怪，輸出不是主要價值。" },
 ];
 
+const POISON_SOURCE_UPGRADES = ["神經毒素", "腐蝕毒霧", "毒爆榴彈", "毒刃穿刺", "毒化陷阱"];
+
 const UPGRADE_REQUIREMENTS = {
   "燃燒強化": "燃料附著",
   "延時燃燒": "燃料附著",
@@ -83,23 +85,28 @@ const UPGRADE_REQUIREMENTS = {
   "氣爆燃燒": "凝固汽油彈",
   "牽引爆震": "戰術封鎖",
   "冰痕狙擊": "冰痕",
-  "折射聚焦": "折射光束",
+  "折射聚焦": { all:["折射光束", "過載聚焦"] },
+  "麻痺導流": "過載聚焦",
   "劇毒烈焰": "燃料附著",
-  "麻痺毒針": "電磁殘留",
-  "電刃麻痺": "電磁殘留",
+  "麻痺毒針": { all:["電磁殘留"], any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
+  "電刃麻痺": { all:["電磁殘留", "迴旋飛刃"] },
   "燃燒陷阱": "燃料附著",
-  "電熱灼斷": "電磁殘留",
+  "電熱灼斷": { all:["電磁殘留", "燃料附著"] },
   "電磁榴彈": "電磁殘留",
   "冷毒穿甲": "神經毒素",
   "高壓爆點": "強力裝藥",
+  "電毒傳播": { any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
   "寒毒封鎖": "冰痕",
-  "燃毒彈頭": "燃料附著",
+  "燃毒彈頭": { all:["燃料附著"], any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
+  "燃刃切割": "迴旋飛刃",
   "電磁陷阱": "電磁殘留",
   "毒焰": "腐蝕毒霧",
-  "毒爆榴彈": "腐蝕毒霧",
+  "毒爆榴彈": { all:["腐蝕毒霧", "凝固汽油彈"] },
   "碎晶穿透": "碎晶爆裂",
   "導電標記": "傳導增幅",
+  "電毒擴散": { any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
   "碎毒穿刺": "極凍禁制",
+  "毒刃穿刺": "迴旋飛刃",
   "毒化陷阱": "腐蝕毒霧",
 };
 
@@ -1002,7 +1009,7 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   ]));
   const attrMultipliers = applyWaveAttributeBias(baseAttrMultipliers, primaryAttr);
   return { ...tunedBase, kind, elite, boss, pathType, x, y: FIELD.spawnY, sx:x, curve, hp, maxHp:hp, atk, speed, atkCd:0, stopped:false,
-    tuneId, attrMultipliers, burn:0, burnTime:0, poison:0, poisonTime:0, slowTime:0, slowPct:0, stunTime:0, freezeTime:0,
+    tuneId, attrMultipliers, burn:0, burnTime:0, poison:0, poisonTime:0, toxicTime:0, slowTime:0, slowPct:0, stunTime:0, freezeTime:0,
     focusMarkTime:0, electricVulnerableTime:0, electricVulnerableAmount:0, vulnerable:0, vulnerableAmount:0, dropChance };
 }
 
@@ -1054,6 +1061,7 @@ function updateZones(dt) {
           zoneControls.set(m, control);
         }
         if (z.vulnerable) { m.vulnerable = Math.max(m.vulnerable, 1); m.vulnerableAmount = Math.max(m.vulnerableAmount || 0, z.vulnerable); }
+        if (z.toxic) m.toxicTime = Math.max(m.toxicTime || 0, .2);
         if (z.pull) {
           const control = zoneControls.get(m) || { root:0, rootZones:[], pull:0, pullZone:null };
           if (z.pull > control.pull) {
@@ -1312,7 +1320,7 @@ function chain(t, targets) {
     }
     const extraCurrent = new Set();
     hit.forEach((m,i) => {
-      const wasPoisoned = m.poisonTime > 0;
+      const wasPoisoned = isPoisoned(m);
       damageEnemy(m, scaledDamage(t)*(i?0.58:1), t);
       if (t.stun) applyHardControl(m, "stunTime", towerStunTime(t));
       if (wasPoisoned && t.poisonBurstDamagePct && (m.poisonBurstCd || 0) <= 0) {
@@ -1353,7 +1361,8 @@ function gas(t, targets) {
       poison:t.poison ? towerPoisonDps(t) : 0,
       slow:t.zoneSlowPct ? 1 : t.slow ? towerSlowTime(t) : 0,
       slowPct:t.zoneSlowPct ? t.zoneSlowPct / 100 : t.slow || 0,
-      vulnerable:t.vulnerable || 0
+      vulnerable:t.vulnerable || 0,
+      toxic:t.toxicZone ? 1 : 0
     });
     effect("gas", t, center, { radius });
   });
@@ -1383,6 +1392,9 @@ function blade(t, primary) {
       .slice(0, 1 + (t.ricochetExtra || 0));
     hits.forEach(m => {
       damageEnemy(m, scaledDamage(t) * ((t.ricochetDamagePct || 50) / 100) * (t.ricochetMul || 1), t);
+      if (t.conditionalStunTime) applyHardControl(m, "stunTime", t.conditionalStunTime);
+      if (t.burnDps && !t.burn) applyBurn(m, t.burnDps, t.burnTime || 1, t);
+      if (t.poisonDps && !t.poison) applyPoison(m, t.poisonDps, t.poisonTime || 1, t, t.poisonTick || .5);
       effect("blade", { x:primary.x, y:primary.y, color:t.color }, m, { radius: scaledSplash(t,24) });
     });
   }
@@ -1579,7 +1591,7 @@ function projectileHit(p) {
       });
     }
     if (t.zoneStunTime) addZone(center.x, center.y, radius, t.synergyZoneTime || 2, 0, t, { root:t.zoneStunTime });
-    if (t.zonePoisonDps) addZone(center.x, center.y, radius, t.zonePoisonTime || 2, 0, t, { poison:t.zonePoisonDps });
+    if (t.zonePoisonDps && t.burnArea) addZone(center.x, center.y, radius, t.zonePoisonTime || 2, 0, t, { poison:t.zonePoisonDps });
     if (t.burnArea) addZone(center.x, center.y, radius, towerBurnAreaTime(t), towerBurnAreaDps(t), t, { burn:towerBurnDps(t) });
   } else if (p.type === "needle") {
     areaAtPoint(t, center, "needle", scaledSplash(t, t.splash || 36), scaledDamage(t), .75, { poison:t.poison ? towerPoisonDps(t) : 0 });
@@ -1628,23 +1640,21 @@ function applyHardControl(m, key, time) {
   m[key] = Math.max(m[key], duration);
 }
 function damageEnemy(m, amount, t) {
-  const wasPoisoned = m.poisonTime > 0;
+  const wasPoisoned = isPoisoned(m);
   const dealt = resolveDamage(m, amount, t);
   if (t.burn) applyBurn(m, towerBurnDps(t), towerBurnTime(t), t);
   if (t.poison) applyPoison(m, towerPoisonDps(t), towerPoisonTime(t), t, t.poisonTick || .5);
   if (t.id === "needle" && wasPoisoned && t.conditionalStunTime) applyHardControl(m, "stunTime", t.conditionalStunTime);
   if (t.id === "needle" && wasPoisoned && t.burnDps && !t.burn) applyBurn(m, t.burnDps, t.burnTime || 2, t);
-  if (t.id === "blade" && t.conditionalStunTime) applyHardControl(m, "stunTime", t.conditionalStunTime);
-  if (t.id === "blade" && t.burnDps && !t.burn) applyBurn(m, t.burnDps, t.burnTime || 1, t);
-  if (t.id === "blade" && t.poisonDps && !t.poison) applyPoison(m, t.poisonDps, t.poisonTime || 1, t, t.poisonTick || .5);
   return dealt;
 }
+function isPoisoned(m) { return (m.poisonTime || 0) > 0 || (m.toxicTime || 0) > 0; }
 function resolveDamage(m, amount, t) {
   const vuln = m.vulnerable > 0 ? 1 + (m.vulnerableAmount || 0) : 1;
   const attrMul = attributeMultiplier(t, m);
   const classMul = targetClassMultiplier(t, m);
   let conditionalMul = 1;
-  if (t.poisonTargetDamagePct && m.poisonTime > 0) conditionalMul *= 1 + t.poisonTargetDamagePct / 100;
+  if (t.poisonTargetDamagePct && isPoisoned(m)) conditionalMul *= 1 + t.poisonTargetDamagePct / 100;
   if (t.frozenTargetDamagePct && m.freezeTime > 0) conditionalMul *= 1 + t.frozenTargetDamagePct / 100;
   if (t.burningTargetDamagePct && m.burnTime > 0) conditionalMul *= 1 + t.burningTargetDamagePct / 100;
   if (towerAttr(t) === "electric" && m.electricVulnerableTime > 0) conditionalMul *= 1 + (m.electricVulnerableAmount || 0);
@@ -1765,6 +1775,7 @@ function updateEnemies(dt) {
       }
       m.poisonTime -= dt;
     }
+    if (m.toxicTime > 0) m.toxicTime -= dt;
     if (m.vulnerable > 0) m.vulnerable -= dt;
     else m.vulnerableAmount = 0;
     if (m.freezeTime > 0) {
@@ -1963,7 +1974,7 @@ function showUpgradeChoices() {
   };
   pickedCandidates.forEach(picked => {
     const required = UPGRADE_REQUIREMENTS[picked.up.name];
-    const requirementNote = required ? `前置已解鎖：${required}｜` : "";
+    const requirementNote = required ? `前置已解鎖：${upgradeRequirementLabel(required)}｜` : "";
     choices.push({
       title: picked.up.name,
       tag: picked.tower.name,
@@ -2139,10 +2150,22 @@ function upgradeAvailable(tower, up) {
   const repeat = upgradeRepeatability(tower, up);
   if (upgradeTakenCount(tower, up.name) >= repeat.limit) return false;
   const required = UPGRADE_REQUIREMENTS[up.name];
-  if (required && !hasOwnedUpgrade(required)) return false;
+  if (required && !upgradeRequirementSatisfied(required)) return false;
   const text = upgradeText(up);
   if (text.includes("路徑傷害+") && !hasOwnedUpgrade("傳導增幅")) return false;
   return true;
+}
+function upgradeRequirementSatisfied(required) {
+  if (typeof required === "string") return hasOwnedUpgrade(required);
+  const all = Array.isArray(required?.all) ? required.all : [];
+  const any = Array.isArray(required?.any) ? required.any : [];
+  return all.every(hasOwnedUpgrade) && (!any.length || any.some(hasOwnedUpgrade));
+}
+function upgradeRequirementLabel(required) {
+  if (typeof required === "string") return required;
+  const labels = [...(required?.all || [])];
+  if (required?.any?.length) labels.push(required.anyLabel || `任一：${required.any.join("／")}`);
+  return labels.join("＋");
 }
 function hasOwnedUpgrade(name) {
   return state.towers.some(tower => tower.upgrades.includes(name));
@@ -2183,6 +2206,7 @@ function applyUpgrade(t, up) {
   if (s.includes("增傷效果+50")) t.vulnerable = (t.vulnerable || .15) * 1.5;
   if (s.includes("燃燒區域")) t.burnArea = true;
   if (s.includes("毒霧")) t.poisonArea = true;
+  if (up.name === "腐蝕毒霧") t.toxicZone = true;
   if (s.includes("迴旋飛刃")) t.ricochet = true;
   if (s.includes("飛刃傷害+100")) t.ricochetMul = (t.ricochetMul || 1) * 2;
   if (s.includes("額外迴旋刃+1")) t.ricochetExtra = (t.ricochetExtra || 0) + 1;
