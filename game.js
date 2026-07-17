@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "strategy-luck-balance4";
+const BUILD_VERSION = "strategy-luck-balance5";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -213,9 +213,9 @@ const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","g
 const TOWER_BASE_PARAMS = {
   flame: { damage:80, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.40, eliteMul:.85, bossMul:.95 },
   grenade: { damage:275, rate:.55, range:700, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.85, bossMul:.58 },
-  cryo: { damage:345, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.65, eliteMul:1.25, bossMul:1.10 },
+  cryo: { damage:345, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.56, eliteMul:1.25, bossMul:1.10 },
   frostbomb: { damage:245, rate:.45, range:720, splash:56, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.82 },
-  laser: { damage:98, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.72, eliteMul:1.25, bossMul:1.25 },
+  laser: { damage:98, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.62, eliteMul:1.25, bossMul:1.25 },
   chain: { damage:118, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.90 },
   gas: { damage:118, rate:.42, range:740, splash:46, duration:2.7, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.90, bossMul:.75 },
   needle: { damage:300, rate:.75, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:1.05, eliteMul:1.20, bossMul:1.40 },
@@ -469,7 +469,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 5,
+  balanceRevision: 7,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -495,9 +495,11 @@ const DEFAULT_PARAMS = {
   bossHpMul: .68,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
-  moneyMul: 1.12,
-  deepMoneyRamp: .18,
+  moneyMul: 1.15,
+  deepMoneyBase: 1.60,
+  deepMoneyRamp: .10,
   deepMoneyCap: 4.5,
+  spawnInterval: .26,
   waveAttrBiasEarly: 0.72,
   waveAttrBias: 0.58,
   eliteMoneyMul: 1.0,
@@ -505,7 +507,7 @@ const DEFAULT_PARAMS = {
   expMul: 1.0,
   towerDamageMul: 1.0,
   bossBetStepMul: 1.5,
-  betMidMul: 1.45,
+  betMidMul: 1.35,
   betDeepMul: 1.85,
   baseHp: 1000,
   ...towerDefaultParams(),
@@ -532,8 +534,10 @@ function cleanParams(input={}) {
   next.bossFirstChanceInc = Math.max(0, Math.min(100, next.bossFirstChanceInc));
   next.bossFirstRewardMul = Math.max(0, next.bossFirstRewardMul);
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
+  next.deepMoneyBase = Math.max(1, next.deepMoneyBase);
   next.deepMoneyRamp = Math.max(0, next.deepMoneyRamp);
   next.deepMoneyCap = Math.max(1, next.deepMoneyCap);
+  next.spawnInterval = Math.max(.08, Math.min(2, next.spawnInterval));
   next.baseHp = Math.max(1, Math.round(next.baseHp));
   if (next.tower_gas_duration <= 0) next.tower_gas_duration = DEFAULT_PARAMS.tower_gas_duration;
   if (next.tower_trap_duration <= 0) next.tower_trap_duration = DEFAULT_PARAMS.tower_trap_duration;
@@ -566,14 +570,20 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:5 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:7 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:5 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:7 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
+  if ((Number(input.balanceRevision) || 0) < 6) {
+    ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 6;
+  }
+  if ((Number(input.balanceRevision) || 0) < 7) next.balanceRevision = 7;
   return next;
 }
 
@@ -986,7 +996,7 @@ function startWave() {
   const count = rand(band.count[0], band.count[1]);
   const boss = consumeBossPreview(state.wave, info);
   const elites = eliteCount(info);
-  state.spawn = { remain: count, timer: 0, every: 0.34, template, hpMul: info.hpMul, band, elites, boss, primaryAttr, wave:state.wave };
+  state.spawn = { remain: count, timer: 0, every: params.spawnInterval, template, hpMul: info.hpMul, band, elites, boss, primaryAttr, wave:state.wave };
   state.waveActive = true;
   state.message = `第 ${state.wave} 波開始：${count} 隻怪${elites ? `，菁英 ${elites}` : ""}${boss ? "，Boss 接近" : ""}`;
   updateUi();
@@ -1880,7 +1890,7 @@ function kill(m) {
   state.exp += (m.exp || 0) * params.expMul;
   if (Math.random() < clamp((m.dropChance ?? 1) * params.dropChanceMul, 0, 1)) {
     const deepMoneyMul = state.wave >= 11
-      ? Math.min(params.deepMoneyCap, 1 + (state.wave - 10) * params.deepMoneyRamp)
+      ? Math.min(params.deepMoneyCap, params.deepMoneyBase + (state.wave - 10) * params.deepMoneyRamp)
       : 1;
     const moneyMul = params.moneyMul * deepMoneyMul * (m.elite ? params.eliteMoneyMul : 1);
     const amount = Math.max(1, Math.round(rand(m.money[0], m.money[1]) * moneyMul));
