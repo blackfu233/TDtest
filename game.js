@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "boss-rtp-balance2";
+const BUILD_VERSION = "audio-rtp-balance1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -53,6 +53,11 @@ const EXP_TABLE = [95,125,155,190,225,290,330,370,415,460,510,565,625,690,760,83
 const audioState = {
   ctx: null,
   master: null,
+  sfxBus: null,
+  bgmBus: null,
+  bgmTimer: null,
+  bgmStep: 0,
+  bgmSources: new Set(),
   muted: false,
   last: new Map(),
   noiseBuffer: null,
@@ -67,11 +72,65 @@ function ensureAudio() {
   if (!audioState.ctx) {
     audioState.ctx = new AudioCtor({ latencyHint:"interactive" });
     audioState.master = audioState.ctx.createGain();
-    audioState.master.gain.value = .42;
+    audioState.sfxBus = audioState.ctx.createGain();
+    audioState.bgmBus = audioState.ctx.createGain();
+    audioState.master.gain.value = .62;
+    audioState.sfxBus.gain.value = 1;
+    audioState.bgmBus.gain.value = .22;
+    audioState.sfxBus.connect(audioState.master);
+    audioState.bgmBus.connect(audioState.master);
     audioState.master.connect(audioState.ctx.destination);
   }
   if (audioState.ctx.state === "suspended") audioState.ctx.resume().catch(() => {});
+  startBgm(audioState.ctx);
   return audioState.ctx;
+}
+
+const BGM_MELODY = [220,0,261.63,196, 220,293.66,261.63,0, 196,0,246.94,174.61, 196,261.63,246.94,0];
+const BGM_BASS = [55,65.41,49,58.27];
+
+function scheduleBgmVoice(audio, frequency, duration, type, gain, start) {
+  const oscillator = audio.createOscillator();
+  const volume = audio.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  volume.gain.setValueAtTime(.0001, start);
+  volume.gain.exponentialRampToValueAtTime(gain, start + .045);
+  volume.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  oscillator.connect(volume);
+  volume.connect(audioState.bgmBus || audioState.master);
+  oscillator.onended = () => audioState.bgmSources.delete(oscillator);
+  audioState.bgmSources.add(oscillator);
+  oscillator.start(start);
+  oscillator.stop(start + duration + .03);
+}
+
+function scheduleBgmStep(audio) {
+  if (audioState.muted || audio !== audioState.ctx) {
+    audioState.bgmTimer = null;
+    return;
+  }
+  const step = audioState.bgmStep++;
+  const start = audio.currentTime + .025;
+  const melody = BGM_MELODY[step % BGM_MELODY.length];
+  if (melody) scheduleBgmVoice(audio, melody, .36, "triangle", .036, start);
+  if (step % 4 === 0) {
+    const bass = BGM_BASS[Math.floor(step / 4) % BGM_BASS.length];
+    scheduleBgmVoice(audio, bass, 1.25, "sine", .05, start);
+  }
+  audioState.bgmTimer = window.setTimeout(() => scheduleBgmStep(audio), 460);
+}
+
+function startBgm(audio=audioState.ctx) {
+  if (audioState.muted || !audio || audioState.bgmTimer !== null) return;
+  scheduleBgmStep(audio);
+}
+
+function stopBgm() {
+  if (audioState.bgmTimer !== null) window.clearTimeout(audioState.bgmTimer);
+  audioState.bgmTimer = null;
+  audioState.bgmSources.forEach(source => { try { source.stop(); } catch {} });
+  audioState.bgmSources.clear();
 }
 
 function soundTone(key, frequency, duration=.08, type="sine", gain=.05, endFrequency=frequency, delay=0, minGap=0) {
@@ -91,7 +150,7 @@ function soundTone(key, frequency, duration=.08, type="sine", gain=.05, endFrequ
   volume.gain.exponentialRampToValueAtTime(Math.max(.0002, gain), start + Math.min(.018, duration * .25));
   volume.gain.exponentialRampToValueAtTime(.0001, end);
   oscillator.connect(volume);
-  volume.connect(audioState.master);
+  volume.connect(audioState.sfxBus || audioState.master);
   oscillator.start(start);
   oscillator.stop(end + .02);
 }
@@ -119,7 +178,7 @@ function soundNoise(key, duration=.1, gain=.035, filterFrequency=900, delay=0, m
   volume.gain.exponentialRampToValueAtTime(.0001, start + duration);
   source.connect(filter);
   filter.connect(volume);
-  volume.connect(audioState.master);
+  volume.connect(audioState.sfxBus || audioState.master);
   source.start(start);
   source.stop(start + duration + .02);
 }
@@ -181,7 +240,7 @@ function startChannelAudio(mode) {
   const volume = audio.createGain();
   volume.gain.setValueAtTime(.0001, start);
   volume.gain.exponentialRampToValueAtTime(mode === "laser" ? .025 : .032, start + .06);
-  volume.connect(audioState.master);
+  volume.connect(audioState.sfxBus || audioState.master);
   let source;
   let extra = null;
   if (mode === "laser") {
@@ -234,6 +293,15 @@ function stopChannelAudio() {
   audioState.channels.clear();
 }
 
+function resumeChannelAudio() {
+  if (audioState.muted || !state || state.choicesOpen || state.over) return;
+  state.towers.forEach(tower => {
+    if (!tower.channel || (tower.mode !== "laser" && tower.mode !== "flame")) return;
+    tower.channel.audioStop?.();
+    tower.channel.audioStop = startChannelAudio(tower.mode);
+  });
+}
+
 function updateSoundButton() {
   if (!ui.sound) return;
   ui.sound.classList.toggle("muted", audioState.muted);
@@ -243,9 +311,13 @@ function updateSoundButton() {
 function toggleSound() {
   audioState.muted = !audioState.muted;
   try { localStorage.setItem(SOUND_STORAGE_KEY, audioState.muted ? "1" : "0"); } catch {}
-  if (audioState.muted) stopChannelAudio();
+  if (audioState.muted) {
+    stopChannelAudio();
+    stopBgm();
+  }
   else {
     ensureAudio();
+    resumeChannelAudio();
     playSfx("ui");
   }
   updateSoundButton();
@@ -691,7 +763,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 9,
+  balanceRevision: 10,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -718,7 +790,7 @@ const DEFAULT_PARAMS = {
   bossHpMul: .52,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
-  moneyMul: 1.15,
+  moneyMul: 1.12,
   deepMoneyBase: 1.35,
   deepMoneyRamp: .04,
   deepMoneyCap: 1.80,
@@ -830,13 +902,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:9 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:10 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:9 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:10 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -858,6 +930,10 @@ function migrateBossParams(input={}) {
       "bossDiffEasyWeight", "bossDiffNormalWeight", "bossDiffHardWeight", "bossDiffBrutalWeight"
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 9;
+  }
+  if ((Number(input.balanceRevision) || 0) < 10) {
+    next.moneyMul = DEFAULT_PARAMS.moneyMul;
+    next.balanceRevision = 10;
   }
   return next;
 }
@@ -1111,6 +1187,7 @@ function rarityLabel(rarity) {
 }
 
 function showChoices(title, hint, choices) {
+  stopChannelAudio();
   state.choicesOpen = true;
   ui.choiceTitle.textContent = title;
   ui.choiceHint.textContent = hint;
@@ -1147,11 +1224,14 @@ function showChoices(title, hint, choices) {
   updateUi();
 }
 function hideChoices() {
+  const wasOpen = state.choicesOpen;
   state.choicesOpen = false;
   ui.choiceOverlay.classList.add("hidden");
   ui.choiceList.innerHTML = "";
+  if (wasOpen) resumeChannelAudio();
 }
 function showResult(title, body) {
+  stopChannelAudio();
   state.over = true;
   ui.resultTitle.textContent = title;
   ui.resultBody.textContent = body;
@@ -4094,6 +4174,16 @@ ui.reset.onclick = () => { playSfx("ui"); reset(); };
 ui.sound.onclick = toggleSound;
 ui.speed.onclick = toggleSpeed;
 ui.newRun.onclick = () => { playSfx("ui"); reset(); };
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopChannelAudio();
+    stopBgm();
+  } else if (!audioState.muted && audioState.ctx) {
+    ensureAudio();
+    resumeChannelAudio();
+  }
+});
 
 document.body.dataset.build = BUILD_VERSION;
 let viewportSyncFrame = 0;
