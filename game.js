@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "synergy-audit-all1";
+const BUILD_VERSION = "boss-rtp-balance2";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -691,7 +691,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 8,
+  balanceRevision: 9,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -705,7 +705,8 @@ const DEFAULT_PARAMS = {
   bossFirstChance: 28,
   bossFirstChanceInc: 32,
   bossFirstGuaranteeWave: 5,
-  bossFirstRewardMul: 1.0,
+  bossFirstRewardMul: 1.10,
+  bossLaterRewardMul: .45,
   bossChanceMul: 1.0,
   bossChanceCap: 70,
   minionHpMul: 1.0,
@@ -713,7 +714,7 @@ const DEFAULT_PARAMS = {
   minionSpeedMul: .90,
   eliteHpMul: 1.05,
   eliteAtkMul: 1.05,
-  bossFirstHpMul: 1.10,
+  bossFirstHpMul: .92,
   bossHpMul: .52,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
@@ -731,19 +732,19 @@ const DEFAULT_PARAMS = {
   waveRewardProfitMul: 1.35,
   waveRewardHotWeight: 3,
   waveRewardHotMul: 2.45,
-  bossDiffEasyWeight: 25,
+  bossDiffEasyWeight: 30,
   bossDiffEasyHpMul: .80,
   bossDiffEasyAtkMul: .90,
   bossDiffEasySpeedMul: .97,
-  bossDiffNormalWeight: 45,
+  bossDiffNormalWeight: 47,
   bossDiffNormalHpMul: 1.25,
   bossDiffNormalAtkMul: 1.05,
   bossDiffNormalSpeedMul: 1.0,
-  bossDiffHardWeight: 23,
+  bossDiffHardWeight: 19,
   bossDiffHardHpMul: 1.75,
   bossDiffHardAtkMul: 1.25,
   bossDiffHardSpeedMul: 1.04,
-  bossDiffBrutalWeight: 7,
+  bossDiffBrutalWeight: 4,
   bossDiffBrutalHpMul: 2.40,
   bossDiffBrutalAtkMul: 1.45,
   bossDiffBrutalSpeedMul: 1.08,
@@ -781,6 +782,7 @@ function cleanParams(input={}) {
   next.bossFirstChance = Math.max(0, Math.min(100, next.bossFirstChance));
   next.bossFirstChanceInc = Math.max(0, Math.min(100, next.bossFirstChanceInc));
   next.bossFirstRewardMul = Math.max(0, next.bossFirstRewardMul);
+  next.bossLaterRewardMul = Math.max(0, next.bossLaterRewardMul);
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
   next.deepMoneyBase = Math.max(0, next.deepMoneyBase);
   next.deepMoneyRamp = Math.max(0, next.deepMoneyRamp);
@@ -828,13 +830,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:8 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:9 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:8 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:9 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -849,6 +851,13 @@ function migrateBossParams(input={}) {
       "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "bossHpMul"
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 8;
+  }
+  if ((Number(input.balanceRevision) || 0) < 9) {
+    [
+      "bossFirstHpMul", "bossFirstRewardMul", "bossLaterRewardMul", "moneyMul",
+      "bossDiffEasyWeight", "bossDiffNormalWeight", "bossDiffHardWeight", "bossDiffBrutalWeight"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 9;
   }
   return next;
 }
@@ -2243,7 +2252,7 @@ function updateEnemies(dt) {
 function kill(m) {
   if (m.boss) {
     const rawAdd = bossMultiplier();
-    const rewardMul = state.bossSeen === 0 ? params.bossFirstRewardMul : 1;
+    const rewardMul = state.bossSeen === 0 ? params.bossFirstRewardMul : params.bossLaterRewardMul;
     const add = Math.round(Math.max(1, rawAdd * rewardMul) * 10) / 10;
     state.bossSeen += 1;
     state.exp += (m.exp || 120) * params.expMul;
