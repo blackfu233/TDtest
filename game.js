@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "blade-prereq1";
+const BUILD_VERSION = "synergy-audit-all1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1788,9 +1788,19 @@ function frostbomb(t, targets) {
     if (t.iceTrail) addZone(center.x, center.y, radius * .85, (t.iceTrailTime || 2)*t.iceTrailDurationMul, 0, t, { slow:t.iceSlow || .15 });
   });
 }
+function applyBladeElementalHit(t, monster) {
+  if (t.conditionalStunTime) applyHardControl(monster, "stunTime", t.conditionalStunTime);
+  if (t.burnDps && !t.burn) applyBurn(monster, t.burnDps, t.burnTime || 1, t);
+  if (t.poisonDps && !t.poison) applyPoison(monster, t.poisonDps, t.poisonTime || 1, t, t.poisonTick || .5);
+}
 function blade(t, primary) {
   damageEnemy(primary, scaledDamage(t), t);
-  state.monsters.forEach(m => { if (m !== primary && dist(m,primary) < scaledSplash(t,36)) damageEnemy(m, scaledDamage(t)*.42, t); });
+  applyBladeElementalHit(t, primary);
+  state.monsters.forEach(m => {
+    if (m === primary || dist(m,primary) >= scaledSplash(t,36)) return;
+    damageEnemy(m, scaledDamage(t)*.42, t);
+    applyBladeElementalHit(t, m);
+  });
   if (t.poison) applyPoison(primary, towerPoisonDps(t), towerPoisonTime(t), t, t.poisonTick || .5);
   if (t.ricochet && Math.random() < ((t.ricochetChancePct || 45) / 100)) {
     const hits = state.monsters
@@ -1799,9 +1809,7 @@ function blade(t, primary) {
       .slice(0, 1 + (t.ricochetExtra || 0));
     hits.forEach(m => {
       damageEnemy(m, scaledDamage(t) * ((t.ricochetDamagePct || 50) / 100) * (t.ricochetMul || 1), t);
-      if (t.conditionalStunTime) applyHardControl(m, "stunTime", t.conditionalStunTime);
-      if (t.burnDps && !t.burn) applyBurn(m, t.burnDps, t.burnTime || 1, t);
-      if (t.poisonDps && !t.poison) applyPoison(m, t.poisonDps, t.poisonTime || 1, t, t.poisonTick || .5);
+      applyBladeElementalHit(t, m);
       effect("blade", { x:primary.x, y:primary.y, color:t.color }, m, { radius: scaledSplash(t,24) });
     });
   }
@@ -2609,9 +2617,9 @@ function applyUpgrade(t, up) {
   markUpgradeRepeatLock(t, up);
   t.level += 1;
   const s = upgradeText(up);
-  if (s.includes("傷害+40")) t.damageMul = (t.damageMul || 1) * 1.4;
-  else if (s.includes("傷害+35") || s.includes("每段傷害+35")) t.damageMul = (t.damageMul || 1) * 1.35;
-  else if (s.includes("傷害+30") || s.includes("每段傷害+30")) t.damageMul = (t.damageMul || 1) * 1.3;
+  if (up.rowIndex === 0 && s.includes("傷害+40")) t.damageMul = (t.damageMul || 1) * 1.4;
+  else if (up.rowIndex === 0 && (s.includes("傷害+35") || s.includes("每段傷害+35"))) t.damageMul = (t.damageMul || 1) * 1.35;
+  else if (up.rowIndex === 0 && (s.includes("傷害+30") || s.includes("每段傷害+30"))) t.damageMul = (t.damageMul || 1) * 1.3;
   if (s.includes("攻速+25") || s.includes("Tick速度+25")) t.rate *= 1.25;
   if (s.includes("攻速+20") || s.includes("布置速度+20")) t.rate *= 1.2;
   if (s.includes("範圍+25") || s.includes("攻擊範圍+25") || s.includes("爆炸範圍+25")) { t.rangeMul = (t.rangeMul || 1) * 1.25; t.splashMul = (t.splashMul || 1) * 1.25; }
