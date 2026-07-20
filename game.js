@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "sound-laser1";
+const BUILD_VERSION = "synergy-guard1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -325,6 +325,10 @@ const UPGRADE_ROWS = [
   [["電熱灼斷","對燃燒敵人造成麻痺","命中燃燒中的敵人時，麻痺0.2S"],["電磁榴彈","爆炸後留下電磁區","爆炸後留下電磁區2S，接觸的敵人停頓0.3S"],["冷毒穿甲","中毒目標受到額外傷害","中毒目標受到狙擊傷害+20%"],["碎晶爆裂","冰爆後碎晶散射","爆炸後散出3枚冰晶，各造成30%傷害"],["高壓爆點","命中範圍爆炸","持續照射命中1S後，在目標位置產生小範圍爆炸"],["電毒傳播","中毒的敵人爆炸","中毒的敵人被閃電命中時，造成小範圍爆炸，造成50%傷害"],["寒毒封鎖","毒霧內緩速","毒霧內敵人降低10%移速"],["燃毒彈頭","中毒目標附加燃燒","中毒目標被毒針爆裂命中時，附加燃燒"],["燃刃切割","造成命中燃燒","被迴旋刃命中的敵人造成燃燒，持續1S"],["電磁陷阱","陷阱觸發後留下感電區域","陷阱觸發後留下感電區域，對接觸敵人造成麻痺0.3S，持續2S"]],
   [["毒焰","對中毒敵人造成額外傷害","若敵人中毒，噴火傷害+20%"],["毒爆榴彈","燃燒區域中的敵人中毒","燃燒區域中的敵人附加中毒效果，持續2S"],["碎晶穿透","擊中目標後分裂冰晶碎片","擊中第一個目標後分裂2枚冰晶碎片，造成40%傷害"],["寒爆壓制","凍結結束後減速","敵人凍結結束後，額外緩速20%，持續1S"],["導電標記","雷射命中增傷","被雷射命中的敵人受到閃電傷害+20%，持續2S"],["電毒擴散","中毒的敵人被擊中額外電流","中毒的敵人被電擊時，放出一條電流造成50%傷害"],null,["碎毒穿刺","凍結敵人命中增傷","凍結中的敵人被毒針命中時，爆裂傷害+30%"],["毒刃穿刺","造成命中中毒","被迴旋刃命中的敵人造成中毒，持續1S"],["毒化陷阱","陷阱觸發後留下毒霧區域","陷阱觸發後留下毒霧區域造成毒傷，持續2S"]],
 ];
+
+const CORE_UPGRADE_NAMES = new Set(
+  UPGRADE_ROWS[4].filter(Boolean).map(upgrade => upgrade[0])
+);
 
 const MONSTERS = {
   normal: { name:"普通怪", hp:300, speed:60, range:0, atk:20, interval:1.5, exp:10, money:[1,3], color:"#6d7a91", size:14, shape:"square" },
@@ -1090,8 +1094,9 @@ function rarityLabel(rarity) {
   return {
     common: "普通",
     tower: "特色",
+    core: "核心",
     deepen: "深化",
-    synergy: "解鎖",
+    synergy: "連動",
     newTower: "新砲台",
   }[rarity] || "普通";
 }
@@ -2404,7 +2409,15 @@ function showUpgradeChoices() {
       rarity: picked.rarity,
       repeatTaken: picked.takenCount > 0,
       desc: `${requirementNote}${picked.up.desc}｜${picked.up.effect}`,
-      onPick: () => { applyUpgrade(picked.tower, picked.up); hideChoices(); }
+      onPick: () => {
+        if (!upgradeAvailable(picked.tower, picked.up)) {
+          state.message = "此連動升級的前置條件尚未完整解鎖。";
+          updateUi();
+          return;
+        }
+        applyUpgrade(picked.tower, picked.up);
+        hideChoices();
+      }
     });
   });
   if (choices.length < 3 && state.towers.length < 3) addNewTowerChoices(3 - choices.length);
@@ -2442,20 +2455,19 @@ function collectUpgradeCandidates() {
   return candidates.sort((a,b) => b.weight - a.weight || a.up.rowIndex - b.up.rowIndex);
 }
 function upgradeRarity(up) {
-  const text = upgradeText(up);
-  const hasRequirement = !!UPGRADE_REQUIREMENTS[up.name] || text.includes("需解鎖") || text.includes("解鎖");
-  if (hasRequirement) return "synergy";
-  if (up.rowIndex >= 5) return "deepen";
-  if (up.rowIndex >= 4) return "tower";
+  if (CORE_UPGRADE_NAMES.has(up.name) || up.rowIndex === 4) return "core";
+  if (up.rowIndex === 5 || up.rowIndex === 6) return "deepen";
+  if (UPGRADE_REQUIREMENTS[up.name]) return "synergy";
+  if (up.rowIndex >= 7) return "deepen";
   return "common";
 }
 function rarityPriority(rarity) {
-  return { synergy:3, deepen:2, tower:1, common:0, newTower:0 }[rarity] || 0;
+  return { synergy:4, core:3, deepen:2, tower:1, common:0, newTower:0 }[rarity] || 0;
 }
 function upgradeChoiceWeight(rarity, repeat, takenCount, rowIndex, recentLock = 0) {
-  const base = { synergy:140, deepen:112, tower:106, common:92, newTower:90 }[rarity] || 90;
+  const base = { synergy:140, core:110, deepen:112, tower:106, common:92, newTower:90 }[rarity] || 90;
   const depthBonus = Math.max(0, 5 - Math.abs(rowIndex - Math.min(state.level, 6))) * 3;
-  const corePity = rarity === "tower" && takenCount <= 0 ? Math.max(0, state.level - 4) * 7 : 0;
+  const corePity = rarity === "core" && takenCount <= 0 ? Math.max(0, state.level - 4) * 7 : 0;
   let weight = base + depthBonus + corePity;
   if (repeat.repeatable && takenCount > 0) weight *= Math.pow(0.22, takenCount);
   if (recentLock > 0) weight *= Math.pow(0.35, recentLock);
