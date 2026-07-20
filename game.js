@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "synergy-guard1";
+const BUILD_VERSION = "blade-prereq1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -292,7 +292,7 @@ const UPGRADE_REQUIREMENTS = {
   "麻痺導流": "過載聚焦",
   "劇毒烈焰": "燃料附著",
   "麻痺毒針": { all:["電磁殘留"], any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
-  "電刃麻痺": { all:["電磁殘留", "迴旋飛刃"] },
+  "電刃麻痺": "電磁殘留",
   "燃燒陷阱": "燃料附著",
   "電熱灼斷": { all:["電磁殘留", "燃料附著"] },
   "電磁榴彈": "電磁殘留",
@@ -301,7 +301,7 @@ const UPGRADE_REQUIREMENTS = {
   "電毒傳播": { any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
   "寒毒封鎖": "冰痕",
   "燃毒彈頭": { all:["燃料附著"], any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
-  "燃刃切割": "迴旋飛刃",
+  "燃刃切割": "燃料附著",
   "電磁陷阱": "電磁殘留",
   "毒焰": "腐蝕毒霧",
   "毒爆榴彈": { all:["腐蝕毒霧", "凝固汽油彈"] },
@@ -309,7 +309,7 @@ const UPGRADE_REQUIREMENTS = {
   "導電標記": "傳導增幅",
   "電毒擴散": { any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
   "碎毒穿刺": "極凍禁制",
-  "毒刃穿刺": "迴旋飛刃",
+  "毒刃穿刺": "腐蝕毒霧",
   "毒化陷阱": "腐蝕毒霧",
 };
 
