@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "reward-boss-feedback2";
+const BUILD_VERSION = "hidden-rolls1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -819,49 +819,6 @@ function rollBossDifficulty() {
   };
 }
 
-function rewardTierVisual(reward) {
-  return {
-    dry:{ marks:1, color:"#9aa3b6", intensity:.65 },
-    low:{ marks:2, color:"#d5a44a", intensity:.82 },
-    normal:{ marks:3, color:"#f0bc4f", intensity:1 },
-    profit:{ marks:4, color:"#ffe57c", intensity:1.28 },
-    hot:{ marks:5, color:"#ff8a45", intensity:1.6 },
-  }[reward?.id] || { marks:2, color:"#f0bc4f", intensity:1 };
-}
-
-function bossDifficultyColor(difficulty) {
-  return {
-    easy:"#83e5ff",
-    normal:"#ffe080",
-    hard:"#ff925c",
-    brutal:"#ff4e66",
-  }[difficulty?.id] || "#ffe080";
-}
-
-function showWaveRewardReveal(reward) {
-  const visual = rewardTierVisual(reward);
-  effect("waveRewardReveal", {x:FIELD.w/2,y:138,color:visual.color}, {x:FIELD.w/2,y:174}, {
-    marks:visual.marks, intensity:visual.intensity, life:reward.id === "hot" ? 1.55 : 1.15
-  });
-  if (reward.id === "profit" || reward.id === "hot") {
-    ui.phone?.classList.remove("reward-hot-flash");
-    void ui.phone?.offsetWidth;
-    ui.phone?.classList.add("reward-hot-flash");
-    try { navigator.vibrate?.(reward.id === "hot" ? [28,32,28] : 24); } catch {}
-  }
-}
-
-function showBossDifficulty(difficulty) {
-  const color = bossDifficultyColor(difficulty);
-  effect("bossDifficulty", {x:FIELD.w/2,y:170,color}, {x:FIELD.w/2,y:230}, {
-    marks:difficulty?.marks || 2, intensity:difficulty?.hpMul || 1, life:1.35
-  });
-  ui.phone?.classList.remove("boss-difficulty-flash");
-  void ui.phone?.offsetWidth;
-  ui.phone?.classList.add("boss-difficulty-flash");
-  try { navigator.vibrate?.(difficulty?.id === "brutal" ? [55,35,75] : [38,28,38]); } catch {}
-}
-
 function normalRewardWeight(kind, band) {
   const base = MONSTERS[kind];
   const min = paramNumber(`monster_${kind}_moneyMin`, base.money[0]);
@@ -1165,8 +1122,7 @@ function startWave() {
     bossDifficulty:boss ? rollBossDifficulty() : null, primaryAttr, wave:state.wave
   };
   state.waveActive = true;
-  showWaveRewardReveal(reward);
-  state.message = `第 ${state.wave} 波開始：${count} 隻怪${elites ? `，菁英 ${elites}` : ""}${boss ? "，Boss 接近" : ""}`;
+  state.message = `戰鬥開始：${count} 隻怪${elites ? `，菁英 ${elites}` : ""}${boss ? "，Boss 接近" : ""}`;
   updateUi();
 }
 
@@ -1197,7 +1153,6 @@ function spawnBoss(hpMul, primaryAttr, wave, difficulty=null) {
   const index = rand(0, BOSSES.length - 1);
   const base = BOSSES[index];
   state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", `boss_${index + 1}`, pickWaveAttribute(primaryAttr, wave, true), state.bossRolled, 0, difficulty));
-  showBossDifficulty(difficulty);
 }
 function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind, primaryAttr=null, bossOrdinal=0, rewardWeight=0, bossDifficulty=null) {
   const tunedBase = {
@@ -2086,12 +2041,10 @@ function claimWaveReward(m) {
 
 function showMoneyReward(m, amount) {
   const elite = !!m.elite;
-  const rewardVisual = rewardTierVisual(state.waveReward);
   if (elite) showEliteDefeat(m, amount);
   effect(elite ? "eliteCoin" : "coin", {x:m.x,y:m.y,color: elite ? "#fff1a6" : "#f0bc4f"}, m, {
     text: `+${amount}`,
     amount,
-    intensity:rewardVisual.intensity,
     radius: elite ? 34 : 14,
     life: elite ? 1.36 : .72
   });
@@ -2182,12 +2135,6 @@ function checkWaveClear() {
   if (!state.spawn && !state.monsters.length && state.waveActive) {
     state.waveActive = false;
     effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, { text:"波次完成", life:.9 });
-    if (["profit", "hot"].includes(state.waveReward?.id)) {
-      const rewardVisual = rewardTierVisual(state.waveReward);
-      effect("waveRewardClear", {x:FIELD.w/2,y:FIELD.h*.42+48,color:rewardVisual.color}, {x:FIELD.w/2,y:FIELD.h*.42+48}, {
-        text:`+${state.waveReward.budget}`, marks:rewardVisual.marks, intensity:rewardVisual.intensity, life:1.25
-      });
-    }
     prepareNextBossPreview();
     if (state.wave >= 30) showResult("30 波完成", `本局可結算 ${payout()}，後續可再擴充更深波次。`);
     else if (canLevelUp()) showUpgradeChoices();
@@ -2685,7 +2632,7 @@ function effect(type, from, to, opts={}) {
   if (state.effects.length >= MAX_EFFECTS) {
     state.effects.splice(0, state.effects.length - MAX_EFFECTS + 1);
   }
-  state.effects.push({ type, x:from.x, y:from.y, tx:to.x, ty:to.y, color:from.color || "#fff", t:life, life, radius:opts.radius || 0, width:opts.width || 40, amount:opts.amount || 0, marks:opts.marks || 0, intensity:opts.intensity || 1, weak:!!opts.weak, chain: opts.chain ? opts.chain.map(m => ({x:m.x,y:m.y})) : [], text: opts.text });
+  state.effects.push({ type, x:from.x, y:from.y, tx:to.x, ty:to.y, color:from.color || "#fff", t:life, life, radius:opts.radius || 0, width:opts.width || 40, amount:opts.amount || 0, weak:!!opts.weak, chain: opts.chain ? opts.chain.map(m => ({x:m.x,y:m.y})) : [], text: opts.text });
 }
 function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
 
@@ -2909,10 +2856,9 @@ function drawEliteBody(m, size) {
 
 function drawBossBody(m, size) {
   const spin = performance.now() / 1300;
-  const difficultyColor = bossDifficultyColor(m.bossDifficulty);
-  ctx.shadowColor = difficultyColor;
+  ctx.shadowColor = m.color;
   ctx.shadowBlur = 22;
-  ctx.strokeStyle = difficultyColor;
+  ctx.strokeStyle = "rgba(255,91,77,.82)";
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.arc(m.x, m.y, size * .68, spin, spin + Math.PI * 1.45);
@@ -2967,7 +2913,7 @@ function drawBossBody(m, size) {
 }
 
 function drawEnemy(m) {
-  const size = m.boss ? 40 + (m.bossDifficulty?.marks || 2) * 2 : m.elite ? 32 : m.size;
+  const size = m.boss ? 44 : m.elite ? 32 : m.size;
   const hpPct = Math.max(0, m.hp / m.maxHp);
   ctx.save();
   if (m.boss) drawBossBody(m, size);
@@ -2988,14 +2934,13 @@ function drawEnemy(m) {
     ctx.strokeStyle = "rgba(255,255,255,.42)";
     ctx.lineWidth = 1;
     ctx.strokeRect(barX - 3, barY - 18, barW + 6, 29);
-    ctx.fillStyle = bossDifficultyColor(m.bossDifficulty);
+    ctx.fillStyle = "#fff";
     ctx.font = "900 10px Arial";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
     ctx.strokeStyle = "rgba(0,0,0,.72)";
-    const difficultyMarks = "◆".repeat(m.bossDifficulty?.marks || 2);
-    ctx.strokeText(`${difficultyMarks} ${hpLabel}`, m.x, barY - 6);
-    ctx.fillText(`${difficultyMarks} ${hpLabel}`, m.x, barY - 6);
+    ctx.strokeText(`BOSS ${hpLabel}`, m.x, barY - 6);
+    ctx.fillText(`BOSS ${hpLabel}`, m.x, barY - 6);
     ctx.fillStyle = "#281015";
     ctx.fillRect(barX, barY, barW, barH);
     ctx.fillStyle = "#ff4d42";
@@ -3361,56 +3306,7 @@ function roundRect(x, y, w, h, r) {
 function drawEffect(e) {
   const p = Math.max(0, e.t/e.life);
   ctx.save(); ctx.globalAlpha = Math.max(.15,p); ctx.strokeStyle=e.color; ctx.fillStyle=e.color;
-  if (e.type==="waveRewardReveal") {
-    const progress = 1 - p;
-    const pulse = 1 + Math.sin(progress * Math.PI) * .12 * e.intensity;
-    ctx.translate(e.tx, e.ty - progress * 16);
-    ctx.scale(pulse, pulse);
-    ctx.globalAlpha = Math.min(1, p * 1.7);
-    ctx.fillStyle = `rgba(8,10,15,${.68*p})`;
-    roundRect(-74,-24,148,48,6); ctx.fill();
-    ctx.strokeStyle = e.color; ctx.lineWidth = 2; ctx.stroke();
-    const spacing = 24;
-    for (let i=0;i<5;i+=1) {
-      const x = (i - 2) * spacing;
-      const lit = i < e.marks;
-      ctx.globalAlpha = lit ? p : p * .18;
-      ctx.fillStyle = lit ? e.color : "#7b8290";
-      ctx.strokeStyle = lit ? "#fff0b5" : "#7b8290";
-      ctx.lineWidth = lit ? 2 : 1;
-      ctx.beginPath(); ctx.arc(x,0,8,0,Math.PI*2); ctx.fill(); ctx.stroke();
-      if (lit) { ctx.fillStyle="rgba(77,44,0,.72)"; ctx.font="900 9px Arial"; ctx.textAlign="center"; ctx.fillText("$",x,3); }
-    }
-  }
-  else if (e.type==="bossDifficulty") {
-    const progress = 1 - p;
-    const pulse = 1 + Math.sin(progress * Math.PI) * .18;
-    ctx.translate(e.tx, e.ty - progress * 24);
-    ctx.scale(pulse, pulse);
-    ctx.globalAlpha = Math.min(1, p * 1.5);
-    ctx.fillStyle = `rgba(14,5,9,${.78*p})`;
-    roundRect(-78,-27,156,54,6); ctx.fill();
-    ctx.strokeStyle = e.color; ctx.lineWidth = 2.5; ctx.stroke();
-    const spacing = 27;
-    for (let i=0;i<4;i+=1) {
-      const x=(i-1.5)*spacing;
-      ctx.save(); ctx.translate(x,0); ctx.rotate(Math.PI/4);
-      ctx.fillStyle = i < e.marks ? e.color : "rgba(255,255,255,.08)";
-      ctx.strokeStyle = i < e.marks ? "#fff1de" : "rgba(255,255,255,.18)";
-      ctx.lineWidth = 2; ctx.fillRect(-8,-8,16,16); ctx.strokeRect(-8,-8,16,16); ctx.restore();
-    }
-  }
-  else if (e.type==="waveRewardClear") {
-    const progress=1-p;
-    ctx.translate(e.x,e.y-progress*20);
-    ctx.globalAlpha=Math.min(1,p*1.6);
-    ctx.fillStyle=`rgba(9,10,14,${.76*p})`; roundRect(-66,-20,132,40,5); ctx.fill();
-    ctx.strokeStyle=e.color; ctx.lineWidth=2; ctx.stroke();
-    ctx.fillStyle=e.color; ctx.beginPath(); ctx.arc(-34,0,10,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle="#6c4300"; ctx.font="900 11px Arial"; ctx.textAlign="center"; ctx.fillText("$",-34,4);
-    ctx.fillStyle="#fff1a6"; ctx.font="900 22px Arial"; ctx.textAlign="left"; ctx.fillText(e.text, -15,7);
-  }
-  else if (e.type==="bossReward") {
+  if (e.type==="bossReward") {
     const grow = 1 + (1 - p) * .35;
     const y = e.ty - (1 - p) * 34;
     const rollText = state.bossRoll ? `x${state.bossRoll.value.toFixed(1)}` : e.text;
@@ -3506,7 +3402,7 @@ function drawEffect(e) {
   else if (e.type==="coin" || e.type==="eliteCoin") {
     const elite = e.type === "eliteCoin";
     const rise = (1 - p) * (elite ? 46 : 30);
-    const pop = (1 + Math.sin((1 - p) * Math.PI) * (elite ? .28 : .16)) * Math.min(1.3, .9 + e.intensity * .1);
+    const pop = 1 + Math.sin((1 - p) * Math.PI) * (elite ? .28 : .16);
     ctx.globalAlpha = Math.min(1, p * 1.35);
     ctx.translate(e.tx, e.ty - rise);
     ctx.scale(pop, pop);
@@ -3714,7 +3610,7 @@ function drawEffect(e) {
     ctx.strokeStyle=e.color;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.tx,e.ty,6+(1-p)*7,0,Math.PI*2);ctx.stroke();
   }
   else { ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(e.x,e.y); ctx.lineTo(e.tx,e.ty); ctx.stroke(); }
-  if (e.text && !["damageText","coin","eliteCoin","bossReward","eliteDefeat","waveClear","waveRewardClear"].includes(e.type)) { ctx.fillStyle="#fff3bf"; ctx.font="bold 18px Arial"; ctx.fillText(e.text,e.tx-24,e.ty-20); }
+  if (e.text && !["damageText","coin","eliteCoin","bossReward","eliteDefeat","waveClear"].includes(e.type)) { ctx.fillStyle="#fff3bf"; ctx.font="bold 18px Arial"; ctx.fillText(e.text,e.tx-24,e.ty-20); }
   ctx.restore();
 }
 function jag(a,b,phase=0) {
@@ -3767,7 +3663,6 @@ function updateUi() {
   SPEED_STEPS.forEach(step => ui.speed.classList.toggle(`speed-${step}`, speedMultiplier() === step));
   const bossWarning = !!state.nextBoss && state.started && !state.waveActive && !state.choicesOpen && !state.over;
   ui.waveChip.classList.toggle("boss-next", bossWarning);
-  ["dry","low","normal","profit","hot"].forEach(tier => ui.potChip.classList.toggle(`reward-${tier}`, state.waveActive && state.waveReward?.id === tier));
   updateAttributeIndicators(bossWarning);
   const rollingMult = state.bossRoll ? state.bossRoll.value : null;
   ui.bossMult.textContent = rollingMult
@@ -3853,7 +3748,7 @@ function renderSlots() {
 function updateDebugSnapshot(now = performance.now()) {
   if (now - lastDebugFrame < DEBUG_FRAME_MS) return;
   lastDebugFrame = now;
-  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, waveReward:state.waveReward ? { tier:state.waveReward.id, budget:state.waveReward.budget, remaining:state.waveReward.remaining } : null, bossDifficulty:state.spawn?.bossDifficulty?.id || state.monsters.find(m => m.boss)?.bossDifficulty?.id || null, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null });
+  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null });
   if (snapshot === lastDebugSnapshot) return;
   lastDebugSnapshot = snapshot;
   document.body.dataset.debug = snapshot;

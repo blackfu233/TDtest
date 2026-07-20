@@ -670,21 +670,7 @@ canvas {
   animation: moneyPotPulse .42s ease-out;
 }
 
-.pot-chip.reward-dry { border-color: rgba(154,163,182,.42); }
-.pot-chip.reward-low { border-color: rgba(213,164,74,.58); }
-.pot-chip.reward-normal { border-color: rgba(240,188,79,.72); }
-.pot-chip.reward-profit {
-  border-color: rgba(255,229,124,.95);
-  box-shadow: inset 0 0 18px rgba(255,229,124,.12), 0 0 16px rgba(240,188,79,.26);
-}
-.pot-chip.reward-hot {
-  border-color: rgba(255,138,69,.98);
-  box-shadow: inset 0 0 22px rgba(255,113,54,.18), 0 0 20px rgba(255,104,44,.38);
-  animation: rewardHotPulse .72s ease-in-out infinite alternate;
-}
-
-.phone.reward-hot-flash .battlefield { animation: rewardFieldFlash .7s ease-out; }
-.phone.boss-difficulty-flash .battlefield { animation: bossDifficultyFlash .72s ease-out; }
+.player-hidden { display: none !important; }
 
 @keyframes bossPotPulse {
   0% { transform: scale(1); }
@@ -696,23 +682,6 @@ canvas {
   0% { filter: brightness(1); }
   38% { filter: brightness(1.36); }
   100% { filter: brightness(1); }
-}
-
-@keyframes rewardHotPulse {
-  from { filter: brightness(1); }
-  to { filter: brightness(1.25); }
-}
-
-@keyframes rewardFieldFlash {
-  0% { box-shadow: inset 0 0 0 rgba(255,177,64,0); }
-  30% { box-shadow: inset 0 0 52px rgba(255,156,56,.34); }
-  100% { box-shadow: inset 0 0 0 rgba(255,177,64,0); }
-}
-
-@keyframes bossDifficultyFlash {
-  0% { box-shadow: inset 0 0 0 rgba(255,64,72,0); }
-  28% { box-shadow: inset 0 0 62px rgba(255,54,72,.38); }
-  100% { box-shadow: inset 0 0 0 rgba(255,64,72,0); }
 }
 
 @keyframes bossNextPulse {
@@ -1250,8 +1219,5 @@ body {
   .bottom-ui.bet-ready::before,
   .bottom-ui.bet-ready::after,
   .pot-chip.elite-pop,
-  .pot-chip.reward-hot,
-  .phone.reward-hot-flash .battlefield,
-  .phone.boss-difficulty-flash .battlefield,
   .phone.elite-flash::after { animation-duration: .01ms; animation-iteration-count: 1; }
 }
