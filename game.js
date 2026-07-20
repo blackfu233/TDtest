@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "strategy-luck-balance5";
+const BUILD_VERSION = "wave-reward-boss-difficulty1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -143,6 +143,21 @@ const BOSSES = [
   { name:"遠程 Boss", hp:8200, speed:26, range:180, atk:90, interval:1.6, color:"#cc63d9" },
   { name:"干擾 Boss", hp:8500, speed:28, range:0, atk:120, interval:2.5, color:"#6981ff" },
   { name:"坦克 Boss", hp:13000, speed:24, range:0, atk:130, interval:2.4, color:"#b58b4b" },
+];
+
+const WAVE_REWARD_TIERS = [
+  { id:"dry", label:"低潮", weightKey:"waveRewardDryWeight", mulKey:"waveRewardDryMul" },
+  { id:"low", label:"小獎", weightKey:"waveRewardLowWeight", mulKey:"waveRewardLowMul" },
+  { id:"normal", label:"普通", weightKey:"waveRewardNormalWeight", mulKey:"waveRewardNormalMul" },
+  { id:"profit", label:"獲利", weightKey:"waveRewardProfitWeight", mulKey:"waveRewardProfitMul" },
+  { id:"hot", label:"熱波", weightKey:"waveRewardHotWeight", mulKey:"waveRewardHotMul" },
+];
+
+const BOSS_DIFFICULTY_TIERS = [
+  { id:"easy", label:"容易", weightKey:"bossDiffEasyWeight", hpKey:"bossDiffEasyHpMul", atkKey:"bossDiffEasyAtkMul", speedKey:"bossDiffEasySpeedMul", marks:1 },
+  { id:"normal", label:"標準", weightKey:"bossDiffNormalWeight", hpKey:"bossDiffNormalHpMul", atkKey:"bossDiffNormalAtkMul", speedKey:"bossDiffNormalSpeedMul", marks:2 },
+  { id:"hard", label:"困難", weightKey:"bossDiffHardWeight", hpKey:"bossDiffHardHpMul", atkKey:"bossDiffHardAtkMul", speedKey:"bossDiffHardSpeedMul", marks:3 },
+  { id:"brutal", label:"極難", weightKey:"bossDiffBrutalWeight", hpKey:"bossDiffBrutalHpMul", atkKey:"bossDiffBrutalAtkMul", speedKey:"bossDiffBrutalSpeedMul", marks:4 },
 ];
 
 const WAVE = [
@@ -469,7 +484,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 7,
+  balanceRevision: 8,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -492,13 +507,39 @@ const DEFAULT_PARAMS = {
   eliteHpMul: 1.05,
   eliteAtkMul: 1.05,
   bossFirstHpMul: 1.10,
-  bossHpMul: .68,
+  bossHpMul: .52,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
   moneyMul: 1.15,
-  deepMoneyBase: 1.60,
-  deepMoneyRamp: .10,
-  deepMoneyCap: 4.5,
+  deepMoneyBase: 1.35,
+  deepMoneyRamp: .04,
+  deepMoneyCap: 1.80,
+  waveRewardDryWeight: 30,
+  waveRewardDryMul: .105,
+  waveRewardLowWeight: 32,
+  waveRewardLowMul: .24,
+  waveRewardNormalWeight: 25,
+  waveRewardNormalMul: .48,
+  waveRewardProfitWeight: 10,
+  waveRewardProfitMul: 1.35,
+  waveRewardHotWeight: 3,
+  waveRewardHotMul: 2.45,
+  bossDiffEasyWeight: 25,
+  bossDiffEasyHpMul: .80,
+  bossDiffEasyAtkMul: .90,
+  bossDiffEasySpeedMul: .97,
+  bossDiffNormalWeight: 45,
+  bossDiffNormalHpMul: 1.25,
+  bossDiffNormalAtkMul: 1.05,
+  bossDiffNormalSpeedMul: 1.0,
+  bossDiffHardWeight: 23,
+  bossDiffHardHpMul: 1.75,
+  bossDiffHardAtkMul: 1.25,
+  bossDiffHardSpeedMul: 1.04,
+  bossDiffBrutalWeight: 7,
+  bossDiffBrutalHpMul: 2.40,
+  bossDiffBrutalAtkMul: 1.45,
+  bossDiffBrutalSpeedMul: 1.08,
   spawnInterval: .26,
   waveAttrBiasEarly: 0.72,
   waveAttrBias: 0.58,
@@ -534,9 +575,19 @@ function cleanParams(input={}) {
   next.bossFirstChanceInc = Math.max(0, Math.min(100, next.bossFirstChanceInc));
   next.bossFirstRewardMul = Math.max(0, next.bossFirstRewardMul);
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
-  next.deepMoneyBase = Math.max(1, next.deepMoneyBase);
+  next.deepMoneyBase = Math.max(0, next.deepMoneyBase);
   next.deepMoneyRamp = Math.max(0, next.deepMoneyRamp);
-  next.deepMoneyCap = Math.max(1, next.deepMoneyCap);
+  next.deepMoneyCap = Math.max(next.deepMoneyBase, next.deepMoneyCap);
+  WAVE_REWARD_TIERS.forEach(tier => {
+    next[tier.weightKey] = Math.max(0, next[tier.weightKey]);
+    next[tier.mulKey] = Math.max(0, next[tier.mulKey]);
+  });
+  BOSS_DIFFICULTY_TIERS.forEach(tier => {
+    next[tier.weightKey] = Math.max(0, next[tier.weightKey]);
+    next[tier.hpKey] = Math.max(.1, next[tier.hpKey]);
+    next[tier.atkKey] = Math.max(.1, next[tier.atkKey]);
+    next[tier.speedKey] = Math.max(.1, next[tier.speedKey]);
+  });
   next.spawnInterval = Math.max(.08, Math.min(2, next.spawnInterval));
   next.baseHp = Math.max(1, Math.round(next.baseHp));
   if (next.tower_gas_duration <= 0) next.tower_gas_duration = DEFAULT_PARAMS.tower_gas_duration;
@@ -570,13 +621,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:7 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:8 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:7 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:8 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -584,6 +635,14 @@ function migrateBossParams(input={}) {
     next.balanceRevision = 6;
   }
   if ((Number(input.balanceRevision) || 0) < 7) next.balanceRevision = 7;
+  if ((Number(input.balanceRevision) || 0) < 8) {
+    [
+      ...WAVE_REWARD_TIERS.flatMap(tier => [tier.weightKey, tier.mulKey]),
+      ...BOSS_DIFFICULTY_TIERS.flatMap(tier => [tier.weightKey, tier.hpKey, tier.atkKey, tier.speedKey]),
+      "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "bossHpMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 8;
+  }
   return next;
 }
 
@@ -621,7 +680,7 @@ function reset() {
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
     towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, waveActive: false, upgradeRepeatLocks: {},
-    spawn: null, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
+    spawn: null, waveReward: null, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
   };
   hideChoices();
   hideResult();
@@ -718,13 +777,63 @@ function applyWaveAttributeBias(attrMultipliers, primaryAttr) {
   return result;
 }
 function currentBet() {
+  return betForWave(state.wave + 1);
+}
+function betForWave(wave) {
   const base = BET_STEPS[state.baseBetIndex];
-  const depthMul = state.wave + 1 >= 21 ? params.betDeepMul : state.wave + 1 >= 11 ? params.betMidMul : 1;
+  const depthMul = wave >= 21 ? params.betDeepMul : wave >= 11 ? params.betMidMul : 1;
   const bossStep = Math.max(1, params.bossBetStepMul);
   const bossMul = 1 + state.bossSeen * (bossStep - 1);
   return Math.round(base * depthMul * bossMul);
 }
 function payout() { return Math.floor(state.pot * (1 + state.bossAdd)); }
+
+function pickParamTier(tiers) {
+  const weights = Object.fromEntries(tiers.map(tier => [tier.id, Math.max(0, paramNumber(tier.weightKey, 0))]));
+  if (!Object.values(weights).some(weight => weight > 0)) return tiers[0];
+  const id = pickWeighted(weights);
+  return tiers.find(tier => tier.id === id) || tiers[0];
+}
+
+function waveRewardDepthMul(wave) {
+  if (wave < 11) return 1;
+  return Math.min(params.deepMoneyCap, params.deepMoneyBase + (wave - 11) * params.deepMoneyRamp);
+}
+
+function rollWaveReward(wave, bet) {
+  const tier = pickParamTier(WAVE_REWARD_TIERS);
+  const multiplier = Math.max(0, paramNumber(tier.mulKey, 0));
+  const budget = Math.max(0, Math.round(bet * multiplier * params.moneyMul * waveRewardDepthMul(wave)));
+  return { id:tier.id, label:tier.label, multiplier, budget, remaining:budget, weightRemaining:0 };
+}
+
+function rollBossDifficulty() {
+  const tier = pickParamTier(BOSS_DIFFICULTY_TIERS);
+  return {
+    id:tier.id,
+    label:tier.label,
+    marks:tier.marks,
+    hpMul:paramNumber(tier.hpKey, 1),
+    atkMul:paramNumber(tier.atkKey, 1),
+    speedMul:paramNumber(tier.speedKey, 1),
+  };
+}
+
+function normalRewardWeight(kind, band) {
+  const base = MONSTERS[kind];
+  const min = paramNumber(`monster_${kind}_moneyMin`, base.money[0]);
+  const max = paramNumber(`monster_${kind}_moneyMax`, base.money[1]);
+  const drop = clamp((band.drop[kind] || 0) * params.dropChanceMul, 0, 1);
+  return Math.max(.01, ((min + max) / 2) * drop);
+}
+
+function eliteRewardWeight(index) {
+  const base = ELITES[index];
+  const tuneId = `elite_${index + 1}`;
+  const min = paramNumber(`monster_${tuneId}_moneyMin`, base.money[0]);
+  const max = paramNumber(`monster_${tuneId}_moneyMax`, base.money[1]);
+  return Math.max(.01, ((min + max) / 2) * params.eliteMoneyMul);
+}
 
 function prepareNextBossPreview() {
   const nextWave = state.wave + 1;
@@ -996,7 +1105,22 @@ function startWave() {
   const count = rand(band.count[0], band.count[1]);
   const boss = consumeBossPreview(state.wave, info);
   const elites = eliteCount(info);
-  state.spawn = { remain: count, timer: 0, every: params.spawnInterval, template, hpMul: info.hpMul, band, elites, boss, primaryAttr, wave:state.wave };
+  const normalQueue = Array.from({ length:count }, () => {
+    const kind = pickWaveMonster(template);
+    return { kind, rewardWeight:normalRewardWeight(kind, band) };
+  });
+  const eliteQueue = Array.from({ length:elites }, () => {
+    const index = rand(0, ELITES.length - 1);
+    return { index, rewardWeight:eliteRewardWeight(index) };
+  });
+  const reward = rollWaveReward(state.wave, betForWave(state.wave));
+  reward.weightRemaining = [...normalQueue, ...eliteQueue].reduce((sum, entry) => sum + entry.rewardWeight, 0);
+  state.waveReward = reward;
+  state.spawn = {
+    remain:normalQueue.length, normalQueue, eliteQueue, timer:0, every:params.spawnInterval,
+    template, hpMul:info.hpMul, band, elites:eliteQueue.length, boss,
+    bossDifficulty:boss ? rollBossDifficulty() : null, primaryAttr, wave:state.wave
+  };
   state.waveActive = true;
   state.message = `第 ${state.wave} 波開始：${count} 隻怪${elites ? `，菁英 ${elites}` : ""}${boss ? "，Boss 接近" : ""}`;
   updateUi();
@@ -1014,24 +1138,23 @@ function eliteCount(info) {
   return info.e3 > 0 ? 3 : 1;
 }
 
-function spawnMonster(kind, hpMul, band, primaryAttr, wave) {
+function spawnMonster(kind, hpMul, band, primaryAttr, wave, rewardWeight=0) {
   const base = MONSTERS[kind];
   const lane = base.special ? rand(-68, 68) : pick([-70, -35, 0, 35, 70]) + rand(-4, 4);
   const x = FIELD.pathX + lane;
   const curve = base.special ? rand(30, 54) * pick([-1, 1]) : 0;
-  state.monsters.push(makeEnemy(base, hpMul, x, curve, kind, band.drop[kind], false, false, base.special ? "sway" : "straight", kind, pickWaveAttribute(primaryAttr, wave)));
+  state.monsters.push(makeEnemy(base, hpMul, x, curve, kind, band.drop[kind], false, false, base.special ? "sway" : "straight", kind, pickWaveAttribute(primaryAttr, wave), 0, rewardWeight));
 }
-function spawnElite(hpMul, primaryAttr, wave) {
-  const index = rand(0, ELITES.length - 1);
+function spawnElite(hpMul, primaryAttr, wave, index=rand(0, ELITES.length - 1), rewardWeight=0) {
   const base = ELITES[index];
-  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX + pick([-54, -18, 18, 54]) + rand(-4, 4), 0, "elite", 1, true, false, "straight", `elite_${index + 1}`, pickWaveAttribute(primaryAttr, wave)));
+  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX + pick([-54, -18, 18, 54]) + rand(-4, 4), 0, "elite", 1, true, false, "straight", `elite_${index + 1}`, pickWaveAttribute(primaryAttr, wave), 0, rewardWeight));
 }
-function spawnBoss(hpMul, primaryAttr, wave) {
+function spawnBoss(hpMul, primaryAttr, wave, difficulty=null) {
   const index = rand(0, BOSSES.length - 1);
   const base = BOSSES[index];
-  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", `boss_${index + 1}`, pickWaveAttribute(primaryAttr, wave, true), state.bossRolled));
+  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", `boss_${index + 1}`, pickWaveAttribute(primaryAttr, wave, true), state.bossRolled, 0, difficulty));
 }
-function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind, primaryAttr=null, bossOrdinal=0) {
+function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind, primaryAttr=null, bossOrdinal=0, rewardWeight=0, bossDifficulty=null) {
   const tunedBase = {
     ...base,
     hp: paramNumber(`monster_${tuneId}_hp`, base.hp),
@@ -1052,11 +1175,14 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
     : elite ? params.eliteHpMul : params.minionHpMul;
   const classAtkMul = boss ? params.bossAtkMul : elite ? params.eliteAtkMul : params.minionAtkMul;
   const classSpeedMul = boss ? params.bossSpeedMul : elite ? 1 : params.minionSpeedMul;
-  const hp = Math.round(tunedBase.hp * hpMul * classHpMul);
+  const difficultyHpMul = boss ? (bossDifficulty?.hpMul || 1) : 1;
+  const difficultyAtkMul = boss ? (bossDifficulty?.atkMul || 1) : 1;
+  const difficultySpeedMul = boss ? (bossDifficulty?.speedMul || 1) : 1;
+  const hp = Math.round(tunedBase.hp * hpMul * classHpMul * difficultyHpMul);
   const minionAtkMul = { normal:.25, fast:.27, tank:.28, ranged:.30, special:.33 };
-  const atk = elite || boss ? Math.round(tunedBase.atk * classAtkMul) : Math.max(1, Math.round(tunedBase.atk * (minionAtkMul[kind] || .3) * classAtkMul));
+  const atk = elite || boss ? Math.round(tunedBase.atk * classAtkMul * difficultyAtkMul) : Math.max(1, Math.round(tunedBase.atk * (minionAtkMul[kind] || .3) * classAtkMul));
   const minionSpeedMul = { normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 };
-  const speed = elite || boss ? Math.max(1, Math.round(tunedBase.speed * classSpeedMul)) : Math.max(1, Math.round(tunedBase.speed * (minionSpeedMul[kind] || .72) * classSpeedMul));
+  const speed = elite || boss ? Math.max(1, Math.round(tunedBase.speed * classSpeedMul * difficultySpeedMul)) : Math.max(1, Math.round(tunedBase.speed * (minionSpeedMul[kind] || .72) * classSpeedMul));
   const attributeDefaults = ENEMY_ATTRIBUTE_DEFAULTS[tuneId] || {};
   const baseAttrMultipliers = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [
     attr,
@@ -1065,7 +1191,7 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   const attrMultipliers = applyWaveAttributeBias(baseAttrMultipliers, primaryAttr);
   return { ...tunedBase, kind, elite, boss, pathType, x, y: FIELD.spawnY, sx:x, curve, hp, maxHp:hp, atk, speed, atkCd:0, stopped:false,
     tuneId, attrMultipliers, burn:0, burnTime:0, poison:0, poisonTime:0, toxicTime:0, slowTime:0, slowPct:0, stunTime:0, freezeTime:0,
-    focusMarkTime:0, electricVulnerableTime:0, electricVulnerableAmount:0, vulnerable:0, vulnerableAmount:0, dropChance };
+    focusMarkTime:0, electricVulnerableTime:0, electricVulnerableAmount:0, vulnerable:0, vulnerableAmount:0, dropChance, rewardWeight, bossDifficulty };
 }
 
 function update(dt) {
@@ -1086,12 +1212,17 @@ function updateSpawn(dt) {
   const s = state.spawn;
   s.timer -= dt;
   if (s.timer <= 0 && s.remain > 0) {
-    spawnMonster(pickWaveMonster(s.template), s.hpMul, s.band, s.primaryAttr, s.wave);
+    const entry = s.normalQueue.shift();
+    spawnMonster(entry.kind, s.hpMul, s.band, s.primaryAttr, s.wave, entry.rewardWeight);
     s.remain -= 1;
     s.timer = s.every;
   }
-  if (s.remain <= 0 && s.elites > 0) { spawnElite(s.hpMul, s.primaryAttr, s.wave); s.elites -= 1; }
-  if (s.remain <= 0 && s.elites <= 0 && s.boss) { spawnBoss(s.hpMul, s.primaryAttr, s.wave); s.boss = false; }
+  if (s.remain <= 0 && s.elites > 0) {
+    const entry = s.eliteQueue.shift();
+    spawnElite(s.hpMul, s.primaryAttr, s.wave, entry.index, entry.rewardWeight);
+    s.elites -= 1;
+  }
+  if (s.remain <= 0 && s.elites <= 0 && s.boss) { spawnBoss(s.hpMul, s.primaryAttr, s.wave, s.bossDifficulty); s.boss = false; }
   if (s.remain <= 0 && s.elites <= 0 && !s.boss) state.spawn = null;
 }
 
@@ -1888,15 +2019,24 @@ function kill(m) {
     return;
   }
   state.exp += (m.exp || 0) * params.expMul;
-  if (Math.random() < clamp((m.dropChance ?? 1) * params.dropChanceMul, 0, 1)) {
-    const deepMoneyMul = state.wave >= 11
-      ? Math.min(params.deepMoneyCap, params.deepMoneyBase + (state.wave - 10) * params.deepMoneyRamp)
-      : 1;
-    const moneyMul = params.moneyMul * deepMoneyMul * (m.elite ? params.eliteMoneyMul : 1);
-    const amount = Math.max(1, Math.round(rand(m.money[0], m.money[1]) * moneyMul));
+  const amount = claimWaveReward(m);
+  if (amount > 0) {
     state.pot += amount;
     showMoneyReward(m, amount);
   }
+}
+
+function claimWaveReward(m) {
+  const reward = state.waveReward;
+  const weight = Math.max(0, Number(m.rewardWeight) || 0);
+  if (!reward || reward.remaining <= 0 || weight <= 0 || reward.weightRemaining <= 0) return 0;
+  const finalShare = weight >= reward.weightRemaining - .0001;
+  const amount = finalShare
+    ? reward.remaining
+    : Math.max(0, Math.round(reward.remaining * weight / reward.weightRemaining));
+  reward.remaining = Math.max(0, reward.remaining - amount);
+  reward.weightRemaining = Math.max(0, reward.weightRemaining - weight);
+  return amount;
 }
 
 function showMoneyReward(m, amount) {
@@ -2799,8 +2939,9 @@ function drawEnemy(m) {
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
     ctx.strokeStyle = "rgba(0,0,0,.72)";
-    ctx.strokeText(`BOSS ${hpLabel}`, m.x, barY - 6);
-    ctx.fillText(`BOSS ${hpLabel}`, m.x, barY - 6);
+    const difficultyMarks = "◆".repeat(m.bossDifficulty?.marks || 2);
+    ctx.strokeText(`${difficultyMarks} ${hpLabel}`, m.x, barY - 6);
+    ctx.fillText(`${difficultyMarks} ${hpLabel}`, m.x, barY - 6);
     ctx.fillStyle = "#281015";
     ctx.fillRect(barX, barY, barW, barH);
     ctx.fillStyle = "#ff4d42";
@@ -3608,7 +3749,7 @@ function renderSlots() {
 function updateDebugSnapshot(now = performance.now()) {
   if (now - lastDebugFrame < DEBUG_FRAME_MS) return;
   lastDebugFrame = now;
-  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null });
+  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, waveReward:state.waveReward ? { tier:state.waveReward.id, budget:state.waveReward.budget, remaining:state.waveReward.remaining } : null, bossDifficulty:state.spawn?.bossDifficulty?.id || state.monsters.find(m => m.boss)?.bossDifficulty?.id || null, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null });
   if (snapshot === lastDebugSnapshot) return;
   lastDebugSnapshot = snapshot;
   document.body.dataset.debug = snapshot;
