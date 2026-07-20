@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "audio-rtp-balance1";
+const BUILD_VERSION = "audible-bgm1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -58,6 +58,7 @@ const audioState = {
   bgmTimer: null,
   bgmStep: 0,
   bgmSources: new Set(),
+  resumePromise: null,
   muted: false,
   last: new Map(),
   noiseBuffer: null,
@@ -74,20 +75,32 @@ function ensureAudio() {
     audioState.master = audioState.ctx.createGain();
     audioState.sfxBus = audioState.ctx.createGain();
     audioState.bgmBus = audioState.ctx.createGain();
-    audioState.master.gain.value = .62;
+    audioState.master.gain.value = .68;
     audioState.sfxBus.gain.value = 1;
-    audioState.bgmBus.gain.value = .22;
+    audioState.bgmBus.gain.value = .52;
     audioState.sfxBus.connect(audioState.master);
     audioState.bgmBus.connect(audioState.master);
     audioState.master.connect(audioState.ctx.destination);
   }
-  if (audioState.ctx.state === "suspended") audioState.ctx.resume().catch(() => {});
-  startBgm(audioState.ctx);
+  if (audioState.ctx.state === "running") startBgm(audioState.ctx);
+  else if (!audioState.resumePromise) {
+    const audio = audioState.ctx;
+    audioState.resumePromise = audio.resume()
+      .then(() => { if (audio.state === "running") startBgm(audio); })
+      .catch(() => {})
+      .finally(() => { audioState.resumePromise = null; });
+  }
   return audioState.ctx;
 }
 
-const BGM_MELODY = [220,0,261.63,196, 220,293.66,261.63,0, 196,0,246.94,174.61, 196,261.63,246.94,0];
-const BGM_BASS = [55,65.41,49,58.27];
+const BGM_MELODY = [440,0,523.25,392, 440,587.33,523.25,0, 392,0,493.88,349.23, 392,523.25,493.88,0];
+const BGM_BASS = [110,130.81,98,116.54];
+const BGM_CHORDS = [
+  [220,261.63,329.63],
+  [261.63,329.63,392],
+  [196,246.94,293.66],
+  [233.08,293.66,349.23],
+];
 
 function scheduleBgmVoice(audio, frequency, duration, type, gain, start) {
   const oscillator = audio.createOscillator();
@@ -113,16 +126,20 @@ function scheduleBgmStep(audio) {
   const step = audioState.bgmStep++;
   const start = audio.currentTime + .025;
   const melody = BGM_MELODY[step % BGM_MELODY.length];
-  if (melody) scheduleBgmVoice(audio, melody, .36, "triangle", .036, start);
+  if (melody) scheduleBgmVoice(audio, melody, .38, "triangle", .082, start);
   if (step % 4 === 0) {
-    const bass = BGM_BASS[Math.floor(step / 4) % BGM_BASS.length];
-    scheduleBgmVoice(audio, bass, 1.25, "sine", .05, start);
+    const chordIndex = Math.floor(step / 4) % BGM_BASS.length;
+    const bass = BGM_BASS[chordIndex];
+    scheduleBgmVoice(audio, bass, 1.25, "triangle", .085, start);
+    BGM_CHORDS[chordIndex].forEach(frequency => {
+      scheduleBgmVoice(audio, frequency, 1.65, "sine", .028, start);
+    });
   }
   audioState.bgmTimer = window.setTimeout(() => scheduleBgmStep(audio), 460);
 }
 
 function startBgm(audio=audioState.ctx) {
-  if (audioState.muted || !audio || audioState.bgmTimer !== null) return;
+  if (audioState.muted || !audio || audio.state !== "running" || audioState.bgmTimer !== null) return;
   scheduleBgmStep(audio);
 }
 
@@ -132,6 +149,17 @@ function stopBgm() {
   audioState.bgmSources.forEach(source => { try { source.stop(); } catch {} });
   audioState.bgmSources.clear();
 }
+
+function unlockAudioFromGesture() {
+  if (audioState.muted) return;
+  const audio = ensureAudio();
+  if (!audio || audio.state === "running") return;
+  audio.resume().then(() => startBgm(audio)).catch(() => {});
+}
+
+document.addEventListener("pointerdown", unlockAudioFromGesture, { capture:true, passive:true });
+document.addEventListener("touchend", unlockAudioFromGesture, { capture:true, passive:true });
+document.addEventListener("keydown", unlockAudioFromGesture, { capture:true });
 
 function soundTone(key, frequency, duration=.08, type="sine", gain=.05, endFrequency=frequency, delay=0, minGap=0) {
   const audio = ensureAudio();
@@ -4132,7 +4160,7 @@ function renderSlots() {
 function updateDebugSnapshot(now = performance.now()) {
   if (now - lastDebugFrame < DEBUG_FRAME_MS) return;
   lastDebugFrame = now;
-  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null });
+  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null, audio:{ state:audioState.ctx?.state || "none", bgm:audioState.bgmTimer !== null, voices:audioState.bgmSources.size } });
   if (snapshot === lastDebugSnapshot) return;
   lastDebugSnapshot = snapshot;
   document.body.dataset.debug = snapshot;
