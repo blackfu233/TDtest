@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "hidden-rolls1";
+const BUILD_VERSION = "sound-laser1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -31,6 +31,7 @@ const ui = {
   collect: document.getElementById("collectBtn"),
   collectText: document.getElementById("collectText"),
   reset: document.getElementById("resetBtn"),
+  sound: document.getElementById("soundBtn"),
   speed: document.getElementById("speedBtn"),
   choiceOverlay: document.getElementById("choiceOverlay"),
   choiceTitle: document.getElementById("choiceTitle"),
@@ -44,9 +45,211 @@ const ui = {
 
 const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
 const SPEED_STEPS = [1, 2, 3];
+const SOUND_STORAGE_KEY = "towerDefenseSoundMuted.v1";
 const FIELD = { w: 350, h: 760, pathX: 175, spawnY: -18, baseY: 720, attackLineY: 720 };
 const TOWER_SLOTS = [{ x: 62, y: 700 }, { x: 175, y: 678 }, { x: 288, y: 700 }];
 const EXP_TABLE = [95,125,155,190,225,290,330,370,415,460,510,565,625,690,760,835,915,1000,1090,1185,1285,1390,1500,1615,1735,1860,1990,2125,2265,2410,2560,2715,2875,3040,3210,3385,3565,3750,3940];
+
+const audioState = {
+  ctx: null,
+  master: null,
+  muted: false,
+  last: new Map(),
+  noiseBuffer: null,
+  channels: new Set(),
+};
+try { audioState.muted = localStorage.getItem(SOUND_STORAGE_KEY) === "1"; } catch {}
+
+function ensureAudio() {
+  if (audioState.muted) return null;
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return null;
+  if (!audioState.ctx) {
+    audioState.ctx = new AudioCtor({ latencyHint:"interactive" });
+    audioState.master = audioState.ctx.createGain();
+    audioState.master.gain.value = .42;
+    audioState.master.connect(audioState.ctx.destination);
+  }
+  if (audioState.ctx.state === "suspended") audioState.ctx.resume().catch(() => {});
+  return audioState.ctx;
+}
+
+function soundTone(key, frequency, duration=.08, type="sine", gain=.05, endFrequency=frequency, delay=0, minGap=0) {
+  const audio = ensureAudio();
+  if (!audio) return;
+  const previous = audioState.last.get(key) ?? -Infinity;
+  if (audio.currentTime - previous < minGap) return;
+  audioState.last.set(key, audio.currentTime);
+  const start = audio.currentTime + delay;
+  const end = start + duration;
+  const oscillator = audio.createOscillator();
+  const volume = audio.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(Math.max(20, frequency), start);
+  oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), end);
+  volume.gain.setValueAtTime(.0001, start);
+  volume.gain.exponentialRampToValueAtTime(Math.max(.0002, gain), start + Math.min(.018, duration * .25));
+  volume.gain.exponentialRampToValueAtTime(.0001, end);
+  oscillator.connect(volume);
+  volume.connect(audioState.master);
+  oscillator.start(start);
+  oscillator.stop(end + .02);
+}
+
+function soundNoise(key, duration=.1, gain=.035, filterFrequency=900, delay=0, minGap=0) {
+  const audio = ensureAudio();
+  if (!audio) return;
+  const previous = audioState.last.get(key) ?? -Infinity;
+  if (audio.currentTime - previous < minGap) return;
+  audioState.last.set(key, audio.currentTime);
+  if (!audioState.noiseBuffer) {
+    const length = Math.ceil(audio.sampleRate * .6);
+    audioState.noiseBuffer = audio.createBuffer(1, length, audio.sampleRate);
+    const data = audioState.noiseBuffer.getChannelData(0);
+    for (let i=0;i<length;i+=1) data[i] = Math.random() * 2 - 1;
+  }
+  const start = audio.currentTime + delay;
+  const source = audio.createBufferSource();
+  const filter = audio.createBiquadFilter();
+  const volume = audio.createGain();
+  source.buffer = audioState.noiseBuffer;
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(filterFrequency, start);
+  volume.gain.setValueAtTime(Math.max(.0002, gain), start);
+  volume.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  source.connect(filter);
+  filter.connect(volume);
+  volume.connect(audioState.master);
+  source.start(start);
+  source.stop(start + duration + .02);
+}
+
+function playSfx(name) {
+  if (name === "bet") {
+    soundTone("bet-low", 150, .09, "square", .045, 205);
+    soundTone("bet-high", 260, .1, "triangle", .04, 360, .07);
+  } else if (name === "ui") soundTone("ui", 360, .045, "square", .025, 440, 0, .035);
+  else if (name === "upgrade") {
+    soundTone("upgrade-a", 410, .11, "triangle", .045, 610);
+    soundTone("upgrade-b", 610, .13, "triangle", .04, 880, .09);
+  } else if (name === "coin") soundTone("coin", 760, .07, "sine", .032, 1120, 0, .055);
+  else if (name === "elite") {
+    soundNoise("elite-noise", .2, .05, 1500);
+    soundTone("elite-a", 180, .18, "sawtooth", .055, 420);
+    soundTone("elite-b", 480, .22, "triangle", .055, 820, .1);
+  } else if (name === "boss") {
+    soundNoise("boss-noise", .32, .06, 1000);
+    [180,270,405,610].forEach((frequency, index) => soundTone(`boss-${index}`, frequency, .18, "sawtooth", .055, frequency * 1.18, index * .11));
+  } else if (name === "waveClear") {
+    [420,560,740].forEach((frequency, index) => soundTone(`clear-${index}`, frequency, .14, "triangle", .04, frequency * 1.08, index * .08));
+  } else if (name === "collect") {
+    [520,680,920].forEach((frequency, index) => soundTone(`collect-${index}`, frequency, .16, "sine", .05, frequency * 1.18, index * .09));
+  } else if (name === "baseHit") {
+    soundNoise("base-hit-noise", .09, .045, 420, 0, .14);
+    soundTone("base-hit", 92, .12, "square", .04, 54, 0, .14);
+  } else if (name === "fail") {
+    soundNoise("fail-noise", .38, .055, 520);
+    soundTone("fail-a", 220, .48, "sawtooth", .055, 72);
+  }
+}
+
+function playTowerSfx(mode) {
+  if (mode === "grenade") {
+    soundNoise("tower-grenade", .12, .035, 620, 0, .18);
+    soundTone("tower-grenade-tone", 125, .14, "square", .035, 74, 0, .18);
+  } else if (mode === "cryo") soundTone("tower-cryo", 980, .1, "sine", .04, 1480, 0, .16);
+  else if (mode === "frostbomb") {
+    soundTone("tower-frost", 620, .14, "triangle", .038, 380, 0, .18);
+    soundTone("tower-frost-hi", 1240, .09, "sine", .025, 820, .03, .18);
+  } else if (mode === "chain") {
+    soundNoise("tower-chain-noise", .08, .025, 2400, 0, .12);
+    soundTone("tower-chain", 520, .09, "sawtooth", .035, 1180, 0, .12);
+  } else if (mode === "gas") soundNoise("tower-gas", .2, .035, 760, 0, .22);
+  else if (mode === "needle") soundTone("tower-needle", 520, .065, "square", .03, 260, 0, .11);
+  else if (mode === "blade") {
+    soundNoise("tower-blade-noise", .08, .022, 1800, 0, .11);
+    soundTone("tower-blade", 260, .1, "sawtooth", .028, 520, 0, .11);
+  } else if (mode === "trap") soundTone("tower-trap", 150, .12, "triangle", .032, 98, 0, .18);
+  else if (mode === "flame") soundNoise("tower-flame-start", .16, .045, 1300, 0, .2);
+  else if (mode === "laser") soundTone("tower-laser-start", 110, .16, "sawtooth", .04, 190, 0, .2);
+}
+
+function startChannelAudio(mode) {
+  const audio = ensureAudio();
+  if (!audio || (mode !== "laser" && mode !== "flame")) return null;
+  const start = audio.currentTime;
+  const volume = audio.createGain();
+  volume.gain.setValueAtTime(.0001, start);
+  volume.gain.exponentialRampToValueAtTime(mode === "laser" ? .025 : .032, start + .06);
+  volume.connect(audioState.master);
+  let source;
+  let extra = null;
+  if (mode === "laser") {
+    source = audio.createOscillator();
+    source.type = "sawtooth";
+    source.frequency.setValueAtTime(118, start);
+    source.frequency.linearRampToValueAtTime(132, start + 1.2);
+    extra = audio.createOscillator();
+    extra.type = "sine";
+    extra.frequency.setValueAtTime(236, start);
+    extra.connect(volume);
+    extra.start(start);
+  } else {
+    if (!audioState.noiseBuffer) {
+      const length = Math.ceil(audio.sampleRate * .6);
+      audioState.noiseBuffer = audio.createBuffer(1, length, audio.sampleRate);
+      const data = audioState.noiseBuffer.getChannelData(0);
+      for (let i=0;i<length;i+=1) data[i] = Math.random() * 2 - 1;
+    }
+    source = audio.createBufferSource();
+    source.buffer = audioState.noiseBuffer;
+    source.loop = true;
+    const filter = audio.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 720;
+    filter.Q.value = .7;
+    source.connect(filter);
+    filter.connect(volume);
+  }
+  source.connect(volume);
+  source.start(start);
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    const now = audio.currentTime;
+    volume.gain.cancelScheduledValues(now);
+    volume.gain.setValueAtTime(Math.max(.0001, volume.gain.value), now);
+    volume.gain.exponentialRampToValueAtTime(.0001, now + .055);
+    try { source.stop(now + .06); } catch {}
+    try { extra?.stop(now + .06); } catch {}
+    audioState.channels.delete(stop);
+  };
+  audioState.channels.add(stop);
+  return stop;
+}
+
+function stopChannelAudio() {
+  [...audioState.channels].forEach(stop => stop());
+  audioState.channels.clear();
+}
+
+function updateSoundButton() {
+  if (!ui.sound) return;
+  ui.sound.classList.toggle("muted", audioState.muted);
+  ui.sound.setAttribute?.("aria-label", audioState.muted ? "開啟音效" : "關閉音效");
+}
+
+function toggleSound() {
+  audioState.muted = !audioState.muted;
+  try { localStorage.setItem(SOUND_STORAGE_KEY, audioState.muted ? "1" : "0"); } catch {}
+  if (audioState.muted) stopChannelAudio();
+  else {
+    ensureAudio();
+    playSfx("ui");
+  }
+  updateSoundButton();
+}
 
 const TOWERS = [
   { id:"flame", name:"噴火槍", attr:"火", damage:80, range:460, rate:4.00, mode:"flame", color:"#ff5c2d", desc:"1.5秒持續噴灑，擅長壓制小怪群。" },
@@ -676,6 +879,7 @@ let lastDebugSnapshot = "";
 const slotViews = [];
 
 function reset() {
+  stopChannelAudio();
   const wallet = state && Number.isFinite(state.wallet) ? state.wallet : loadWallet();
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
@@ -913,6 +1117,7 @@ function showChoices(title, hint, choices) {
       event.stopPropagation();
       if (btn.disabled) return;
       btn.disabled = true;
+      playSfx("upgrade");
       try {
         choice.onPick();
       } catch (error) {
@@ -944,6 +1149,7 @@ function startBet() {
   if (state.over || state.choicesOpen || state.waveActive || state.monsters.length) return;
   const bet = currentBet();
   if (state.wallet < bet) { showResult("錢包不足", "沒有足夠餘額下注。"); return; }
+  playSfx("bet");
   if (!state.started) {
     state.wallet -= bet;
     persistWallet();
@@ -1296,6 +1502,7 @@ function attack(t) {
   const targets = findTargets(t);
   if (!targets.length) return;
   const primary = targets[0].m;
+  playTowerSfx(t.mode);
   if (t.mode === "flame" || t.mode === "laser") startChannel(t, primary);
   else if (t.mode === "grenade") launchProjectileCluster(t, targets, "grenade", 1 + (t.extraAreas || 0), scaledSplash(t, t.splash || 54));
   else if (t.mode === "cryo") launchProjectileSpread(t, primary, "cryo", 1 + (t.extraProjectiles || 0), 28);
@@ -1359,7 +1566,9 @@ function startChannel(t, primary) {
     target: primary,
     lockElapsed: 0,
     aimAngle: Math.atan2(primary.y - origin.y, primary.x - origin.x),
-    burstTargets: new Set()
+    burstTargets: new Set(),
+    refractTarget: null,
+    audioStop: startChannelAudio(t.mode)
   };
   t.cd = 0;
 }
@@ -1368,23 +1577,30 @@ function updateChannel(t, dt) {
   const c = t.channel;
   c.time -= dt;
   c.tick -= dt;
+  if (t.mode === "laser") {
+    const visibleTargets = findTargets(t);
+    const target = c.target && c.target.hp > 0 && dist(fireOrigin(), c.target) <= scaledRange(t)
+      ? c.target
+      : visibleTargets[0]?.m || null;
+    if (target !== c.target) {
+      c.lockElapsed = 0;
+      c.refractTarget = null;
+    }
+    c.target = target;
+  }
   while (c.tick <= 0 && c.time > 0) {
     const targets = findTargets(t);
     if (t.mode === "flame") {
       flame(t, targets, c);
     } else if (t.mode === "laser") {
-      if (!targets.length) break;
-      const target = c.target && c.target.hp > 0 && dist(fireOrigin(), c.target) <= scaledRange(t)
-        ? c.target
-        : targets[0].m;
-      if (target !== c.target) c.lockElapsed = 0;
-      c.target = target;
-      laser(t, target, targets, c);
+      if (!c.target) break;
+      laser(t, c.target, targets, c);
       c.lockElapsed += attackCooldown(t);
     }
     c.tick += attackCooldown(t);
   }
   if (c.time <= 0) {
+    c.audioStop?.();
     t.channel = null;
     t.cd = channelCooldown(t);
   }
@@ -1453,6 +1669,7 @@ function laser(t, primary, targets, channel=null) {
   const bonus = focused ? 1 + ((t.focusDamagePct || 20) / 100)*t.focusMul : 1;
   damageEnemy(primary, scaledDamage(t)*bonus, t);
   if (focused) primary.focusMarkTime = Math.max(primary.focusMarkTime || 0, 2);
+  if (channel) channel.refractTarget = null;
   if (t.refract) {
     const next = targets.find(o => o.m !== primary)?.m;
     if (next) {
@@ -1461,7 +1678,7 @@ function laser(t, primary, targets, channel=null) {
         : 1;
       damageEnemy(next, scaledDamage(t)*((t.refractDamagePct || 55) / 100)*refractFocus, t);
       if (focused && t.refractFocusPct) next.focusMarkTime = Math.max(next.focusMarkTime || 0, 2);
-      effect("laser", { x:primary.x, y:primary.y, color:t.color }, next, { life:.18 });
+      if (channel) channel.refractTarget = next;
     }
   }
   if (channel && t.focusedBurstDamagePct && channel.lockElapsed >= 1 && !channel.burstTargets.has(primary)) {
@@ -1473,7 +1690,6 @@ function laser(t, primary, targets, channel=null) {
     primary.electricVulnerableAmount = Math.max(primary.electricVulnerableAmount || 0, t.electricVulnerablePct / 100);
     primary.electricVulnerableTime = Math.max(primary.electricVulnerableTime || 0, t.electricVulnerableTime || 2);
   }
-  effect("laser", { ...fireOrigin(), color:t.color }, primary);
 }
 function chain(t, targets) {
   const count = (t.chains || 4) + (t.extraChains || 0);
@@ -1983,6 +2199,7 @@ function updateEnemies(dt) {
           state.hp -= m.atk;
           m.atkCd = m.interval;
           effect("hitBase", {x:m.x,y:m.y,color:"#ff5d4f"}, {x:FIELD.pathX,y:FIELD.baseY});
+          playSfx("baseHit");
         }
       } else {
         const slow = m.slowTime > 0 ? 1 - clamp(m.slowPct || .45, 0, .9) : 1;
@@ -2004,6 +2221,8 @@ function updateEnemies(dt) {
   if (state.hp <= 0) {
     state.hp = 0;
     state.pot = 0;
+    stopChannelAudio();
+    playSfx("fail");
     showResult("防線突破", "基地 HP 歸零，本局失敗，POT 歸零。");
   }
 }
@@ -2042,6 +2261,7 @@ function claimWaveReward(m) {
 function showMoneyReward(m, amount) {
   const elite = !!m.elite;
   if (elite) showEliteDefeat(m, amount);
+  else playSfx("coin");
   effect(elite ? "eliteCoin" : "coin", {x:m.x,y:m.y,color: elite ? "#fff1a6" : "#f0bc4f"}, m, {
     text: `+${amount}`,
     amount,
@@ -2052,6 +2272,7 @@ function showMoneyReward(m, amount) {
 }
 
 function showEliteDefeat(m, amount) {
+  playSfx("elite");
   effect("eliteDefeat", {x:m.x,y:m.y,color:"#ffd85c"}, m, { text:`菁英擊破 +${amount}`, amount, radius:72, life:1.28 });
   for (let i = 0; i < 8; i += 1) {
     const angle = i * Math.PI / 4 + Math.random() * .22;
@@ -2076,6 +2297,7 @@ function pulsePotMoney() {
 }
 
 function showBossReward(add) {
+  playSfx("boss");
   const from = 1 + state.bossAdd;
   const to = 1 + state.bossAdd + add;
   state.bossRoll = { time:0, duration:1.35, add, from, to, value:from };
@@ -2134,6 +2356,7 @@ function checkWaveClear() {
   if (state.bossRoll) return;
   if (!state.spawn && !state.monsters.length && state.waveActive) {
     state.waveActive = false;
+    playSfx("waveClear");
     effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, { text:"波次完成", life:.9 });
     prepareNextBossPreview();
     if (state.wave >= 30) showResult("30 波完成", `本局可結算 ${payout()}，後續可再擴充更深波次。`);
@@ -2615,6 +2838,7 @@ function tuneRatio(target, key, beforeValue, defaultRatio, tunedRatio) {
 
 function collect() {
   if (!canCollect()) return;
+  playSfx("collect");
   const win = payout();
   state.wallet += win;
   persistWallet();
@@ -2624,7 +2848,7 @@ function canCollect() { return state.started && !state.over && !state.waveActive
 
 function effect(type, from, to, opts={}) {
   const visualLife = {
-    cone:.24, laser:.2, chain:.25, spark:.24, grenade:.42, frost:.46,
+    cone:.24, chain:.25, spark:.24, grenade:.42, frost:.46,
     gas:.4, trap:.42, needle:.28, blade:.32, impact:.34, hitBase:.4
   };
   const areaFlashLife = visualLife[type] || .35;
@@ -2641,8 +2865,68 @@ function draw() {
   drawField();
   state.zones.forEach(drawZone);
   state.projectiles.forEach(drawProjectile);
+  drawActiveChannels();
   state.effects.forEach(drawEffect);
   state.monsters.forEach(drawEnemy);
+}
+
+function drawActiveChannels() {
+  const origin = fireOrigin();
+  state.towers.forEach(tower => {
+    if (tower.mode !== "laser" || !tower.channel) return;
+    const channel = tower.channel;
+    const target = channel.target;
+    if (!target || target.hp <= 0) return;
+    const focusDelay = (tower.focusDelay || 1) * (tower.focusDelayMul || 1);
+    const focused = !!tower.focus && channel.lockElapsed >= focusDelay;
+    drawPersistentLaser(origin, target, tower.color, focused, false);
+    const refractTarget = channel.refractTarget;
+    if (tower.refract && refractTarget && refractTarget.hp > 0) {
+      drawPersistentLaser(target, refractTarget, tower.color, focused && !!tower.refractFocusPct, true);
+    }
+  });
+}
+
+function drawPersistentLaser(from, to, color, focused=false, secondary=false) {
+  const phase = performance.now() / 160;
+  const pulse = .96 + Math.sin(phase) * .04;
+  const coreWidth = secondary ? 1.25 : focused ? 2.35 : 1.75;
+  const beamWidth = secondary ? 7 : focused ? 14 : 11;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  ctx.shadowColor = color;
+  ctx.shadowBlur = focused ? 18 : 13;
+  ctx.globalAlpha = (secondary ? .15 : .22) * pulse;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = beamWidth;
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.globalAlpha = secondary ? .7 : .88;
+  ctx.lineWidth = secondary ? 2.4 : focused ? 5 : 3.8;
+  ctx.stroke();
+  ctx.shadowBlur = 5;
+  ctx.globalAlpha = secondary ? .82 : .96;
+  ctx.strokeStyle = "#fff9ce";
+  ctx.lineWidth = coreWidth;
+  ctx.stroke();
+  const travel = (performance.now() / (secondary ? 540 : 420)) % 1;
+  const sparkX = from.x + (to.x - from.x) * travel;
+  const sparkY = from.y + (to.y - from.y) * travel;
+  ctx.fillStyle = "#fff";
+  ctx.globalAlpha = .85;
+  ctx.beginPath();
+  ctx.arc(sparkX, sparkY, secondary ? 1.5 : 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = .75;
+  ctx.lineWidth = secondary ? 1.3 : 2;
+  ctx.beginPath();
+  ctx.arc(to.x, to.y, secondary ? 4 : 6 + Math.sin(phase) * .5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 let fieldLayer = null;
@@ -3600,15 +3884,6 @@ function drawEffect(e) {
       from=to;
     });
   }
-  else if (e.type==="laser") {
-    const dx=e.tx-e.x,dy=e.ty-e.y;
-    ctx.shadowColor=e.color;ctx.shadowBlur=12;
-    ctx.strokeStyle=e.color;ctx.globalAlpha=.22*p;ctx.lineWidth=12;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.tx,e.ty);ctx.stroke();
-    ctx.globalAlpha=.82*p;ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.tx,e.ty);ctx.stroke();
-    ctx.strokeStyle="#fff";ctx.globalAlpha=.95*p;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.tx,e.ty);ctx.stroke();
-    for(let i=0;i<3;i+=1){const t=((1-p)*1.8+i/3)%1;ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(e.x+dx*t,e.y+dy*t,2.4,0,Math.PI*2);ctx.fill();}
-    ctx.strokeStyle=e.color;ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.tx,e.ty,6+(1-p)*7,0,Math.PI*2);ctx.stroke();
-  }
   else { ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(e.x,e.y); ctx.lineTo(e.tx,e.ty); ctx.stroke(); }
   if (e.text && !["damageText","coin","eliteCoin","bossReward","eliteDefeat","waveClear"].includes(e.type)) { ctx.fillStyle="#fff3bf"; ctx.font="bold 18px Arial"; ctx.fillText(e.text,e.tx-24,e.ty-20); }
   ctx.restore();
@@ -3778,16 +4053,18 @@ function speedMultiplier() {
 
 function toggleSpeed() {
   speedIndex = (speedIndex + 1) % SPEED_STEPS.length;
+  playSfx("ui");
   updateUi();
 }
 
-ui.betMinus.onclick = () => { if (!state.started) state.baseBetIndex = Math.max(0,state.baseBetIndex-1); updateUi(); };
-ui.betPlus.onclick = () => { if (!state.started) state.baseBetIndex = Math.min(BET_STEPS.length-1,state.baseBetIndex+1); updateUi(); };
+ui.betMinus.onclick = () => { if (!state.started) { state.baseBetIndex = Math.max(0,state.baseBetIndex-1); playSfx("ui"); } updateUi(); };
+ui.betPlus.onclick = () => { if (!state.started) { state.baseBetIndex = Math.min(BET_STEPS.length-1,state.baseBetIndex+1); playSfx("ui"); } updateUi(); };
 ui.bet.onclick = startBet;
 ui.collect.onclick = collect;
-ui.reset.onclick = reset;
+ui.reset.onclick = () => { playSfx("ui"); reset(); };
+ui.sound.onclick = toggleSound;
 ui.speed.onclick = toggleSpeed;
-ui.newRun.onclick = reset;
+ui.newRun.onclick = () => { playSfx("ui"); reset(); };
 
 document.body.dataset.build = BUILD_VERSION;
 let viewportSyncFrame = 0;
@@ -3814,5 +4091,6 @@ document.addEventListener("touchmove", event => {
   if (event.touches.length > 1) event.preventDefault();
 }, { passive:false });
 
+updateSoundButton();
 reset();
 requestAnimationFrame(loop);

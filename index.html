@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防深追 Demo</title>
-  <link rel="stylesheet" href="styles.css?v=hidden-rolls1">
+  <link rel="stylesheet" href="styles.css?v=sound-laser1">
 </head>
 <body>
   <main class="phone">
@@ -26,6 +26,9 @@
       <div class="hud-icons">
         <button id="resetBtn" type="button" aria-label="重新開始本局">↻</button>
       </div>
+      <button id="soundBtn" class="sound-toggle" type="button" aria-label="關閉音效">
+        <span aria-hidden="true">♪</span>
+      </button>
       <button id="speedBtn" class="speed-toggle speed-1" type="button" aria-label="speed">
         <span></span>
         <span></span>
@@ -95,6 +98,6 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=hidden-rolls1" charset="utf-8"></script>
+  <script src="game.js?v=sound-laser1" charset="utf-8"></script>
 </body>
 </html>
