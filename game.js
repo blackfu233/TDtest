@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "close-spread-hit1";
+const BUILD_VERSION = "completion-fourth1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -793,7 +793,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 12,
+  balanceRevision: 13,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -857,7 +857,7 @@ const DEFAULT_PARAMS = {
   dropChanceMul: 1.0,
   expMul: 1.0,
   towerDamageMul: 1.0,
-  fourthTowerOfferChance: 5,
+  fourthTowerOfferChance: 10,
   bossRollDuration: 3.2,
   bossBetStepMul: 1.5,
   postBossRewardFunding: .45,
@@ -938,13 +938,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:12 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:13 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:12 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:13 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -984,6 +984,10 @@ function migrateBossParams(input={}) {
     ["bossFirstRewardMul", "bossLaterRewardMul", "postBossRewardFunding"]
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 12;
+  }
+  if ((Number(input.balanceRevision) || 0) < 13) {
+    next.fourthTowerOfferChance = DEFAULT_PARAMS.fourthTowerOfferChance;
+    next.balanceRevision = 13;
   }
   return next;
 }
@@ -1299,6 +1303,7 @@ function hideResult() { ui.resultOverlay.classList.add("hidden"); }
 
 function startBet() {
   if (state.over || state.choicesOpen || state.waveActive || state.monsters.length) return;
+  if (state.started && state.wave >= 30) { completeRun(); return; }
   const bet = currentBet();
   if (state.wallet < bet) { showResult("錢包不足", "沒有足夠餘額下注。"); return; }
   playSfx("bet");
@@ -1447,11 +1452,8 @@ function addTower(def) {
 }
 
 function startWave() {
+  if (state.wave >= 30) { completeRun(); return; }
   state.wave += 1;
-  if (state.wave > 30) {
-    showResult("30 波結算", `清到第 30 波。可收金額 ${payout()}。`);
-    return;
-  }
   const info = waveInfo();
   const band = tunedBand(bandFor(state.wave), state.wave);
   const template = pickWeighted(band.templates);
@@ -2544,7 +2546,7 @@ function checkWaveClear() {
     playSfx("waveClear");
     effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, { text:"波次完成", life:.9 });
     prepareNextBossPreview();
-    if (state.wave >= 30) showResult("30 波完成", `本局可結算 ${payout()}，後續可再擴充更深波次。`);
+    if (state.wave >= 30) completeRun();
     else if (canLevelUp()) showUpgradeChoices();
     else state.message = "場上無怪，可以 Collect 或繼續 BET。";
   } else if (canLevelUp() && !state.choicesOpen) {
@@ -3041,6 +3043,14 @@ function collect() {
   const win = payout();
   state.wallet += win;
   showResult("Collect", `帶走 ${win}。錢包餘額 ${state.wallet}。`);
+}
+
+function completeRun() {
+  if (state.over) return;
+  const win = payout();
+  state.wallet += win;
+  playSfx("collect");
+  showResult("30 波通關", `通關結算 ${win}。錢包餘額 ${state.wallet}。`);
 }
 function canCollect() { return state.started && !state.over && !state.waveActive && !state.monsters.length && !state.spawn && !state.choicesOpen && state.pot > 0; }
 
