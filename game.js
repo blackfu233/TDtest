@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "session-wallet1";
+const BUILD_VERSION = "close-spread-hit1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -2014,7 +2014,9 @@ function launchProjectile(t, target, type) {
 }
 
 function launchProjectileSpread(t, target, type, count, gap = 28) {
-  const offsets = spreadOffsets(count, gap);
+  const origin = fireOrigin();
+  const distanceScale = clamp(dist(origin, target) / 220, .42, 1);
+  const offsets = spreadOffsets(count, gap * distanceScale);
   offsets.forEach(offset => launchProjectileAt(t, target, type, offset));
 }
 
@@ -2310,10 +2312,24 @@ function updateProjectiles(dt) {
 
 function projectileCollision(p, from, to) {
   if (p.type !== "needle" && p.type !== "blade" && p.type !== "cryo") return null;
-  const width = p.type === "blade" ? 18 : p.type === "cryo" ? 11 : 10;
-  const hit = enemiesNearLine(from.x, from.y, to.x, to.y, width)
+  const projectileRadius = p.type === "blade" ? 12 : p.type === "cryo" ? 7 : 5;
+  const hit = state.monsters
+    .filter(m => m.hp > 0 && distanceToSegment(m, from, to) <= projectileRadius + enemyHitRadius(m) + 2)
     .sort((a,b) => dist(from, a) - dist(from, b))[0];
   return hit || null;
+}
+
+function enemyHitRadius(m) {
+  const size = m.boss ? 44 : m.elite ? 32 : (m.size || 14);
+  return Math.max(6, size * .5);
+}
+
+function distanceToSegment(point, from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len2 = dx * dx + dy * dy || 1;
+  const ratio = clamp(((point.x - from.x) * dx + (point.y - from.y) * dy) / len2, 0, 1);
+  return Math.hypot(point.x - (from.x + dx * ratio), point.y - (from.y + dy * ratio));
 }
 function updateEnemies(dt) {
   for (const m of state.monsters) {
