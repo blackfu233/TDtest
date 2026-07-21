@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "four-tower1";
+const BUILD_VERSION = "boss-roll-bet1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -858,6 +858,7 @@ const DEFAULT_PARAMS = {
   expMul: 1.0,
   towerDamageMul: 1.0,
   fourthTowerOfferChance: 5,
+  bossRollDuration: 3.2,
   bossBetStepMul: 1.5,
   postBossRewardFunding: .45,
   betMidMul: 1.35,
@@ -889,6 +890,7 @@ function cleanParams(input={}) {
   next.bossLaterRewardMul = Math.max(0, next.bossLaterRewardMul);
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
   next.fourthTowerOfferChance = Math.max(0, Math.min(100, next.fourthTowerOfferChance));
+  next.bossRollDuration = Math.max(1.5, Math.min(6, next.bossRollDuration));
   next.postBossRewardFunding = Math.max(0, Math.min(1, next.postBossRewardFunding));
   next.deepMoneyBase = Math.max(0, next.deepMoneyBase);
   next.deepMoneyRamp = Math.max(0, next.deepMoneyRamp);
@@ -1021,7 +1023,7 @@ function reset() {
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
     towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, waveActive: false, upgradeRepeatLocks: {},
-    spawn: null, waveReward: null, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
+    spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
   };
   hideChoices();
   hideResult();
@@ -1120,14 +1122,20 @@ function applyWaveAttributeBias(attrMultipliers, primaryAttr) {
 function currentBet() {
   return betForWave(state.wave + 1);
 }
+function depthBetFloor(wave) {
+  return wave >= 21 ? params.betDeepMul : wave >= 11 ? params.betMidMul : 1;
+}
+function bossBetMultiplier(bosses=state.bossSeen) {
+  return 1 + Math.max(0, bosses) * (Math.max(1, params.bossBetStepMul) - 1);
+}
+function combinedBetMultiplier(wave, bosses=state.bossSeen) {
+  return Math.max(depthBetFloor(wave), bossBetMultiplier(bosses));
+}
 function betForWave(wave) {
   const base = BET_STEPS[state.baseBetIndex];
-  const depthMul = wave >= 21 ? params.betDeepMul : wave >= 11 ? params.betMidMul : 1;
-  const bossStep = Math.max(1, params.bossBetStepMul);
-  const bossMul = 1 + state.bossSeen * (bossStep - 1);
-  return Math.round(base * depthMul * bossMul);
+  return Math.round(base * combinedBetMultiplier(wave));
 }
-function payout() { return Math.floor(state.pot * (1 + state.bossAdd)); }
+function payout() { return Math.round(state.pot * (1 + state.bossAdd)); }
 
 function pickParamTier(tiers) {
   const weights = Object.fromEntries(tiers.map(tier => [tier.id, Math.max(0, paramNumber(tier.weightKey, 0))]));
@@ -1142,18 +1150,25 @@ function waveRewardDepthMul(wave) {
 }
 
 function rewardFundingBet(wave) {
-  const chargedBet = betForWave(wave);
-  const bossStep = Math.max(1, params.bossBetStepMul);
-  const chargedBossMul = 1 + state.bossSeen * (bossStep - 1);
+  const base = BET_STEPS[state.baseBetIndex];
+  const chargedBossMul = bossBetMultiplier();
   const fundingRate = clamp(paramNumber("postBossRewardFunding", .45), 0, 1);
   const fundedBossMul = 1 + (chargedBossMul - 1) * fundingRate;
-  return chargedBet * fundedBossMul / chargedBossMul;
+  return base * Math.max(depthBetFloor(wave), fundedBossMul);
+}
+
+function balancedRewardRound(value) {
+  const safe = Math.max(0, Number(value) || 0);
+  const withCarry = safe + state.rewardRoundingCarry;
+  const whole = Math.floor(withCarry);
+  state.rewardRoundingCarry = withCarry - whole;
+  return whole;
 }
 
 function rollWaveReward(wave, bet) {
   const tier = pickParamTier(WAVE_REWARD_TIERS);
   const multiplier = Math.max(0, paramNumber(tier.mulKey, 0));
-  const budget = Math.max(0, Math.round(bet * multiplier * params.moneyMul * waveRewardDepthMul(wave)));
+  const budget = balancedRewardRound(bet * multiplier * params.moneyMul * waveRewardDepthMul(wave));
   return { id:tier.id, label:tier.label, multiplier, budget, remaining:budget, weightRemaining:0 };
 }
 
@@ -2459,8 +2474,10 @@ function showBossReward(add) {
   playSfx("boss");
   const from = 1 + state.bossAdd;
   const to = 1 + state.bossAdd + add;
-  state.bossRoll = { time:0, duration:1.35, add, from, to, value:from };
-  effect("bossReward", {x:FIELD.w / 2,y:88,color:"#f0bc4f"}, {x:FIELD.w / 2,y:154}, { text:`x${to.toFixed(1)}`, life:1.55 });
+  const duration = clamp(paramNumber("bossRollDuration", 3.2), 1.5, 6);
+  const visualSeed = ((state.wave * 2654435761) ^ Math.round(to * 1000) ^ (state.bossSeen * 2246822519)) >>> 0;
+  state.bossRoll = { time:0, duration, add, from, to, value:from, nextFlip:0, settleFrom:null, visualSeed };
+  effect("bossReward", {x:FIELD.w / 2,y:88,color:"#f0bc4f"}, {x:FIELD.w / 2,y:154}, { text:`x${to.toFixed(1)}`, life:duration + .35 });
   ui.potChip.classList.remove("boss-pop");
   void ui.potChip.offsetWidth;
   ui.potChip.classList.add("boss-pop");
@@ -2471,13 +2488,22 @@ function updateBossRoll(dt) {
   if (!roll) return;
   roll.time += dt;
   const t = clamp(roll.time / roll.duration, 0, 1);
-  if (t < .78) {
+  const randomEnd = .76;
+  if (t < randomEnd) {
     const min = Math.max(2, roll.to - 3.5);
     const max = Math.min(10, roll.to + 3.5);
-    roll.value = Math.round((min + Math.random() * (max - min)) * 10) / 10;
+    if (roll.time >= roll.nextFlip) {
+      roll.visualSeed = (Math.imul(roll.visualSeed, 1664525) + 1013904223) >>> 0;
+      const visualRandom = roll.visualSeed / 4294967296;
+      roll.value = Math.round((min + visualRandom * (max - min)) * 10) / 10;
+      const phase = t / randomEnd;
+      roll.nextFlip = roll.time + .07 + phase * phase * .2;
+    }
   } else {
-    const settle = (t - .78) / .22;
-    roll.value = roll.value + (roll.to - roll.value) * Math.min(.38, settle);
+    if (roll.settleFrom === null) roll.settleFrom = roll.value;
+    const settle = clamp((t - randomEnd) / (1 - randomEnd), 0, 1);
+    const eased = 1 - Math.pow(1 - settle, 3);
+    roll.value = Math.round((roll.settleFrom + (roll.to - roll.settleFrom) * eased) * 10) / 10;
   }
   if (t >= 1) {
     state.bossAdd += roll.add;
