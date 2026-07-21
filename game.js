@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "audible-bgm1";
+const BUILD_VERSION = "rtp-strategy-balance2";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -359,9 +359,9 @@ const TOWERS = [
   { id:"laser", name:"雷射光線", attr:"電", damage:98, range:860, rate:3.40, mode:"laser", color:"#ffe066", lockTime:3.0, desc:"持續鎖定高血量目標，對菁英與 BOSS 強。" },
   { id:"chain", name:"閃電鎖鏈", attr:"電", damage:118, range:760, rate:0.80, mode:"chain", color:"#b67cff", chains:4, desc:"瞬間連鎖多目標，清群穩定但打王較弱。" },
   { id:"gas", name:"毒氣彈", attr:"毒", damage:118, range:740, rate:0.42, mode:"gas", color:"#55d65a", splash:46, zoneTime:2.7, desc:"定點毒霧，以持續範圍傷害封鎖路線。" },
-  { id:"needle", name:"毒針彈", attr:"毒", damage:300, range:700, rate:0.75, mode:"needle", color:"#41d08a", splash:30, desc:"中高單體傷害兼小範圍爆裂，偏菁英戰。" },
+  { id:"needle", name:"毒針彈", attr:"毒", damage:300, range:700, rate:0.75, mode:"needle", color:"#41d08a", splash:34, desc:"中高單體傷害兼小範圍爆裂，偏菁英戰。" },
   { id:"blade", name:"旋刃", attr:"無", damage:245, range:680, rate:0.78, mode:"blade", color:"#d5dde8", splash:26, desc:"高頻泛用輸出，不依賴屬性相剋。" },
-  { id:"trap", name:"陷阱", attr:"無", damage:130, range:700, rate:0.44, mode:"trap", color:"#9aa3b6", splash:54, desc:"定點控場與聚怪，輸出不是主要價值。" },
+  { id:"trap", name:"陷阱", attr:"無", damage:145, range:700, rate:0.50, mode:"trap", color:"#9aa3b6", splash:54, desc:"定點控場與聚怪，輸出不是主要價值。" },
 ];
 
 const POISON_SOURCE_UPGRADES = ["神經毒素", "腐蝕毒霧", "毒爆榴彈", "毒刃穿刺", "毒化陷阱"];
@@ -535,14 +535,14 @@ const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","g
 const TOWER_BASE_PARAMS = {
   flame: { damage:80, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.40, eliteMul:.85, bossMul:.95 },
   grenade: { damage:275, rate:.55, range:700, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.85, bossMul:.58 },
-  cryo: { damage:345, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.56, eliteMul:1.25, bossMul:1.10 },
+  cryo: { damage:345, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.48, eliteMul:1.25, bossMul:1.02 },
   frostbomb: { damage:245, rate:.45, range:720, splash:56, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.82 },
-  laser: { damage:98, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.62, eliteMul:1.25, bossMul:1.25 },
+  laser: { damage:98, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.54, eliteMul:1.25, bossMul:1.15 },
   chain: { damage:118, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.90 },
-  gas: { damage:118, rate:.42, range:740, splash:46, duration:2.7, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.90, bossMul:.75 },
-  needle: { damage:300, rate:.75, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:1.05, eliteMul:1.20, bossMul:1.40 },
+  gas: { damage:118, rate:.42, range:740, splash:46, duration:2.7, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.90, bossMul:.70 },
+  needle: { damage:300, rate:.75, range:700, splash:34, duration:0, cooldown:0, tick:.5, minionMul:1.18, eliteMul:1.20, bossMul:1.40 },
   blade: { damage:245, rate:.78, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:.90, eliteMul:1.00, bossMul:.75 },
-  trap: { damage:130, rate:.44, range:700, splash:54, duration:1.5, cooldown:0, tick:.5, minionMul:1.15, eliteMul:.78, bossMul:.95 },
+  trap: { damage:145, rate:.50, range:700, splash:54, duration:1.5, cooldown:0, tick:.5, minionMul:1.28, eliteMul:.85, bossMul:.95 },
 };
 
 function towerDefaultParams() {
@@ -791,7 +791,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 10,
+  balanceRevision: 12,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -805,8 +805,8 @@ const DEFAULT_PARAMS = {
   bossFirstChance: 28,
   bossFirstChanceInc: 32,
   bossFirstGuaranteeWave: 5,
-  bossFirstRewardMul: 1.10,
-  bossLaterRewardMul: .45,
+  bossFirstRewardMul: .95,
+  bossLaterRewardMul: .55,
   bossChanceMul: 1.0,
   bossChanceCap: 70,
   minionHpMul: 1.0,
@@ -814,8 +814,8 @@ const DEFAULT_PARAMS = {
   minionSpeedMul: .90,
   eliteHpMul: 1.05,
   eliteAtkMul: 1.05,
-  bossFirstHpMul: .92,
-  bossHpMul: .52,
+  bossFirstHpMul: .96,
+  bossHpMul: .48,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
   moneyMul: 1.12,
@@ -856,6 +856,7 @@ const DEFAULT_PARAMS = {
   expMul: 1.0,
   towerDamageMul: 1.0,
   bossBetStepMul: 1.5,
+  postBossRewardFunding: .45,
   betMidMul: 1.35,
   betDeepMul: 1.85,
   baseHp: 1000,
@@ -884,6 +885,7 @@ function cleanParams(input={}) {
   next.bossFirstRewardMul = Math.max(0, next.bossFirstRewardMul);
   next.bossLaterRewardMul = Math.max(0, next.bossLaterRewardMul);
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
+  next.postBossRewardFunding = Math.max(0, Math.min(1, next.postBossRewardFunding));
   next.deepMoneyBase = Math.max(0, next.deepMoneyBase);
   next.deepMoneyRamp = Math.max(0, next.deepMoneyRamp);
   next.deepMoneyCap = Math.max(next.deepMoneyBase, next.deepMoneyCap);
@@ -930,13 +932,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:10 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:12 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:10 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:12 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -962,6 +964,20 @@ function migrateBossParams(input={}) {
   if ((Number(input.balanceRevision) || 0) < 10) {
     next.moneyMul = DEFAULT_PARAMS.moneyMul;
     next.balanceRevision = 10;
+  }
+  if ((Number(input.balanceRevision) || 0) < 11) {
+    [
+      "bossFirstRewardMul", "bossLaterRewardMul", "bossFirstHpMul", "bossHpMul", "postBossRewardFunding",
+      "tower_cryo_minionMul", "tower_cryo_bossMul", "tower_laser_minionMul", "tower_laser_bossMul",
+      "tower_gas_bossMul", "tower_needle_minionMul", "tower_needle_splash",
+      "tower_trap_damage", "tower_trap_rate", "tower_trap_minionMul", "tower_trap_eliteMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 11;
+  }
+  if ((Number(input.balanceRevision) || 0) < 12) {
+    ["bossFirstRewardMul", "bossLaterRewardMul", "postBossRewardFunding"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 12;
   }
   return next;
 }
@@ -1119,6 +1135,15 @@ function pickParamTier(tiers) {
 function waveRewardDepthMul(wave) {
   if (wave < 11) return 1;
   return Math.min(params.deepMoneyCap, params.deepMoneyBase + (wave - 11) * params.deepMoneyRamp);
+}
+
+function rewardFundingBet(wave) {
+  const chargedBet = betForWave(wave);
+  const bossStep = Math.max(1, params.bossBetStepMul);
+  const chargedBossMul = 1 + state.bossSeen * (bossStep - 1);
+  const fundingRate = clamp(paramNumber("postBossRewardFunding", .45), 0, 1);
+  const fundedBossMul = 1 + (chargedBossMul - 1) * fundingRate;
+  return chargedBet * fundedBossMul / chargedBossMul;
 }
 
 function rollWaveReward(wave, bet) {
@@ -1441,7 +1466,7 @@ function startWave() {
     const index = rand(0, ELITES.length - 1);
     return { index, rewardWeight:eliteRewardWeight(index) };
   });
-  const reward = rollWaveReward(state.wave, betForWave(state.wave));
+  const reward = rollWaveReward(state.wave, rewardFundingBet(state.wave));
   reward.weightRemaining = [...normalQueue, ...eliteQueue].reduce((sum, entry) => sum + entry.rewardWeight, 0);
   state.waveReward = reward;
   state.spawn = {
