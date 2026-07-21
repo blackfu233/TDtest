@@ -1,9 +1,11 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "rtp-strategy-balance2";
+const BUILD_VERSION = "four-tower1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
+const MAX_TOWER_SLOTS = 4;
+const NEW_TOWER_GUARANTEE_LIMIT = 3;
 
 const ui = {
   phone: document.querySelector(".phone"),
@@ -47,7 +49,7 @@ const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
 const SPEED_STEPS = [1, 2, 3];
 const SOUND_STORAGE_KEY = "towerDefenseSoundMuted.v1";
 const FIELD = { w: 350, h: 760, pathX: 175, spawnY: -18, baseY: 720, attackLineY: 720 };
-const TOWER_SLOTS = [{ x: 62, y: 700 }, { x: 175, y: 678 }, { x: 288, y: 700 }];
+const TOWER_SLOTS = [{ x: 44, y: 700 }, { x: 131, y: 682 }, { x: 219, y: 682 }, { x: 306, y: 700 }];
 const EXP_TABLE = [95,125,155,190,225,290,330,370,415,460,510,565,625,690,760,835,915,1000,1090,1185,1285,1390,1500,1615,1735,1860,1990,2125,2265,2410,2560,2715,2875,3040,3210,3385,3565,3750,3940];
 
 const audioState = {
@@ -855,6 +857,7 @@ const DEFAULT_PARAMS = {
   dropChanceMul: 1.0,
   expMul: 1.0,
   towerDamageMul: 1.0,
+  fourthTowerOfferChance: 5,
   bossBetStepMul: 1.5,
   postBossRewardFunding: .45,
   betMidMul: 1.35,
@@ -885,6 +888,7 @@ function cleanParams(input={}) {
   next.bossFirstRewardMul = Math.max(0, next.bossFirstRewardMul);
   next.bossLaterRewardMul = Math.max(0, next.bossLaterRewardMul);
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
+  next.fourthTowerOfferChance = Math.max(0, Math.min(100, next.fourthTowerOfferChance));
   next.postBossRewardFunding = Math.max(0, Math.min(1, next.postBossRewardFunding));
   next.deepMoneyBase = Math.max(0, next.deepMoneyBase);
   next.deepMoneyRamp = Math.max(0, next.deepMoneyRamp);
@@ -1433,7 +1437,7 @@ function drawTowerGlyph(g, id, color) {
 }
 
 function addTower(def) {
-  if (state.towers.length >= 3) return;
+  if (state.towers.length >= MAX_TOWER_SLOTS) return;
   state.towers.push({
     ...JSON.parse(JSON.stringify(def)),
     slot: state.towers.length, x: TOWER_SLOTS[state.towers.length].x, y: TOWER_SLOTS[state.towers.length].y,
@@ -2530,20 +2534,27 @@ function showUpgradeChoices() {
   const choices = [];
   const newTowerIds = new Set();
   const addNewTowerChoices = (count) => {
-    randomTowerChoices(count, newTowerIds).forEach(t => {
+    const openSlots = Math.max(0, MAX_TOWER_SLOTS - state.towers.length - newTowerIds.size);
+    randomTowerChoices(Math.min(count, openSlots), newTowerIds).forEach(t => {
       newTowerIds.add(t.id);
       choices.push(towerChoice(t, () => { addTower(t); hideChoices(); }));
     });
   };
-  if (state.towers.length < 3) addNewTowerChoices(1);
+  const guaranteeNewTower = state.towers.length < NEW_TOWER_GUARANTEE_LIMIT;
+  const rolledFourthTower = state.towers.length === NEW_TOWER_GUARANTEE_LIMIT
+    && Math.random() * 100 < params.fourthTowerOfferChance;
+  if (guaranteeNewTower || rolledFourthTower) addNewTowerChoices(1);
   const candidates = collectUpgradeCandidates();
   const pickedCandidates = selectUpgradeCandidates(candidates, choices, 3 - choices.length);
-  if (state.towers.length < 3 && pickedCandidates.length < 3 - choices.length) {
-    const openTowerSlots = 3 - state.towers.length - newTowerIds.size;
+  if (guaranteeNewTower && pickedCandidates.length < 3 - choices.length) {
+    const openTowerSlots = MAX_TOWER_SLOTS - state.towers.length - newTowerIds.size;
     const openChoiceSlots = 3 - choices.length - pickedCandidates.length;
     addNewTowerChoices(Math.min(openTowerSlots, openChoiceSlots));
   }
   state.lastUpgradeDebug = {
+    guaranteeNewTower,
+    rolledFourthTower,
+    fourthTowerOfferChance: params.fourthTowerOfferChance,
     towers: state.towers.map(t => ({ name:t.name, upgrades:t.upgrades.slice() })),
     candidates: candidates.map(c => ({ tower:c.tower.name, name:c.up.name, taken:c.takenCount, lock:c.lock || 0, weight:Math.round(c.weight) })),
     picked: pickedCandidates.map(c => ({ tower:c.tower.name, name:c.up.name, taken:c.takenCount }))
@@ -2570,7 +2581,7 @@ function showUpgradeChoices() {
       }
     });
   });
-  if (choices.length < 3 && state.towers.length < 3) addNewTowerChoices(3 - choices.length);
+  if (choices.length < 3 && guaranteeNewTower) addNewTowerChoices(3 - choices.length);
   showChoices("升級選項", "三選一：已有砲台升級，或隨機新砲台。", choices);
 }
 function nextUpgrade(tower, offset = 0) {
@@ -4134,7 +4145,7 @@ function updateUi() {
 
 function renderSlots() {
   if (!slotViews.length) {
-    for (let i=0; i<3; i++) {
+    for (let i=0; i<MAX_TOWER_SLOTS; i++) {
       const root = document.createElement("div");
       const icon = document.createElement("img");
       const name = document.createElement("div");
@@ -4153,7 +4164,7 @@ function renderSlots() {
     }
   }
 
-  for (let i=0;i<3;i++) {
+  for (let i=0;i<MAX_TOWER_SLOTS;i++) {
     const t = state.towers[i];
     const view = slotViews[i];
     view.root.className = "slot" + (t ? "" : " empty");
