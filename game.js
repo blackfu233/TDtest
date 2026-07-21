@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "boss-roll-bet1";
+const BUILD_VERSION = "session-wallet1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -531,8 +531,8 @@ const ENEMY_ATTRIBUTE_DEFAULTS = {
   boss_5:  { fire:1.35, ice:.80,  electric:1,    poison:1,    neutral:1 },
 };
 const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v3";
-const WALLET_STORAGE_KEY = "towerDefenseWallet.v1";
 const PARAM_CHANNEL = "tower-defense-param-sync";
+const INITIAL_WALLET = 10000;
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
   flame: { damage:80, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.40, eliteMul:.85, bossMul:.95 },
@@ -1019,7 +1019,7 @@ const slotViews = [];
 
 function reset() {
   stopChannelAudio();
-  const wallet = state && Number.isFinite(state.wallet) ? state.wallet : loadWallet();
+  const wallet = state && Number.isFinite(state.wallet) ? state.wallet : INITIAL_WALLET;
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
     towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, waveActive: false, upgradeRepeatLocks: {},
@@ -1028,20 +1028,6 @@ function reset() {
   hideChoices();
   hideResult();
   updateUi();
-}
-
-function loadWallet() {
-  try {
-    const raw = localStorage.getItem(WALLET_STORAGE_KEY);
-    if (raw === null || raw === "") return 10000;
-    const saved = Number(raw);
-    if (Number.isFinite(saved) && saved >= 0) return Math.floor(saved);
-  } catch {}
-  return 10000;
-}
-
-function persistWallet() {
-  try { localStorage.setItem(WALLET_STORAGE_KEY, String(Math.max(0, Math.floor(state.wallet)))); } catch {}
 }
 
 const rand = (a,b) => Math.floor(a + Math.random() * (b - a + 1));
@@ -1318,12 +1304,10 @@ function startBet() {
   playSfx("bet");
   if (!state.started) {
     state.wallet -= bet;
-    persistWallet();
     showStartingTowerDraft();
     return;
   }
   state.wallet -= bet;
-  persistWallet();
   startWave();
 }
 
@@ -3040,7 +3024,6 @@ function collect() {
   playSfx("collect");
   const win = payout();
   state.wallet += win;
-  persistWallet();
   showResult("Collect", `帶走 ${win}。錢包餘額 ${state.wallet}。`);
 }
 function canCollect() { return state.started && !state.over && !state.waveActive && !state.monsters.length && !state.spawn && !state.choicesOpen && state.pot > 0; }
