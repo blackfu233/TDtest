@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "first-boss-onboarding1";
+const BUILD_VERSION = "first-boss-onboarding2";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -799,7 +799,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 14,
+  balanceRevision: 15,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -813,7 +813,7 @@ const DEFAULT_PARAMS = {
   bossFirstChance: 28,
   bossFirstChanceInc: 32,
   bossFirstGuaranteeWave: 5,
-  bossFirstRewardMul: .65,
+  bossFirstRewardMul: .45,
   bossLaterRewardMul: .55,
   bossChanceMul: 1.0,
   bossChanceCap: 70,
@@ -871,7 +871,7 @@ const DEFAULT_PARAMS = {
   fourthTowerOfferChance: 10,
   bossRollDuration: 3.2,
   bossBetStepMul: 1.5,
-  preBossRewardMul: 1.25,
+  preBossRewardMul: 1.15,
   postBossRewardFunding: .45,
   betMidMul: 1.35,
   betDeepMul: 1.85,
@@ -954,13 +954,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:14 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:15 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:14 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:15 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -1012,6 +1012,10 @@ function migrateBossParams(input={}) {
       "bossFirstDifficultyCompression", "tower_cryo_bossMul", "tower_laser_bossMul", "tower_needle_bossMul"
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 14;
+  }
+  if ((Number(input.balanceRevision) || 0) < 15) {
+    ["bossFirstRewardMul", "preBossRewardMul"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 15;
   }
   return next;
 }
@@ -2640,7 +2644,7 @@ function showUpgradeChoices() {
   const guaranteeNewTower = state.towers.length < NEW_TOWER_GUARANTEE_LIMIT;
   const rolledFourthTower = state.towers.length === NEW_TOWER_GUARANTEE_LIMIT
     && Math.random() * 100 < params.fourthTowerOfferChance;
-  if (guaranteeNewTower || rolledFourthTower) addNewTowerChoices(1);
+  if (guaranteeNewTower || rolledFourthTower) addNewTowerChoices(guaranteeNewTower && state.towers.length === 1 ? 2 : 1);
   const candidates = collectUpgradeCandidates();
   const pickedCandidates = selectUpgradeCandidates(candidates, choices, 3 - choices.length);
   if (guaranteeNewTower && pickedCandidates.length < 3 - choices.length) {
