@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "first-boss-onboarding2";
+const BUILD_VERSION = "boss-roll-drama1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -246,6 +246,23 @@ function playSfx(name) {
     soundNoise("fail-noise", .38, .055, 520);
     soundTone("fail-a", 220, .48, "sawtooth", .055, 72);
   }
+}
+
+function playBossRollTick(phase, tier="normal") {
+  const lift = tier === "jackpot" ? 150 : tier === "high" ? 80 : 0;
+  const frequency = 250 + phase * 430 + lift;
+  soundTone("boss-roll-tick", frequency, .055, "square", .035, frequency * 1.12, 0, .045);
+}
+
+function playBossRollResult(tier="normal") {
+  if (tier === "normal") {
+    [420, 630, 880].forEach((frequency, index) => soundTone(`boss-lock-${index}`, frequency, .22, "triangle", .06, frequency * 1.12, index * .08));
+    return;
+  }
+  const jackpot = tier === "jackpot";
+  soundNoise("boss-result-noise", jackpot ? .62 : .46, jackpot ? .105 : .08, jackpot ? 1900 : 1450);
+  const notes = jackpot ? [220, 440, 660, 880, 1320] : [260, 520, 780, 1040];
+  notes.forEach((frequency, index) => soundTone(`boss-result-${tier}-${index}`, frequency, jackpot ? .42 : .32, index % 2 ? "sawtooth" : "triangle", jackpot ? .085 : .07, frequency * 1.18, index * .085));
 }
 
 function playTowerSfx(mode) {
@@ -799,7 +816,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 15,
+  balanceRevision: 16,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -869,7 +886,9 @@ const DEFAULT_PARAMS = {
   expMul: 1.0,
   towerDamageMul: 1.0,
   fourthTowerOfferChance: 10,
-  bossRollDuration: 3.2,
+  bossRollDuration: 4.8,
+  bossRollHighThreshold: 2.5,
+  bossRollJackpotThreshold: 3.8,
   bossBetStepMul: 1.5,
   preBossRewardMul: 1.15,
   postBossRewardFunding: .45,
@@ -905,7 +924,9 @@ function cleanParams(input={}) {
     .forEach(key => { next[key] = Math.max(0, next[key]); });
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
   next.fourthTowerOfferChance = Math.max(0, Math.min(100, next.fourthTowerOfferChance));
-  next.bossRollDuration = Math.max(1.5, Math.min(6, next.bossRollDuration));
+  next.bossRollDuration = Math.max(2.5, Math.min(8, next.bossRollDuration));
+  next.bossRollHighThreshold = Math.max(1, next.bossRollHighThreshold);
+  next.bossRollJackpotThreshold = Math.max(next.bossRollHighThreshold, next.bossRollJackpotThreshold);
   next.postBossRewardFunding = Math.max(0, Math.min(1, next.postBossRewardFunding));
   next.preBossRewardMul = Math.max(0, next.preBossRewardMul);
   next.deepMoneyBase = Math.max(0, next.deepMoneyBase);
@@ -954,13 +975,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:15 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:16 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:15 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:16 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -1017,6 +1038,10 @@ function migrateBossParams(input={}) {
     ["bossFirstRewardMul", "preBossRewardMul"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 15;
   }
+  if ((Number(input.balanceRevision) || 0) < 16) {
+    ["bossRollDuration", "bossRollHighThreshold", "bossRollJackpotThreshold"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 16;
+  }
   return next;
 }
 
@@ -1058,6 +1083,8 @@ function reset() {
     spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
   };
   ui.betRaise?.classList.add("hidden");
+  ui.phone?.classList.remove("boss-roll-active", "boss-roll-high", "boss-roll-jackpot", "boss-result-high", "boss-result-jackpot");
+  ui.potChip?.classList.remove("boss-high-pop", "boss-jackpot-pop");
   hideChoices();
   hideResult();
   updateUi();
@@ -1596,7 +1623,8 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
 }
 
 function update(dt) {
-  updateBetIncrease(dt);
+  const presentationDt = dt / speedMultiplier();
+  updateBetIncrease(presentationDt);
   if (state.over || state.choicesOpen) return;
   updateSpawn(dt);
   updateZones(dt);
@@ -1604,9 +1632,9 @@ function update(dt) {
   updateProjectiles(dt);
   updateEnemies(dt);
   checkWaveClear();
-  state.effects = state.effects.map(e => ({ ...e, t:e.t-dt })).filter(e => e.t > 0);
+  state.effects = state.effects.map(e => ({ ...e, t:e.t-dt * (e.type === "bossReward" ? 1 / speedMultiplier() : 1) })).filter(e => e.t > 0);
   state.monsters.forEach(m => { if (m.damageTextCd > 0) m.damageTextCd -= dt; });
-  updateBossRoll(dt);
+  updateBossRoll(presentationDt);
 }
 
 function updateSpawn(dt) {
@@ -2523,10 +2551,18 @@ function showBossReward(add, previousBet, nextBet) {
   playSfx("boss");
   const from = 1 + state.bossAdd;
   const to = 1 + state.bossAdd + add;
-  const duration = clamp(paramNumber("bossRollDuration", 3.2), 1.5, 6);
+  const duration = clamp(paramNumber("bossRollDuration", 4.8), 2.5, 8);
+  const highThreshold = Math.max(1, paramNumber("bossRollHighThreshold", 2.5));
+  const jackpotThreshold = Math.max(highThreshold, paramNumber("bossRollJackpotThreshold", 3.8));
+  const tier = add >= jackpotThreshold ? "jackpot" : add >= highThreshold ? "high" : "normal";
   const visualSeed = ((state.wave * 2654435761) ^ Math.round(to * 1000) ^ (state.bossSeen * 2246822519)) >>> 0;
-  state.bossRoll = { time:0, duration, add, from, to, value:from, nextFlip:0, settleFrom:null, visualSeed, previousBet, nextBet };
-  effect("bossReward", {x:FIELD.w / 2,y:88,color:"#f0bc4f"}, {x:FIELD.w / 2,y:154}, { text:`x${to.toFixed(1)}`, life:duration + .35 });
+  state.bossRoll = { time:0, duration, add, from, to, value:from, nextFlip:0, settleFrom:null, visualSeed, previousBet, nextBet, tier, stage:0, flipCount:0 };
+  effect("bossReward", {x:FIELD.w / 2,y:88,color:"#f0bc4f"}, {x:FIELD.w / 2,y:154}, { text:`x${to.toFixed(1)}`, life:duration + .65, tier });
+  ui.phone?.classList.remove("boss-result-high", "boss-result-jackpot", "boss-roll-high", "boss-roll-jackpot");
+  ui.phone?.classList.add("boss-roll-active");
+  if (tier === "high") ui.phone?.classList.add("boss-roll-high");
+  if (tier === "jackpot") ui.phone?.classList.add("boss-roll-jackpot");
+  ui.potChip.classList.remove("boss-high-pop", "boss-jackpot-pop");
   ui.potChip.classList.remove("boss-pop");
   void ui.potChip.offsetWidth;
   ui.potChip.classList.add("boss-pop");
@@ -2537,29 +2573,51 @@ function updateBossRoll(dt) {
   if (!roll) return;
   roll.time += dt;
   const t = clamp(roll.time / roll.duration, 0, 1);
-  const randomEnd = .76;
-  if (t < randomEnd) {
-    const min = Math.max(2, roll.to - 3.5);
-    const max = Math.min(10, roll.to + 3.5);
+  const fastEnd = .56;
+  const suspenseEnd = .82;
+  if (t < suspenseEnd) {
+    const suspense = t <= fastEnd ? 0 : (t - fastEnd) / (suspenseEnd - fastEnd);
+    const spread = 3.5 - suspense * 2.2;
+    const min = Math.max(2, roll.to - spread);
+    const max = Math.min(10, roll.to + spread);
     if (roll.time >= roll.nextFlip) {
       roll.visualSeed = (Math.imul(roll.visualSeed, 1664525) + 1013904223) >>> 0;
       const visualRandom = roll.visualSeed / 4294967296;
       roll.value = Math.round((min + visualRandom * (max - min)) * 10) / 10;
-      const phase = t / randomEnd;
-      roll.nextFlip = roll.time + .07 + phase * phase * .2;
+      roll.flipCount += 1;
+      playBossRollTick(t, roll.tier);
+      roll.nextFlip = roll.time + (t <= fastEnd ? .055 + Math.pow(t / fastEnd, 2) * .09 : .14 + suspense * suspense * .30);
+    }
+    if (t >= fastEnd && roll.stage < 1) {
+      roll.stage = 1;
+      soundTone("boss-roll-hold", 150, .42, "sawtooth", .055, 78);
     }
   } else {
     if (roll.settleFrom === null) roll.settleFrom = roll.value;
-    const settle = clamp((t - randomEnd) / (1 - randomEnd), 0, 1);
+    if (roll.stage < 2) {
+      roll.stage = 2;
+      soundTone("boss-roll-lock", 310, .32, "triangle", .065, 680);
+    }
+    const settle = clamp((t - suspenseEnd) / (1 - suspenseEnd), 0, 1);
     const eased = 1 - Math.pow(1 - settle, 3);
-    roll.value = Math.round((roll.settleFrom + (roll.to - roll.settleFrom) * eased) * 10) / 10;
+    const bounce = Math.sin(settle * Math.PI * 3) * (1 - settle) * (roll.tier === "normal" ? .18 : .34);
+    roll.value = Math.round((roll.settleFrom + (roll.to - roll.settleFrom) * eased + bounce) * 10) / 10;
   }
   if (t >= 1) {
     state.bossAdd += roll.add;
     state.bossRoll = null;
+    ui.phone?.classList.remove("boss-roll-active", "boss-roll-high", "boss-roll-jackpot");
+    if (roll.tier === "high") ui.phone?.classList.add("boss-result-high");
+    if (roll.tier === "jackpot") ui.phone?.classList.add("boss-result-jackpot");
     ui.potChip.classList.remove("boss-pop");
     void ui.potChip.offsetWidth;
     ui.potChip.classList.add("boss-pop");
+    if (roll.tier === "high") ui.potChip.classList.add("boss-high-pop");
+    if (roll.tier === "jackpot") ui.potChip.classList.add("boss-jackpot-pop");
+    playBossRollResult(roll.tier);
+    try {
+      navigator.vibrate?.(roll.tier === "jackpot" ? [80,40,120,35,180] : roll.tier === "high" ? [60,35,110] : [35,30,55]);
+    } catch {}
     if (state.wave < 30 && roll.nextBet > roll.previousBet) showBetIncrease(roll.previousBet, roll.nextBet);
   }
 }
@@ -3872,37 +3930,52 @@ function drawEffect(e) {
   const p = Math.max(0, e.t/e.life);
   ctx.save(); ctx.globalAlpha = Math.max(.15,p); ctx.strokeStyle=e.color; ctx.fillStyle=e.color;
   if (e.type==="bossReward") {
-    const grow = 1 + (1 - p) * .35;
-    const y = e.ty - (1 - p) * 34;
-    const rollText = state.bossRoll ? `x${state.bossRoll.value.toFixed(1)}` : e.text;
-    const labelText = state.bossRoll ? "MULTIPLIER ROLL" : "BOSS BONUS";
-    ctx.globalAlpha = Math.min(1, p * 1.3);
-    ctx.translate(e.tx, y);
+    const roll = state.bossRoll;
+    const progress = roll ? clamp(roll.time / roll.duration, 0, 1) : 1;
+    const tier = roll?.tier || e.tier || "normal";
+    const high = tier === "high" || tier === "jackpot";
+    const jackpot = tier === "jackpot";
+    const reveal = roll ? clamp(progress / .08, 0, 1) : Math.min(1, p * 2.4);
+    const settleFlash = roll ? clamp((progress - .82) / .18, 0, 1) : 1 - p;
+    const pulse = roll ? Math.sin(roll.time * (progress < .56 ? 16 : 8)) : 0;
+    const grow = 1 + (high ? .055 : .025) * pulse + settleFlash * (jackpot ? .13 : high ? .09 : .04);
+    const y = e.ty - (1 - reveal) * 36;
+    const rollText = roll ? `x${roll.value.toFixed(1)}` : e.text;
+    const labelText = !roll ? (jackpot ? "JACKPOT" : high ? "HIGH MULTIPLIER" : "BOSS BONUS")
+      : progress < .56 ? "MULTIPLIER ROLL" : progress < .82 ? "HOLD" : "LOCKING";
+    ctx.globalAlpha = roll ? reveal : Math.min(1, p * 2.2);
+    ctx.translate(e.tx + (roll && high && progress > .82 ? Math.sin(roll.time * 46) * (1 - settleFlash) * 2.5 : 0), y);
     ctx.scale(grow, grow);
-    ctx.fillStyle = `rgba(10, 12, 18, ${.72 * p})`;
-    ctx.strokeStyle = `rgba(240, 188, 79, ${p})`;
-    ctx.lineWidth = 3;
-    roundRect(-88, -44, 176, 82, 8);
+    const cardGradient = ctx.createLinearGradient(0, -50, 0, 48);
+    cardGradient.addColorStop(0, jackpot ? "rgba(78,42,4,.96)" : high ? "rgba(48,31,8,.94)" : "rgba(10,12,18,.92)");
+    cardGradient.addColorStop(1, "rgba(8,9,13,.94)");
+    ctx.fillStyle = cardGradient;
+    ctx.strokeStyle = jackpot ? "#fff3a3" : high ? "#ffd55f" : "#f0bc4f";
+    ctx.lineWidth = jackpot ? 5 : high ? 4 : 3;
+    roundRect(-98, -49, 196, 92, 8);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "#fff4c6";
+    ctx.fillStyle = jackpot ? "#fff" : "#fff4c6";
     ctx.font = "900 12px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(labelText, 0, -18);
-    ctx.fillStyle = "#f0bc4f";
-    ctx.font = "900 40px Arial";
-    ctx.lineWidth = 5;
+    ctx.fillText(labelText, 0, -22);
+    ctx.fillStyle = jackpot ? "#fffbd1" : high ? "#ffd85f" : "#f0bc4f";
+    ctx.font = `900 ${jackpot ? 50 : high ? 46 : 42}px Arial`;
+    ctx.lineWidth = high ? 7 : 5;
     ctx.strokeStyle = "rgba(0,0,0,.72)";
-    ctx.strokeText(rollText, 0, 24);
-    ctx.fillText(rollText, 0, 24);
-    ctx.rotate((1 - p) * .5);
-    ctx.strokeStyle = `rgba(255, 242, 201, ${.45 * p})`;
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 12; i += 1) {
-      const a = i * Math.PI / 6;
+    ctx.strokeText(rollText, 0, 28);
+    ctx.fillText(rollText, 0, 28);
+    ctx.rotate((roll ? roll.time : 1 - p) * (jackpot ? .32 : .18));
+    ctx.strokeStyle = jackpot ? `rgba(255,255,225,${.82 * reveal})` : `rgba(255,226,126,${(high ? .68 : .42) * reveal})`;
+    ctx.lineWidth = jackpot ? 3 : 2;
+    const rayCount = jackpot ? 24 : high ? 18 : 12;
+    for (let i = 0; i < rayCount; i += 1) {
+      const a = i * Math.PI * 2 / rayCount;
+      const rayStart = 108 + (i % 2) * 4;
+      const rayEnd = rayStart + (jackpot ? 38 : high ? 30 : 22) * (.72 + settleFlash * .45);
       ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * 100, Math.sin(a) * 55);
-      ctx.lineTo(Math.cos(a) * 125, Math.sin(a) * 72);
+      ctx.moveTo(Math.cos(a) * rayStart, Math.sin(a) * rayStart * .55);
+      ctx.lineTo(Math.cos(a) * rayEnd, Math.sin(a) * rayEnd * .58);
       ctx.stroke();
     }
   }
@@ -4229,6 +4302,8 @@ function updateUi() {
       : "";
   ui.bossMult.classList.toggle("empty", !state.bossSeen && !state.bossRoll);
   ui.bossMult.classList.toggle("rolling", !!state.bossRoll);
+  ui.bossMult.classList.toggle("rolling-high", state.bossRoll?.tier === "high");
+  ui.bossMult.classList.toggle("rolling-jackpot", state.bossRoll?.tier === "jackpot");
   ui.collectText.textContent = payout();
   ui.message.textContent = canCollect()
     ? (bossWarning ? "危險：下一波 BOSS，可以 Collect 或繼續 BET 挑戰。" : "場上無怪，可以 Collect 或繼續 BET。")
