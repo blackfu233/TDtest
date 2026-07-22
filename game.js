@@ -1,6 +1,6 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "boss-roll-drama1";
+const BUILD_VERSION = "param-sync1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -622,7 +622,7 @@ function templateDefaultParams() {
     result[`band_${bandId}_countMin`] = band.count[0];
     result[`band_${bandId}_countMax`] = band.count[1];
     Object.entries(band.drop).forEach(([monsterId, value]) => result[`band_${bandId}_drop_${monsterId}`] = value);
-    Object.entries(band.templates).forEach(([templateId, value]) => result[`band_${bandId}_template_${templateId}`] = value);
+    Object.keys(TEMPLATE).forEach(templateId => result[`band_${bandId}_template_${templateId}`] = band.templates[templateId] || 0);
   });
   return result;
 }
@@ -816,7 +816,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 16,
+  balanceRevision: 17,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -975,13 +975,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:16 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:17 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:16 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:17 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -1042,6 +1042,7 @@ function migrateBossParams(input={}) {
     ["bossRollDuration", "bossRollHighThreshold", "bossRollJackpotThreshold"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 16;
   }
+  if ((Number(input.balanceRevision) || 0) < 17) next.balanceRevision = 17;
   return next;
 }
 
@@ -1129,7 +1130,7 @@ function tunedBand(base, wave) {
   const drop = {};
   Object.keys(base.drop).forEach(monsterId => drop[monsterId] = paramNumber(`band_${bandId}_drop_${monsterId}`, base.drop[monsterId]));
   const templates = {};
-  Object.keys(base.templates).forEach(templateId => templates[templateId] = paramNumber(`band_${bandId}_template_${templateId}`, base.templates[templateId]));
+  Object.keys(TEMPLATE).forEach(templateId => templates[templateId] = paramNumber(`band_${bandId}_template_${templateId}`, base.templates[templateId] || 0));
   return {
     ...base,
     count: [
