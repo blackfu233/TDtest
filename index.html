@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防深追 Demo</title>
-  <link rel="stylesheet" href="styles.css?v=completion-fourth1">
+  <link rel="stylesheet" href="styles.css?v=first-boss-onboarding1">
 </head>
 <body>
   <main class="phone">
@@ -22,6 +22,7 @@
           <strong id="potText">0</strong>
           <b id="bossMultText" class="empty"></b>
         </div>
+        <div class="payout-row"><span>總得分</span><strong id="payoutText">0</strong></div>
       </div>
       <div class="hud-icons">
         <button id="resetBtn" type="button" aria-label="重新開始本局">↻</button>
@@ -82,6 +83,11 @@
       </div>
     </section>
 
+    <div id="betRaiseFx" class="bet-raise-fx hidden" role="status" aria-live="polite">
+      <span>BET UP</span>
+      <strong><b id="betRaiseFrom">100</b><i>→</i><b id="betRaiseTo">150</b></strong>
+    </div>
+
     <section id="choiceOverlay" class="choice-overlay hidden">
       <div class="choice-panel">
         <h2 id="choiceTitle">三選一</h2>
@@ -98,6 +104,6 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=completion-fourth1" charset="utf-8"></script>
+  <script src="game.js?v=first-boss-onboarding1" charset="utf-8"></script>
 </body>
 </html>
