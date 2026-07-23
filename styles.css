@@ -1033,6 +1033,12 @@ body {
 .slot[data-attr="poison"] { --slot-color: #66df78; }
 .slot[data-attr="neutral"] { --slot-color: #d8dee8; }
 
+.slot.hero-slot {
+  border-width: 2px;
+  background: linear-gradient(180deg, rgba(42,45,53,.98), rgba(8,10,14,.98));
+  box-shadow: inset 4px 0 0 var(--slot-color), inset 0 0 0 1px rgba(255,255,255,.12), 0 0 12px color-mix(in srgb, var(--slot-color) 22%, transparent);
+}
+
 .slot-icon {
   grid-row: 1 / 3;
   width: 24px;
@@ -1314,6 +1320,78 @@ body {
 
 .rarity-badge {
   border-radius: 3px;
+}
+
+.dimension-badge {
+  flex: 0 0 auto;
+  min-width: 52px;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px;
+  border: 1px solid color-mix(in srgb, var(--choice-color) 68%, #ffffff);
+  border-radius: 3px;
+  background: rgba(5,7,10,.72);
+  color: #eaf0f8;
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.dimension-badge b {
+  color: var(--choice-color);
+  font-size: 8px;
+}
+
+.choice-card.dimension-core .dimension-badge,
+.choice-card.dimension-synergy .dimension-badge,
+.choice-card.dimension-buff .dimension-badge {
+  border-color: #f2bd4f;
+  color: #fff0b1;
+}
+
+.choice-list[data-layout="heroes"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-height: min(66vh, 570px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.choice-list[data-layout="heroes"] .choice-card {
+  min-height: 138px;
+  grid-template-columns: 1fr;
+  grid-template-rows: 52px auto;
+  justify-items: center;
+  gap: 6px;
+  padding: 8px;
+  text-align: center;
+}
+
+.choice-list[data-layout="heroes"] .choice-emblem {
+  width: 50px;
+  height: 50px;
+}
+
+.choice-list[data-layout="heroes"] .choice-emblem img {
+  width: 44px;
+  height: 44px;
+}
+
+.choice-list[data-layout="heroes"] .choice-top {
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.choice-list[data-layout="heroes"] .choice-name {
+  width: 100%;
+  font-size: 13px;
+}
+
+.choice-list[data-layout="heroes"] .choice-sub,
+.choice-list[data-layout="heroes"] .choice-desc {
+  font-size: 9px;
 }
 
 .choice-card.rarity-newTower,

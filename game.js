@@ -1,10 +1,11 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-const BUILD_VERSION = "param-sync1";
+const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
+const BUILD_VERSION = "hero-trio27";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
-const MAX_TOWER_SLOTS = 4;
+const MAX_TOWER_SLOTS = 3;
 const NEW_TOWER_GUARANTEE_LIMIT = 3;
 
 const ui = {
@@ -218,6 +219,7 @@ function soundNoise(key, duration=.1, gain=.035, filterFrequency=900, delay=0, m
 }
 
 function playSfx(name) {
+  if (HEADLESS_SIM) return;
   if (name === "bet") {
     soundTone("bet-low", 150, .09, "square", .045, 205);
     soundTone("bet-high", 260, .1, "triangle", .04, 360, .07);
@@ -529,6 +531,13 @@ const TOWER_ROLE = {
   flame:"area", grenade:"area", cryo:"single", frostbomb:"control", laser:"single",
   chain:"area", gas:"area", needle:"single", blade:"general", trap:"control",
 };
+const MATH_TOWER_POWER = {
+  flame:{ minion:1.16, boss:.88 }, grenade:{ minion:1.28, boss:.62 },
+  cryo:{ minion:.56, boss:1.30 }, frostbomb:{ minion:1.24, boss:.76 },
+  laser:{ minion:.58, boss:1.36 }, chain:{ minion:1.20, boss:.80 },
+  gas:{ minion:1.26, boss:.70 }, needle:{ minion:1.00, boss:1.16 },
+  blade:{ minion:1.00, boss:.88 }, trap:{ minion:1.14, boss:.78 },
+};
 const ATTRIBUTE_KEYS = ["fire", "ice", "electric", "poison", "neutral"];
 const ATTRIBUTE_DISPLAY = {
   fire:{ label:"火", color:"#ff6b3d" },
@@ -536,6 +545,23 @@ const ATTRIBUTE_DISPLAY = {
   electric:{ label:"電", color:"#d89cff" },
   poison:{ label:"毒", color:"#66d86f" },
   neutral:{ label:"無", color:"#d5dde8" },
+};
+const HEROES = [
+  { id:"fire", name:"烈焰戰士", attr:"火", attrKey:"fire", damage:92, rate:1.12, range:900, color:"#ff6b3d", status:18, statusTime:1.5, desc:"火焰彈附帶短暫燃燒，強化火屬性砲塔。" },
+  { id:"ice", name:"寒霜獵手", attr:"冰", attrKey:"ice", damage:84, rate:1.08, range:900, color:"#72d4ff", status:.12, statusTime:1.0, desc:"冰晶彈附帶輕微緩速，強化冰屬性砲塔。" },
+  { id:"electric", name:"雷霆特工", attr:"電", attrKey:"electric", damage:86, rate:1.18, range:900, color:"#d89cff", status:.10, statusTime:1.0, desc:"電能彈留下感電弱點，強化電屬性砲塔。" },
+  { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", damage:78, rate:1.10, range:900, color:"#66d86f", status:16, statusTime:1.5, desc:"毒液彈附帶持續毒傷，強化毒屬性砲塔。" },
+  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", damage:108, rate:1.05, range:900, color:"#d5dde8", status:0, statusTime:0, desc:"高直接傷害的實彈攻擊，強化無屬性砲塔。" },
+];
+const UPGRADE_DIMENSIONS = {
+  damage:{ label:"傷害", mark:"DMG" },
+  speed:{ label:"攻速", mark:"SPD" },
+  quantity:{ label:"數量", mark:"+1" },
+  core:{ label:"核心", mark:"CORE" },
+  synergy:{ label:"連動", mark:"LINK" },
+  hero:{ label:"角色", mark:"HERO" },
+  buff:{ label:"角色 BUFF", mark:"BUFF" },
+  newTower:{ label:"新砲台", mark:"NEW" },
 };
 const WAVE_ATTRIBUTE_CYCLE = ["fire", "ice", "electric", "poison", "neutral"];
 const ENEMY_ATTRIBUTE_DEFAULTS = {
@@ -558,16 +584,16 @@ const PARAM_CHANNEL = "tower-defense-param-sync";
 const INITIAL_WALLET = 10000;
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
-  flame: { damage:80, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.40, eliteMul:.85, bossMul:.95 },
-  grenade: { damage:275, rate:.55, range:700, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.85, bossMul:.58 },
-  cryo: { damage:345, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.48, eliteMul:1.25, bossMul:1.20 },
-  frostbomb: { damage:245, rate:.45, range:720, splash:56, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.82 },
-  laser: { damage:98, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.54, eliteMul:1.25, bossMul:1.30 },
-  chain: { damage:118, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.80, bossMul:.90 },
-  gas: { damage:118, rate:.42, range:740, splash:46, duration:2.7, cooldown:0, tick:.5, minionMul:1.40, eliteMul:.90, bossMul:.70 },
-  needle: { damage:300, rate:.75, range:700, splash:34, duration:0, cooldown:0, tick:.5, minionMul:1.18, eliteMul:1.20, bossMul:.82 },
-  blade: { damage:245, rate:.78, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:.90, eliteMul:1.00, bossMul:.75 },
-  trap: { damage:145, rate:.50, range:700, splash:54, duration:1.5, cooldown:0, tick:.5, minionMul:1.28, eliteMul:.85, bossMul:.95 },
+  flame: { damage:104, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.45, eliteMul:.88, bossMul:1.20 },
+  grenade: { damage:250, rate:.55, range:700, splash:50, duration:0, cooldown:0, tick:.5, minionMul:1.34, eliteMul:.82, bossMul:1.12 },
+  cryo: { damage:371, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.50, eliteMul:1.25, bossMul:1.55 },
+  frostbomb: { damage:236, rate:.45, range:720, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.32, eliteMul:.78, bossMul:1.00 },
+  laser: { damage:114, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.62, eliteMul:1.28, bossMul:1.62 },
+  chain: { damage:139, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.42, eliteMul:.82, bossMul:1.18 },
+  gas: { damage:104, rate:.42, range:740, splash:43, duration:2.6, cooldown:0, tick:.5, minionMul:1.30, eliteMul:.86, bossMul:1.02 },
+  needle: { damage:256, rate:.75, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.86, eliteMul:1.15, bossMul:1.42 },
+  blade: { damage:265, rate:.80, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:.94, eliteMul:1.02, bossMul:.78 },
+  trap: { damage:140, rate:.48, range:700, splash:50, duration:1.4, cooldown:0, tick:.5, minionMul:1.18, eliteMul:.80, bossMul:.98 },
 };
 
 function towerDefaultParams() {
@@ -584,6 +610,18 @@ function towerDefaultParams() {
     result[`tower_${id}_minionMul`] = base.minionMul;
     result[`tower_${id}_eliteMul`] = base.eliteMul;
     result[`tower_${id}_bossMul`] = base.bossMul;
+  });
+  return result;
+}
+
+function heroDefaultParams() {
+  const result = {};
+  HEROES.forEach(hero => {
+    result[`hero_${hero.id}_damage`] = hero.damage;
+    result[`hero_${hero.id}_rate`] = hero.rate;
+    result[`hero_${hero.id}_range`] = hero.range;
+    result[`hero_${hero.id}_status`] = hero.status;
+    result[`hero_${hero.id}_statusTime`] = hero.statusTime;
   });
   return result;
 }
@@ -816,7 +854,19 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 17,
+  balanceRevision: 27,
+  mathModelEnabled: 1,
+  mathTargetRtp: 1.0,
+  mathTolerancePct: 1.0,
+  mathBuildInfluence: .22,
+  mathBossPenalty: .28,
+  mathMinClearChance: .18,
+  mathMaxClearChance: .96,
+  mathClearBand1: .93,
+  mathClearBand2: .86,
+  mathClearBand3: .78,
+  mathClearBand4: .70,
+  mathClearBand5: .62,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -830,20 +880,20 @@ const DEFAULT_PARAMS = {
   bossFirstChance: 28,
   bossFirstChanceInc: 32,
   bossFirstGuaranteeWave: 5,
-  bossFirstRewardMul: .45,
-  bossLaterRewardMul: .55,
-  bossChanceMul: 1.0,
+  bossFirstRewardMul: .35,
+  bossLaterRewardMul: .45,
+  bossChanceMul: .45,
   bossChanceCap: 70,
-  minionHpMul: 1.0,
+  minionHpMul: 1.05,
   minionAtkMul: .82,
   minionSpeedMul: .90,
   eliteHpMul: 1.05,
   eliteAtkMul: 1.05,
-  bossFirstHpMul: 1.03,
-  bossHpMul: .48,
+  bossFirstHpMul: 1.22,
+  bossHpMul: .62,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
-  moneyMul: 1.12,
+  moneyMul: 1.085,
   deepMoneyBase: 1.35,
   deepMoneyRamp: .04,
   deepMoneyCap: 1.80,
@@ -885,7 +935,13 @@ const DEFAULT_PARAMS = {
   dropChanceMul: 1.0,
   expMul: 1.0,
   towerDamageMul: 1.0,
-  fourthTowerOfferChance: 10,
+  heroDamageMul: 1.0,
+  heroSameAttrBonusPct: 15,
+  heroResonanceBonusPct: 10,
+  heroAllTowerBonusPct: 8,
+  heroDamageUpgradePct: 25,
+  heroRateUpgradePct: 20,
+  heroQuantityUpgrade: 1,
   bossRollDuration: 4.8,
   bossRollHighThreshold: 2.5,
   bossRollJackpotThreshold: 3.8,
@@ -895,6 +951,7 @@ const DEFAULT_PARAMS = {
   betMidMul: 1.35,
   betDeepMul: 1.85,
   baseHp: 1000,
+  ...heroDefaultParams(),
   ...towerDefaultParams(),
   ...monsterDefaultParams(),
   ...templateDefaultParams(),
@@ -923,7 +980,22 @@ function cleanParams(input={}) {
   ["bossFirstDiffEasyWeight", "bossFirstDiffNormalWeight", "bossFirstDiffHardWeight", "bossFirstDiffBrutalWeight"]
     .forEach(key => { next[key] = Math.max(0, next[key]); });
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
-  next.fourthTowerOfferChance = Math.max(0, Math.min(100, next.fourthTowerOfferChance));
+  next.mathModelEnabled = next.mathModelEnabled >= .5 ? 1 : 0;
+  next.mathTargetRtp = Math.max(0, Math.min(2, next.mathTargetRtp));
+  next.mathTolerancePct = Math.max(0, Math.min(20, next.mathTolerancePct));
+  next.mathBuildInfluence = Math.max(0, Math.min(1, next.mathBuildInfluence));
+  next.mathBossPenalty = Math.max(0, Math.min(.8, next.mathBossPenalty));
+  next.mathMinClearChance = Math.max(.01, Math.min(.99, next.mathMinClearChance));
+  next.mathMaxClearChance = Math.max(next.mathMinClearChance, Math.min(.999, next.mathMaxClearChance));
+  ["mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+    .forEach(key => { next[key] = Math.max(.01, Math.min(.999, next[key])); });
+  next.heroDamageMul = Math.max(0, next.heroDamageMul);
+  next.heroSameAttrBonusPct = Math.max(0, Math.min(100, next.heroSameAttrBonusPct));
+  next.heroResonanceBonusPct = Math.max(0, Math.min(100, next.heroResonanceBonusPct));
+  next.heroAllTowerBonusPct = Math.max(0, Math.min(100, next.heroAllTowerBonusPct));
+  next.heroDamageUpgradePct = Math.max(0, Math.min(200, next.heroDamageUpgradePct));
+  next.heroRateUpgradePct = Math.max(0, Math.min(200, next.heroRateUpgradePct));
+  next.heroQuantityUpgrade = Math.max(1, Math.round(next.heroQuantityUpgrade));
   next.bossRollDuration = Math.max(2.5, Math.min(8, next.bossRollDuration));
   next.bossRollHighThreshold = Math.max(1, next.bossRollHighThreshold);
   next.bossRollJackpotThreshold = Math.max(next.bossRollHighThreshold, next.bossRollJackpotThreshold);
@@ -975,13 +1047,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:17 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:27 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:17 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:27 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -1023,7 +1095,6 @@ function migrateBossParams(input={}) {
     next.balanceRevision = 12;
   }
   if ((Number(input.balanceRevision) || 0) < 13) {
-    next.fourthTowerOfferChance = DEFAULT_PARAMS.fourthTowerOfferChance;
     next.balanceRevision = 13;
   }
   if ((Number(input.balanceRevision) || 0) < 14) {
@@ -1043,12 +1114,76 @@ function migrateBossParams(input={}) {
     next.balanceRevision = 16;
   }
   if ((Number(input.balanceRevision) || 0) < 17) next.balanceRevision = 17;
+  if ((Number(input.balanceRevision) || 0) < 18) {
+    ["mathModelEnabled", "mathTargetRtp", "mathTolerancePct", "mathBuildInfluence", "mathBossPenalty", "mathMinClearChance", "mathMaxClearChance", "mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 18;
+  }
+  if ((Number(input.balanceRevision) || 0) < 19) {
+    [
+      "mathModelEnabled", "moneyMul", "minionHpMul",
+      "tower_flame_bossMul", "tower_grenade_bossMul", "tower_cryo_minionMul", "tower_cryo_bossMul",
+      "tower_frostbomb_damage", "tower_frostbomb_bossMul", "tower_laser_minionMul", "tower_laser_bossMul",
+      "tower_chain_bossMul", "tower_gas_bossMul", "tower_needle_minionMul", "tower_needle_bossMul",
+      "tower_trap_damage", "tower_trap_bossMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 19;
+  }
+  if ((Number(input.balanceRevision) || 0) < 20) {
+    next.moneyMul = DEFAULT_PARAMS.moneyMul;
+    next.balanceRevision = 20;
+  }
+  if ((Number(input.balanceRevision) || 0) < 21) {
+    next.moneyMul = DEFAULT_PARAMS.moneyMul;
+    next.balanceRevision = 21;
+  }
+  if ((Number(input.balanceRevision) || 0) < 22) {
+    ["moneyMul", "tower_flame_bossMul", "tower_grenade_bossMul", "tower_chain_bossMul", "tower_gas_bossMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 22;
+  }
+  if ((Number(input.balanceRevision) || 0) < 23) {
+    [
+      "bossFirstRewardMul", "bossLaterRewardMul", "bossChanceMul", "bossFirstHpMul", "bossHpMul",
+      "tower_flame_damage", "tower_flame_minionMul", "tower_flame_eliteMul",
+      "tower_grenade_damage", "tower_grenade_splash", "tower_grenade_minionMul", "tower_grenade_eliteMul", "tower_grenade_bossMul",
+      "tower_frostbomb_damage", "tower_frostbomb_splash", "tower_frostbomb_minionMul", "tower_frostbomb_eliteMul", "tower_frostbomb_bossMul",
+      "tower_laser_damage", "tower_laser_minionMul", "tower_laser_eliteMul", "tower_laser_bossMul",
+      "tower_chain_damage", "tower_chain_minionMul", "tower_chain_eliteMul", "tower_chain_bossMul",
+      "tower_gas_damage", "tower_gas_splash", "tower_gas_duration", "tower_gas_minionMul", "tower_gas_eliteMul", "tower_gas_bossMul",
+      "tower_needle_damage", "tower_needle_splash", "tower_needle_minionMul", "tower_needle_eliteMul", "tower_needle_bossMul",
+      "tower_blade_damage", "tower_blade_rate", "tower_blade_minionMul", "tower_blade_eliteMul", "tower_blade_bossMul",
+      "tower_trap_damage", "tower_trap_rate", "tower_trap_splash", "tower_trap_duration", "tower_trap_minionMul", "tower_trap_eliteMul", "tower_trap_bossMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 23;
+  }
+  if ((Number(input.balanceRevision) || 0) < 24) {
+    ["moneyMul","tower_flame_damage","tower_grenade_damage","tower_cryo_damage","tower_laser_damage","tower_chain_damage","tower_blade_damage"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 24;
+  }
+  if ((Number(input.balanceRevision) || 0) < 25) {
+    ["moneyMul","tower_flame_damage","tower_grenade_damage","tower_cryo_damage","tower_frostbomb_damage","tower_laser_damage","tower_chain_damage","tower_gas_damage","tower_needle_damage","tower_trap_damage"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 25;
+  }
+  if ((Number(input.balanceRevision) || 0) < 26) {
+    next.mathModelEnabled = DEFAULT_PARAMS.mathModelEnabled;
+    next.balanceRevision = 26;
+  }
+  if ((Number(input.balanceRevision) || 0) < 27) {
+    Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("hero_") || key.startsWith("heroSame") || key.startsWith("heroResonance") || key.startsWith("heroAll") || key.startsWith("heroDamage") || key.startsWith("heroRate") || key.startsWith("heroQuantity"))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 27;
+  }
   return next;
 }
 
 let params = loadParams();
+let headlessParamsLocked = false;
 
 function applyExternalParams(next) {
+  if (HEADLESS_SIM && headlessParamsLocked) return;
   params = cleanParams(next);
   if (state) {
     state.hp = Math.min(state.hp, params.baseHp);
@@ -1068,20 +1203,24 @@ window.addEventListener("storage", event => {
 });
 
 let state;
+let currentChoices = [];
 let last = performance.now();
 let speedIndex = 0;
 let lastUiFrame = 0;
 let lastDebugFrame = 0;
 let lastDebugSnapshot = "";
+let mathRunSeed = 1;
 const slotViews = [];
 
 function reset() {
   stopChannelAudio();
   const wallet = state && Number.isFinite(state.wallet) ? state.wallet : INITIAL_WALLET;
+  mathRunSeed = ((Math.random() * 4294967296) >>> 0) || 1;
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
-    towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, waveActive: false, upgradeRepeatLocks: {},
-    spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral",
+    hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
+    spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", simBossSpawned:0,
+    certifiedPayout:0, mathTicket:null, mathLedger:[],
   };
   ui.betRaise?.classList.add("hidden");
   ui.phone?.classList.remove("boss-roll-active", "boss-roll-high", "boss-roll-jackpot", "boss-result-high", "boss-result-jackpot");
@@ -1182,7 +1321,143 @@ function betForWave(wave, bosses=state.bossSeen) {
   const base = BET_STEPS[state.baseBetIndex];
   return Math.round(base * combinedBetMultiplier(wave, bosses));
 }
-function payout() { return Math.round(state.pot * (1 + state.bossAdd)); }
+function certifiedMathEnabled() { return paramNumber("mathModelEnabled", 1) >= .5; }
+function payout() {
+  return certifiedMathEnabled()
+    ? Math.max(0, Math.round(state.certifiedPayout || 0))
+    : Math.round(state.pot * (1 + state.bossAdd));
+}
+
+function mathUniform(wave, lane) {
+  let value = (mathRunSeed ^ Math.imul((wave >>> 0) + 1, 0x9e3779b1) ^ Math.imul((lane >>> 0) + 1, 0x85ebca6b)) >>> 0;
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x7feb352d) >>> 0;
+  value ^= value >>> 15;
+  value = Math.imul(value, 0x846ca68b) >>> 0;
+  value ^= value >>> 16;
+  return (value >>> 0) / 4294967296;
+}
+
+function stochasticRound(value, uniform=Math.random()) {
+  const safe = Math.max(0, Number(value) || 0);
+  const floor = Math.floor(safe);
+  return floor + (uniform < safe - floor ? 1 : 0);
+}
+
+function mathBaseClearChance(wave) {
+  const key = wave <= 2 ? "mathClearBand1" : wave <= 5 ? "mathClearBand2" : wave <= 10 ? "mathClearBand3" : wave <= 20 ? "mathClearBand4" : "mathClearBand5";
+  return paramNumber(key, .75);
+}
+
+function mathBuildPower(boss=false) {
+  if (!state.towers.length) return .5;
+  const key = boss ? "boss" : "minion";
+  const roleAverage = state.towers.reduce((sum, tower) => sum + (MATH_TOWER_POWER[tower.id]?.[key] || 1), 0) / state.towers.length;
+  const slotFactor = .82 + Math.min(3, state.towers.length - 1) * .10;
+  const upgrades = state.towers.reduce((sum, tower) => sum + (tower.upgrades?.length || 0), 0);
+  const upgradeFactor = 1 + Math.min(.30, upgrades * .02);
+  const heroUpgradeFactor = 1 + Math.min(.18, (state.hero?.upgrades?.length || 0) * .018);
+  const matchingTowers = state.hero ? state.towers.filter(tower => towerAttr(tower) === state.hero.attrKey).length : 0;
+  const resonanceFactor = 1 + matchingTowers * .02 + (state.hero?.sameAttrBonus || 0) / 500;
+  return roleAverage * slotFactor * upgradeFactor * heroUpgradeFactor * resonanceFactor;
+}
+
+function mathClearChance(wave, boss=false, difficulty=null) {
+  const base = mathBaseClearChance(wave);
+  const buildShift = (mathBuildPower(boss) - 1) * paramNumber("mathBuildInfluence", .22);
+  const difficultyShift = boss ? ({ easy:.08, normal:0, hard:-.08, brutal:-.16 }[difficulty?.id] || 0) : 0;
+  const raw = base + buildShift + difficultyShift - (boss ? paramNumber("mathBossPenalty", .28) : 0);
+  const min = paramNumber("mathMinClearChance", .18);
+  const max = Math.max(min, paramNumber("mathMaxClearChance", .96));
+  return Math.round(clamp(raw, min, max) * 10000) / 10000;
+}
+
+function mathWaveRewardRoll(wave) {
+  const weighted = WAVE_REWARD_TIERS.map(tier => ({
+    tier,
+    weight:Math.max(0,paramNumber(tier.weightKey,0)),
+    multiplier:Math.max(0,paramNumber(tier.mulKey,0)),
+  }));
+  const totalWeight = weighted.reduce((sum,item) => sum+item.weight,0) || 1;
+  const expectedMultiplier = weighted.reduce((sum,item) => sum+item.weight*item.multiplier,0)/totalWeight || 1;
+  let cursor = mathUniform(wave,4)*totalWeight;
+  let selected = weighted[0];
+  for (const item of weighted) {
+    cursor -= item.weight;
+    if (cursor <= 0) { selected = item; break; }
+  }
+  return {
+    id:selected.tier.id,label:selected.tier.label,multiplier:selected.multiplier,
+    factor:selected.multiplier/expectedMultiplier,expectedMultiplier,
+  };
+}
+
+function expectedBossAdd(rewardMul) {
+  const weights = [params.bossLowWeight,params.bossMidWeight,params.bossHighWeight].map(value => Math.max(0,Number(value)||0));
+  const mids = [(params.bossLowMin+params.bossLowMax)/2,(params.bossMidMin+params.bossMidMax)/2,(params.bossHighMin+params.bossHighMax)/2];
+  const total = weights.reduce((sum,value) => sum+value,0) || 1;
+  return weights.reduce((sum,weight,index) => sum+weight*Math.max(1,mids[index]*rewardMul),0)/total;
+}
+
+function createMathTicket(wave, bet, boss=false, difficulty=null) {
+  const before = Math.max(0, Number(state.certifiedPayout) || 0);
+  const targetRtp = paramNumber("mathTargetRtp", 1);
+  const clearChance = mathClearChance(wave, boss, difficulty);
+  const waveReward = mathWaveRewardRoll(wave);
+  let rolledAdd = 0;
+  let bossRewardFactor = 1;
+  if (boss) {
+    const rewardMul = state.bossSeen === 0 ? params.bossFirstRewardMul : params.bossLaterRewardMul;
+    rolledAdd = Math.round(Math.max(1,bossMultiplier()*rewardMul)*10)/10;
+    bossRewardFactor = rolledAdd/Math.max(.1,expectedBossAdd(rewardMul));
+  }
+  const rewardFactor = waveReward.factor*bossRewardFactor;
+  const expectedAfter = before + bet * targetRtp * rewardFactor;
+  const conditionalPayoutExact = expectedAfter / clearChance;
+  const payoutUniform = mathUniform(wave, 1);
+  const successUniform = mathUniform(wave, 2);
+  const targetPayout = stochasticRound(conditionalPayoutExact, payoutUniform);
+  const success = successUniform < clearChance;
+  let bossAdd = 0;
+  if (boss && success) {
+    const currentMultiplier = 1 + state.bossAdd;
+    const maxAffordableAdd = state.pot > 0 ? Math.max(0, targetPayout / state.pot - currentMultiplier) : rolledAdd;
+    bossAdd = Math.round(Math.min(rolledAdd, maxAffordableAdd) * 10) / 10;
+  }
+  const targetMultiplier = Math.max(.1, 1 + state.bossAdd + bossAdd);
+  const targetPot = Math.max(state.pot, stochasticRound(targetPayout / targetMultiplier, mathUniform(wave, 3)));
+  const ticket = {
+    id:state.mathLedger.length + 1, wave, bet, boss, bossDifficulty:difficulty?.id || null,
+    buildPower:mathBuildPower(boss), clearChance, success, before, targetRtp,
+    expectedAfter, conditionalPayoutExact, targetPayout, targetPot, payoutUniform, successUniform,
+    waveRewardTier:waveReward.id,waveRewardMultiplier:waveReward.multiplier,waveRewardFactor:waveReward.factor,
+    bossRewardFactor,rewardFactor,rolledBossAdd:rolledAdd,
+    rewardBudget:Math.max(0, targetPot - state.pot), bossAdd,
+    identityError:Math.abs(clearChance * conditionalPayoutExact - expectedAfter),
+    settled:false, result:"pending",
+  };
+  state.mathTicket = ticket;
+  state.mathLedger.push(ticket);
+  return ticket;
+}
+
+function settleMathTicket() {
+  const ticket = state.mathTicket;
+  if (!certifiedMathEnabled() || !ticket || ticket.settled || !ticket.success) return;
+  state.certifiedPayout = ticket.targetPayout;
+  state.pot = Math.max(0, ticket.targetPot);
+  ticket.settled = true;
+  ticket.result = "clear";
+  ticket.actualPayout = payout();
+}
+
+function failMathTicket() {
+  const ticket = state.mathTicket;
+  if (!ticket || ticket.settled) return;
+  ticket.settled = true;
+  ticket.result = "fail";
+  ticket.actualPayout = 0;
+}
 
 function pickParamTier(tiers) {
   const weights = Object.fromEntries(tiers.map(tier => [tier.id, Math.max(0, paramNumber(tier.weightKey, 0))]));
@@ -1316,26 +1591,35 @@ function rarityLabel(rarity) {
     deepen: "深化",
     synergy: "連動",
     newTower: "新砲台",
+    hero: "角色",
+    heroUpgrade: "角色強化",
+    heroBuff: "角色 BUFF",
   }[rarity] || "普通";
 }
 
 function showChoices(title, hint, choices) {
   stopChannelAudio();
   state.choicesOpen = true;
+  currentChoices = choices.slice();
+  if (HEADLESS_SIM) return;
   ui.choiceTitle.textContent = title;
   ui.choiceHint.textContent = hint;
   ui.choiceList.innerHTML = "";
+  ui.choiceList.dataset.layout = choices.length === 5 && choices.every(choice => choice.rarity === "hero") ? "heroes" : "choices";
   choices.forEach(choice => {
     const btn = document.createElement("button");
     const rarity = choice.rarity || "common";
     const towerDef = choice.towerId ? TOWERS.find(tower => tower.id === choice.towerId) : null;
     const attrKey = choice.attrKey || (towerDef ? towerAttr(towerDef) : "neutral");
-    const icon = towerDef ? towerIconDataUrl(towerDef) : "";
-    btn.className = `choice-card rarity-${rarity} attr-${attrKey}`;
+    const icon = towerDef ? towerIconDataUrl(towerDef) : choice.heroId ? heroIconDataUrl(HEROES.find(hero => hero.id === choice.heroId)) : "";
+    const dimension = choice.dimension || (rarity === "newTower" ? "newTower" : rarity === "synergy" ? "synergy" : rarity === "core" || rarity === "deepen" ? "core" : "damage");
+    const dimensionInfo = UPGRADE_DIMENSIONS[dimension] || UPGRADE_DIMENSIONS.core;
+    btn.className = `choice-card rarity-${rarity} dimension-${dimension} attr-${attrKey}`;
+    btn.__choice = choice;
     btn.type = "button";
     btn.style.setProperty("--choice-color", (ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).color);
     const iconHtml = icon ? `<span class="choice-emblem"><img src="${icon}" alt=""></span>` : "";
-    btn.innerHTML = `${iconHtml}<span class="choice-copy"><span class="choice-top"><span class="choice-name">${choice.title}</span><span class="rarity-badge">${choice.rarityLabel || rarityLabel(rarity)}</span></span><span class="choice-sub">${choice.tag || ""}</span><span class="choice-desc">${choice.desc}</span></span>`;
+    btn.innerHTML = `${iconHtml}<span class="choice-copy"><span class="choice-top"><span class="choice-name">${choice.title}</span><span class="dimension-badge"><b>${dimensionInfo.mark}</b>${dimensionInfo.label}</span></span><span class="choice-sub">${choice.tag || choice.rarityLabel || rarityLabel(rarity)}</span><span class="choice-desc">${choice.desc}</span></span>`;
     btn.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -1359,13 +1643,17 @@ function showChoices(title, hint, choices) {
 function hideChoices() {
   const wasOpen = state.choicesOpen;
   state.choicesOpen = false;
+  currentChoices = [];
+  if (HEADLESS_SIM) return;
   ui.choiceOverlay.classList.add("hidden");
   ui.choiceList.innerHTML = "";
+  delete ui.choiceList.dataset.layout;
   if (wasOpen) resumeChannelAudio();
 }
 function showResult(title, body) {
   stopChannelAudio();
   state.over = true;
+  if (HEADLESS_SIM) return;
   ui.resultTitle.textContent = title;
   ui.resultBody.textContent = body;
   ui.resultOverlay.classList.remove("hidden");
@@ -1380,11 +1668,49 @@ function startBet() {
   playSfx("bet");
   if (!state.started) {
     state.wallet -= bet;
-    showStartingTowerDraft();
+    if (!state.hero) showHeroDraft();
+    else showStartingTowerDraft();
     return;
   }
   state.wallet -= bet;
   startWave();
+}
+
+function showHeroDraft() {
+  const choices = HEROES.map(hero => ({
+    title:hero.name,
+    tag:`${hero.attr}屬性角色`,
+    heroId:hero.id,
+    attrKey:hero.attrKey,
+    rarity:"hero",
+    dimension:"hero",
+    desc:hero.desc,
+    onPick:() => {
+      addHero(hero);
+      hideChoices();
+      showStartingTowerDraft();
+    }
+  }));
+  showChoices("選擇出戰角色", "角色會自動攻擊，並強化同屬性砲塔。", choices);
+}
+
+function addHero(def) {
+  state.hero = {
+    ...JSON.parse(JSON.stringify(def)),
+    id:`hero_${def.id}`,
+    heroId:def.id,
+    isHero:true,
+    cd:0,
+    level:1,
+    damageMul:1,
+    rateMul:1,
+    extraShots:0,
+    sameAttrBonus:0,
+    allTowerBonus:0,
+    upgrades:[],
+    upgradeCounts:{},
+    buffs:{},
+  };
 }
 
 function showStartingTowerDraft() {
@@ -1436,7 +1762,7 @@ function towerChoice(t, onPick) {
   const damage = towerParam(t, "damage", t.damage);
   const range = towerParam(t, "range", t.range);
   const rate = towerParam(t, "rate", t.rate);
-  return { title: t.name, tag: `${t.attr}屬性｜${towerRoleLabel(t)}`, towerId:t.id, attrKey:towerAttr(t), rarity:"newTower", desc: `傷害 ${damage}｜射程 ${range}｜攻速 ${rate}/秒。${t.desc}`, onPick };
+  return { title: t.name, tag: `${t.attr}屬性｜${towerRoleLabel(t)}`, towerId:t.id, attrKey:towerAttr(t), rarity:"newTower", dimension:"newTower", desc: `傷害 ${damage}｜攻速 ${rate}/秒｜${t.desc}`, onPick };
 }
 
 function towerRoleLabel(t) {
@@ -1447,6 +1773,35 @@ function towerRoleLabel(t) {
 }
 
 const towerIconCache = new Map();
+const heroIconCache = new Map();
+function heroIconDataUrl(hero) {
+  if (!hero) return "";
+  const key = hero.heroId || hero.id;
+  if (heroIconCache.has(key)) return heroIconCache.get(key);
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 96;
+  iconCanvas.height = 96;
+  if (typeof iconCanvas.toDataURL !== "function") return "";
+  const g = iconCanvas.getContext("2d");
+  const attrKey = hero.attrKey || key;
+  const color = (ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).color;
+  const bg = g.createRadialGradient(48, 36, 5, 48, 48, 46);
+  bg.addColorStop(0, color);
+  bg.addColorStop(.34, "#252c38");
+  bg.addColorStop(1, "#080b10");
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 96, 96);
+  g.strokeStyle = color;
+  g.lineWidth = 4;
+  g.beginPath(); g.arc(48,48,39,0,Math.PI*2); g.stroke();
+  g.fillStyle = "#e8eef8";
+  g.beginPath(); g.arc(48,31,12,0,Math.PI*2); g.fill();
+  g.beginPath(); g.moveTo(25,76); g.quadraticCurveTo(28,48,48,47); g.quadraticCurveTo(68,48,71,76); g.closePath(); g.fill();
+  drawAttributeGlyph(g, attrKey, 48, 61, 9, color);
+  const url = iconCanvas.toDataURL("image/png");
+  heroIconCache.set(key, url);
+  return url;
+}
 function towerIconDataUrl(tower) {
   if (!tower) return "";
   if (towerIconCache.has(tower.id)) return towerIconCache.get(tower.id);
@@ -1533,6 +1888,8 @@ function startWave() {
   state.currentWaveAttr = primaryAttr;
   const count = rand(band.count[0], band.count[1]);
   const boss = consumeBossPreview(state.wave, info);
+  const bossDifficulty = boss ? rollBossDifficulty(state.bossSeen === 0) : null;
+  const mathTicket = certifiedMathEnabled() ? createMathTicket(state.wave, betForWave(state.wave), boss, bossDifficulty) : null;
   const elites = eliteCount(info);
   const normalQueue = Array.from({ length:count }, () => {
     const kind = pickWaveMonster(template);
@@ -1542,13 +1899,15 @@ function startWave() {
     const index = rand(0, ELITES.length - 1);
     return { index, rewardWeight:eliteRewardWeight(index) };
   });
-  const reward = rollWaveReward(state.wave, rewardFundingBet(state.wave));
+  const reward = mathTicket
+    ? { id:"certified", label:"驗證預算", multiplier:mathTicket.rewardBudget / Math.max(1, betForWave(state.wave)), budget:mathTicket.rewardBudget, remaining:mathTicket.rewardBudget, weightRemaining:0 }
+    : rollWaveReward(state.wave, rewardFundingBet(state.wave));
   reward.weightRemaining = [...normalQueue, ...eliteQueue].reduce((sum, entry) => sum + entry.rewardWeight, 0);
   state.waveReward = reward;
   state.spawn = {
     remain:normalQueue.length, normalQueue, eliteQueue, timer:0, every:params.spawnInterval,
     template, hpMul:info.hpMul, band, elites:eliteQueue.length, boss,
-    bossDifficulty:boss ? rollBossDifficulty(state.bossSeen === 0) : null, primaryAttr, wave:state.wave
+    bossDifficulty, primaryAttr, wave:state.wave
   };
   state.waveActive = true;
   state.message = `戰鬥開始：${count} 隻怪${elites ? `，菁英 ${elites}` : ""}${boss ? "，Boss 接近" : ""}`;
@@ -1581,6 +1940,7 @@ function spawnElite(hpMul, primaryAttr, wave, index=rand(0, ELITES.length - 1), 
 function spawnBoss(hpMul, primaryAttr, wave, difficulty=null) {
   const index = rand(0, BOSSES.length - 1);
   const base = BOSSES[index];
+  if (HEADLESS_SIM) state.simBossSpawned += 1;
   state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", `boss_${index + 1}`, pickWaveAttribute(primaryAttr, wave, true), state.bossRolled, 0, difficulty));
 }
 function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind, primaryAttr=null, bossOrdinal=0, rewardWeight=0, bossDifficulty=null) {
@@ -1629,6 +1989,7 @@ function update(dt) {
   if (state.over || state.choicesOpen) return;
   updateSpawn(dt);
   updateZones(dt);
+  updateHero(dt);
   updateTowers(dt);
   updateProjectiles(dt);
   updateEnemies(dt);
@@ -1636,6 +1997,41 @@ function update(dt) {
   state.effects = state.effects.map(e => ({ ...e, t:e.t-dt * (e.type === "bossReward" ? 1 / speedMultiplier() : 1) })).filter(e => e.t > 0);
   state.monsters.forEach(m => { if (m.damageTextCd > 0) m.damageTextCd -= dt; });
   updateBossRoll(presentationDt);
+}
+
+function heroParam(hero, key, fallback) {
+  const value = Number(params[`hero_${hero.heroId || hero.attrKey}_${key}`]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function heroAttackCooldown(hero) {
+  return 1 / Math.max(.05, heroParam(hero, "rate", hero.rate) * (hero.rateMul || 1));
+}
+
+function heroDamage(hero) {
+  return heroParam(hero, "damage", hero.damage) * (hero.damageMul || 1) * params.heroDamageMul;
+}
+
+function updateHero(dt) {
+  const hero = state.hero;
+  if (!hero) return;
+  hero.cd -= dt;
+  if (hero.cd > 0) return;
+  const origin = fireOrigin();
+  const range = heroParam(hero, "range", hero.range);
+  const targets = state.monsters
+    .map(monster => ({ monster, distance:dist(origin, monster) }))
+    .filter(item => item.monster.hp > 0 && item.distance <= range)
+    .sort((a,b) => b.monster.y - a.monster.y);
+  if (!targets.length) return;
+  const count = 1 + (hero.extraShots || 0);
+  const offsets = spreadOffsets(count, 10);
+  offsets.forEach((offset, index) => {
+    const target = targets[index]?.monster || targets[0].monster;
+    launchProjectileAt(hero, target, "hero", target === targets[0].monster ? offset : 0);
+  });
+  playTowerSfx(hero.attrKey === "electric" ? "chain" : hero.attrKey === "ice" ? "cryo" : hero.attrKey === "poison" ? "needle" : "blade");
+  hero.cd = heroAttackCooldown(hero);
 }
 
 function updateSpawn(dt) {
@@ -2174,7 +2570,7 @@ function targetPoints(target, count, gap = 34) {
 
 function launchProjectileAt(t, target, type, targetOffsetX) {
   const origin = fireOrigin();
-  const speed = type === "grenade" ? 520 : type === "blade" ? 760 : 900;
+  const speed = type === "grenade" ? 520 : type === "blade" ? 760 : type === "hero" ? 980 : 900;
   const aim = { x: clamp(target.x + targetOffsetX, 12, FIELD.w - 12), y: target.y };
   const end = type === "grenade" ? aim : projectileEdgePoint(origin.x, origin.y, aim.x, aim.y);
   const travel = clamp(dist(origin, end) / speed, .12, .72);
@@ -2240,7 +2636,27 @@ function projectileHit(p) {
     const lineTargets = enemiesNearLine(p.sx, p.sy, p.fullTx || p.tx, p.fullTy || p.ty, 20).sort((a,b) => b.y - a.y).slice(0, (t.pierce || 2) + (t.extraPierce || 0));
     if (lineTargets.length) pierce(t, lineTargets.map(m => ({ m })), "cryo", { x:p.sx, y:p.sy }, false);
     effect("spark", { x:center.x, y:center.y, color:t.color }, center, { life: .18 });
+  } else if (p.type === "hero") {
+    const target = p.collided || nearestEnemy(center, 30);
+    if (target) {
+      damageEnemy(target, heroDamage(t), t);
+      applyHeroProjectileStatus(t, target);
+      effect("spark", { x:center.x, y:center.y, color:t.color }, target, { life:.16 });
+    }
   }
+}
+
+function applyHeroProjectileStatus(hero, monster) {
+  const status = heroParam(hero, "status", hero.status || 0);
+  const time = heroParam(hero, "statusTime", hero.statusTime || 0);
+  if (hero.attrKey === "fire" && status > 0) applyBurn(monster, status, time, hero);
+  else if (hero.attrKey === "ice" && status > 0) {
+    monster.slowTime = Math.max(monster.slowTime || 0, time);
+    monster.slowPct = Math.max(monster.slowPct || 0, status);
+  } else if (hero.attrKey === "electric" && status > 0) {
+    monster.electricVulnerableTime = Math.max(monster.electricVulnerableTime || 0, time);
+    monster.electricVulnerableAmount = Math.max(monster.electricVulnerableAmount || 0, status);
+  } else if (hero.attrKey === "poison" && status > 0) applyPoison(monster, status, time, hero, .5);
 }
 
 function areaAtPoint(t, center, type, radius, mainDamage, splashMul, opts={}) {
@@ -2283,26 +2699,49 @@ function damageEnemy(m, amount, t) {
   if (t.poison) applyPoison(m, towerPoisonDps(t), towerPoisonTime(t), t, t.poisonTick || .5);
   if (t.id === "needle" && wasPoisoned && t.conditionalStunTime) applyHardControl(m, "stunTime", t.conditionalStunTime);
   if (t.id === "needle" && wasPoisoned && t.burnDps && !t.burn) applyBurn(m, t.burnDps, t.burnTime || 2, t);
+  applyHeroTowerBuff(t, m);
   return dealt;
+}
+function applyHeroTowerBuff(t, m) {
+  const hero = state.hero;
+  if (!hero || t.isHero || towerAttr(t) !== hero.attrKey) return;
+  if (hero.buffs?.frostInfusion) {
+    m.slowTime = Math.max(m.slowTime || 0, 1);
+    m.slowPct = Math.max(m.slowPct || 0, .08);
+  }
+  if (hero.buffs?.electricInfusion) {
+    m.electricVulnerableTime = Math.max(m.electricVulnerableTime || 0, 1.2);
+    m.electricVulnerableAmount = Math.max(m.electricVulnerableAmount || 0, .08);
+  }
+  if (hero.buffs?.burnInfusion) applyBurn(m, 10, 1.2, t);
+  if (hero.buffs?.poisonInfusion) applyPoison(m, 10, 1.5, t, .5);
 }
 function isPoisoned(m) { return (m.poisonTime || 0) > 0 || (m.toxicTime || 0) > 0; }
 function resolveDamage(m, amount, t) {
   const vuln = m.vulnerable > 0 ? 1 + (m.vulnerableAmount || 0) : 1;
   const attrMul = attributeMultiplier(t, m);
   const classMul = targetClassMultiplier(t, m);
+  const heroTowerMul = state.hero && !t.isHero && towerAttr(t) === state.hero.attrKey
+    ? 1 + (params.heroSameAttrBonusPct + (state.hero.sameAttrBonus || 0)) / 100
+    : 1 + (state.hero?.allTowerBonus || 0) / 100;
   let conditionalMul = 1;
   if (t.poisonTargetDamagePct && isPoisoned(m)) conditionalMul *= 1 + t.poisonTargetDamagePct / 100;
   if (t.frozenTargetDamagePct && m.freezeTime > 0) conditionalMul *= 1 + t.frozenTargetDamagePct / 100;
   if (t.burningTargetDamagePct && m.burnTime > 0) conditionalMul *= 1 + t.burningTargetDamagePct / 100;
   if (towerAttr(t) === "electric" && m.electricVulnerableTime > 0) conditionalMul *= 1 + (m.electricVulnerableAmount || 0);
-  const dealt = amount * vuln * attrMul * classMul * conditionalMul;
+  const dealt = amount * vuln * attrMul * classMul * conditionalMul * heroTowerMul;
   m.hp -= dealt;
+  const ticket = state.mathTicket;
+  if (certifiedMathEnabled() && ticket && !ticket.success && (!ticket.boss || m.boss)) m.hp = Math.max(1, m.hp);
   const attrState = attrMul > 1.001 ? 1 : attrMul < .999 ? -1 : 0;
   showDamageNumber(m, dealt, t, attrState);
   return dealt;
 }
 function towerAttr(t) { return TOWER_ATTR[t.id] || t.attrKey || "neutral"; }
 function attributeMultiplier(t, m) {
+  if (t.isHero && state.hero?.adaptiveAttribute) {
+    return Math.max(1, ...Object.values(m.attrMultipliers || {}).map(value => Number(value) || 1));
+  }
   const value = Number(m.attrMultipliers?.[towerAttr(t)]);
   return Number.isFinite(value) ? Math.max(0, value) : 1;
 }
@@ -2329,6 +2768,7 @@ function applyPoison(m, damage, time, tower=null, tick=.5) {
 }
 
 function showDamageNumber(m, amount, t, attrState=0) {
+  if (HEADLESS_SIM) return;
   if (!amount) return;
   if (amount < 30) {
     m.pendingDamageText = (m.pendingDamageText || 0) + amount;
@@ -2374,6 +2814,7 @@ function updateProjectiles(dt) {
     if (p.type === "grenade") p.arc = Math.sin(progress * Math.PI) * 72;
     const hit = projectileCollision(p, prev, { x:p.x, y:p.y });
     if (hit) {
+      p.collided = hit;
       p.hitX = hit.x;
       p.hitY = hit.y;
       p.tx = hit.x;
@@ -2386,8 +2827,8 @@ function updateProjectiles(dt) {
 }
 
 function projectileCollision(p, from, to) {
-  if (p.type !== "needle" && p.type !== "blade" && p.type !== "cryo") return null;
-  const projectileRadius = p.type === "blade" ? 12 : p.type === "cryo" ? 7 : 5;
+  if (p.type !== "needle" && p.type !== "blade" && p.type !== "cryo" && p.type !== "hero") return null;
+  const projectileRadius = p.type === "blade" ? 12 : p.type === "hero" ? 9 : p.type === "cryo" ? 7 : 5;
   const hit = state.monsters
     .filter(m => m.hp > 0 && distanceToSegment(m, from, to) <= projectileRadius + enemyHitRadius(m) + 2)
     .sort((a,b) => dist(from, a) - dist(from, b))[0];
@@ -2467,9 +2908,12 @@ function updateEnemies(dt) {
     else alive.push(m);
   }
   state.monsters = alive;
+  if (certifiedMathEnabled() && state.mathTicket?.success && state.hp <= 0) state.hp = 1;
   if (state.hp <= 0) {
     state.hp = 0;
     state.pot = 0;
+    state.certifiedPayout = 0;
+    failMathTicket();
     stopChannelAudio();
     playSfx("fail");
     showResult("防線突破", "基地 HP 歸零，本局失敗，POT 歸零。");
@@ -2480,9 +2924,14 @@ function kill(m) {
   if (m.boss) {
     const nextWave = Math.min(30, state.wave + 1);
     const previousBet = betForWave(nextWave, state.bossSeen);
-    const rawAdd = bossMultiplier();
-    const rewardMul = state.bossSeen === 0 ? params.bossFirstRewardMul : params.bossLaterRewardMul;
-    const add = Math.round(Math.max(1, rawAdd * rewardMul) * 10) / 10;
+    let add;
+    if (certifiedMathEnabled() && state.mathTicket?.boss) {
+      add = Math.max(0, Number(state.mathTicket.bossAdd) || 0);
+    } else {
+      const rawAdd = bossMultiplier();
+      const rewardMul = state.bossSeen === 0 ? params.bossFirstRewardMul : params.bossLaterRewardMul;
+      add = Math.round(Math.max(1, rawAdd * rewardMul) * 10) / 10;
+    }
     state.bossSeen += 1;
     const nextBet = betForWave(nextWave, state.bossSeen);
     state.exp += (m.exp || 120) * params.expMul;
@@ -2511,6 +2960,7 @@ function claimWaveReward(m) {
 }
 
 function showMoneyReward(m, amount) {
+  if (HEADLESS_SIM) return;
   const elite = !!m.elite;
   if (elite) showEliteDefeat(m, amount);
   else playSfx("coin");
@@ -2674,6 +3124,7 @@ function bossMultiplier() {
 function checkWaveClear() {
   if (state.bossRoll) return;
   if (!state.spawn && !state.monsters.length && state.waveActive) {
+    settleMathTicket();
     state.waveActive = false;
     playSfx("waveClear");
     effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, { text:"波次完成", life:.9 });
@@ -2689,6 +3140,7 @@ function expRequired(level) { return paramNumber(`exp_${level}`, EXP_TABLE[level
 function canLevelUp() { return state.exp >= expRequired(state.level); }
 function showUpgradeChoices() {
   decayUpgradeRepeatLocks();
+  decayHeroUpgradeRepeatLocks();
   state.exp -= expRequired(state.level);
   state.level += 1;
   const choices = [];
@@ -2701,10 +3153,8 @@ function showUpgradeChoices() {
     });
   };
   const guaranteeNewTower = state.towers.length < NEW_TOWER_GUARANTEE_LIMIT;
-  const rolledFourthTower = state.towers.length === NEW_TOWER_GUARANTEE_LIMIT
-    && Math.random() * 100 < params.fourthTowerOfferChance;
-  if (guaranteeNewTower || rolledFourthTower) addNewTowerChoices(guaranteeNewTower && state.towers.length === 1 ? 2 : 1);
-  const candidates = collectUpgradeCandidates();
+  if (guaranteeNewTower) addNewTowerChoices(1);
+  const candidates = [...collectUpgradeCandidates(), ...collectHeroUpgradeCandidates()];
   const pickedCandidates = selectUpgradeCandidates(candidates, choices, 3 - choices.length);
   if (guaranteeNewTower && pickedCandidates.length < 3 - choices.length) {
     const openTowerSlots = MAX_TOWER_SLOTS - state.towers.length - newTowerIds.size;
@@ -2713,36 +3163,38 @@ function showUpgradeChoices() {
   }
   state.lastUpgradeDebug = {
     guaranteeNewTower,
-    rolledFourthTower,
-    fourthTowerOfferChance: params.fourthTowerOfferChance,
+    hero: state.hero ? { name:state.hero.name, upgrades:state.hero.upgrades.slice() } : null,
     towers: state.towers.map(t => ({ name:t.name, upgrades:t.upgrades.slice() })),
-    candidates: candidates.map(c => ({ tower:c.tower.name, name:c.up.name, taken:c.takenCount, lock:c.lock || 0, weight:Math.round(c.weight) })),
-    picked: pickedCandidates.map(c => ({ tower:c.tower.name, name:c.up.name, taken:c.takenCount }))
+    candidates: candidates.map(c => ({ source:candidateSourceName(c), name:c.up.name, dimension:c.dimension, taken:c.takenCount, lock:c.lock || 0, weight:Math.round(c.weight) })),
+    picked: pickedCandidates.map(c => ({ source:candidateSourceName(c), name:c.up.name, dimension:c.dimension, taken:c.takenCount }))
   };
   pickedCandidates.forEach(picked => {
-    const required = UPGRADE_REQUIREMENTS[picked.up.name];
+    const required = picked.tower ? UPGRADE_REQUIREMENTS[picked.up.name] : null;
     const requirementNote = required ? `前置已解鎖：${upgradeRequirementLabel(required)}｜` : "";
     choices.push({
       title: picked.up.name,
-      tag: picked.tower.name,
-      towerId: picked.tower.id,
-      attrKey: towerAttr(picked.tower),
+      tag: candidateSourceName(picked),
+      towerId: picked.tower?.id,
+      heroId: picked.hero?.heroId,
+      attrKey: picked.tower ? towerAttr(picked.tower) : picked.hero.attrKey,
       rarity: picked.rarity,
+      dimension: picked.dimension,
       repeatTaken: picked.takenCount > 0,
       desc: `${requirementNote}${picked.up.desc}｜${picked.up.effect}`,
       onPick: () => {
-        if (!upgradeAvailable(picked.tower, picked.up)) {
+        if (picked.tower && !upgradeAvailable(picked.tower, picked.up)) {
           state.message = "此連動升級的前置條件尚未完整解鎖。";
           updateUi();
           return;
         }
-        applyUpgrade(picked.tower, picked.up);
+        if (picked.hero) applyHeroUpgrade(picked.hero, picked.up);
+        else applyUpgrade(picked.tower, picked.up);
         hideChoices();
       }
     });
   });
   if (choices.length < 3 && guaranteeNewTower) addNewTowerChoices(3 - choices.length);
-  showChoices("升級選項", "三選一：已有砲台升級，或隨機新砲台。", choices);
+  showChoices("升級選項", "看分類選效果：角色、砲台或跨塔連動。", choices);
 }
 function nextUpgrade(tower, offset = 0) {
   const idx = TOWERS.findIndex(t => t.id === tower.id);
@@ -2770,23 +3222,63 @@ function collectUpgradeCandidates() {
       const repeat = upgradeRepeatability(tower, up);
       const takenCount = upgradeTakenCount(tower, up.name);
       const lock = upgradeRepeatLock(tower, up.name);
-      candidates.push({ tower, up, rarity, repeat, takenCount, lock, weight: upgradeChoiceWeight(rarity, repeat, takenCount, rowIndex, lock) });
+      const dimension = towerUpgradeDimension(up);
+      candidates.push({ tower, up, rarity, dimension, repeat, takenCount, lock, weight: upgradeChoiceWeight(rarity, repeat, takenCount, rowIndex, lock) });
     });
   });
   return candidates.sort((a,b) => b.weight - a.weight || a.up.rowIndex - b.up.rowIndex);
+}
+function collectHeroUpgradeCandidates() {
+  const hero = state.hero;
+  if (!hero) return [];
+  const repeats = [
+    { name:"角色威力", desc:"角色傷害提升", effect:`傷害+${params.heroDamageUpgradePct}%`, key:"damage", dimension:"damage" },
+    { name:"角色超頻", desc:"角色攻擊速度提升", effect:`攻速+${params.heroRateUpgradePct}%`, key:"speed", dimension:"speed" },
+    { name:"多重射擊", desc:"同時發射更多彈體", effect:`彈體+${params.heroQuantityUpgrade}`, key:"quantity", dimension:"quantity" },
+  ];
+  const buffByAttr = {
+    fire:{ name:"霜火轉化", desc:"火屬性砲塔附帶輕微冰緩", effect:"同屬性塔命中時短暫緩速", key:"frostInfusion" },
+    ice:{ name:"導電冰晶", desc:"冰屬性砲塔附帶感電弱點", effect:"同屬性塔命中時留下感電易傷", key:"electricInfusion" },
+    electric:{ name:"熱能電弧", desc:"電屬性砲塔附帶短暫燃燒", effect:"同屬性塔命中時附加燃燒", key:"burnInfusion" },
+    poison:{ name:"寒毒配方", desc:"毒屬性砲塔附帶輕微冰緩", effect:"同屬性塔命中時短暫緩速", key:"frostInfusion" },
+    neutral:{ name:"全域校準", desc:"提高所有砲塔的輸出", effect:`所有砲塔傷害+${params.heroAllTowerBonusPct}%`, key:"allTower" },
+  };
+  const buffs = [
+    { name:"屬性共鳴", desc:`提高${hero.attr}屬性砲塔加成`, effect:`同屬性加成+${params.heroResonanceBonusPct}%`, key:"resonance" },
+    buffByAttr[hero.attrKey],
+  ].filter(Boolean);
+  return [
+    ...repeats.map((entry, rowIndex) => {
+      const takenCount = hero.upgradeCounts?.[entry.key] || 0;
+      const lock = state.heroUpgradeRepeatLocks?.[entry.key] || 0;
+      return { hero, up:{ ...entry, rowIndex }, rarity:"heroUpgrade", dimension:entry.dimension, repeat:{repeatable:true,limit:99}, takenCount, lock, weight:upgradeChoiceWeight("heroUpgrade", {repeatable:true}, takenCount, rowIndex, lock) };
+    }),
+    ...buffs.filter(entry => !hero.buffs?.[entry.key]).map((entry, index) => ({
+      hero, up:{ ...entry, rowIndex:3+index }, rarity:"heroBuff", dimension:"buff", repeat:{repeatable:false,limit:1}, takenCount:0, lock:0, weight:118 + state.level * 2
+    }))
+  ];
+}
+function towerUpgradeDimension(up) {
+  if (UPGRADE_REQUIREMENTS[up.name] || up.rowIndex >= 7) return "synergy";
+  if (up.rowIndex >= 4) return "core";
+  const text = upgradeText(up);
+  if (/額外|\+1|彈跳目標|穿透敵人/.test(text)) return "quantity";
+  if (/攻速|Tick速度|裝填|部署/.test(text)) return "speed";
+  if (/傷害/.test(text)) return "damage";
+  return "core";
 }
 function upgradeRarity(up) {
   if (CORE_UPGRADE_NAMES.has(up.name) || up.rowIndex === 4) return "core";
   if (up.rowIndex === 5 || up.rowIndex === 6) return "deepen";
   if (UPGRADE_REQUIREMENTS[up.name]) return "synergy";
-  if (up.rowIndex >= 7) return "deepen";
+  if (up.rowIndex >= 7) return "synergy";
   return "common";
 }
 function rarityPriority(rarity) {
-  return { synergy:4, core:3, deepen:2, tower:1, common:0, newTower:0 }[rarity] || 0;
+  return { synergy:4, heroBuff:4, core:3, deepen:2, heroUpgrade:2, tower:1, common:0, newTower:0 }[rarity] || 0;
 }
 function upgradeChoiceWeight(rarity, repeat, takenCount, rowIndex, recentLock = 0) {
-  const base = { synergy:140, core:110, deepen:112, tower:106, common:92, newTower:90 }[rarity] || 90;
+  const base = { synergy:140, heroBuff:118, core:110, deepen:112, heroUpgrade:96, tower:106, common:92, newTower:90 }[rarity] || 90;
   const depthBonus = Math.max(0, 5 - Math.abs(rowIndex - Math.min(state.level, 6))) * 3;
   const corePity = rarity === "core" && takenCount <= 0 ? Math.max(0, state.level - 4) * 7 : 0;
   let weight = base + depthBonus + corePity;
@@ -2797,13 +3289,13 @@ function upgradeChoiceWeight(rarity, repeat, takenCount, rowIndex, recentLock = 
 }
 function weightedUpgradeCandidateIndex(candidates, choices) {
   const hasRepeatChoice = choices.some(choice => choice.repeatTaken);
-  const hasFreshCandidate = candidates.some(c => c.takenCount <= 0 && !choices.some(choice => choice.title === c.up.name && choice.tag === c.tower.name));
+  const hasFreshCandidate = candidates.some(c => c.takenCount <= 0 && !choices.some(choice => choice.title === c.up.name && choice.tag === candidateSourceName(c)));
   const representedTowers = new Set(choices.map(choice => choice.tag));
   const pool = candidates
     .map((candidate, index) => ({ candidate, index }))
-    .filter(item => !choices.some(choice => choice.title === item.candidate.up.name && choice.tag === item.candidate.tower.name))
+    .filter(item => !choices.some(choice => choice.title === item.candidate.up.name && choice.tag === candidateSourceName(item.candidate)))
     .filter(item => !(hasFreshCandidate && item.candidate.takenCount > 0));
-  const diversePool = pool.filter(item => !representedTowers.has(item.candidate.tower.name));
+  const diversePool = pool.filter(item => !representedTowers.has(candidateSourceName(item.candidate)));
   const usable = diversePool.length ? diversePool : pool.length ? pool : candidates.map((candidate, index) => ({ candidate, index }));
   const total = usable.reduce((sum, item) => sum + Math.max(1, item.candidate.weight || 1), 0);
   let roll = Math.random() * total;
@@ -2823,21 +3315,25 @@ function selectUpgradeCandidates(candidates, existingChoices, slots) {
 function pickUpgradeCandidatesFromPool(pool, selected, usedKeys, representedTowers, slots) {
   while (selected.length < slots) {
     const usable = pool.filter(candidate => {
-      const key = `${candidate.tower.name}:${candidate.up.name}`;
+      const key = `${candidateSourceName(candidate)}:${candidate.up.name}`;
       if (usedKeys.has(key)) return false;
       return true;
     });
     if (!usable.length) return;
     const weightedUsable = usable.map(candidate => ({
       ...candidate,
-      weight: candidate.weight * (representedTowers.has(candidate.tower.name) ? 0.82 : 1)
+      weight: candidate.weight * (representedTowers.has(candidateSourceName(candidate)) ? 0.82 : 1)
     }));
     const picked = weightedPickCandidate(weightedUsable);
-    const key = `${picked.tower.name}:${picked.up.name}`;
+    const sourceName = candidateSourceName(picked);
+    const key = `${sourceName}:${picked.up.name}`;
     usedKeys.add(key);
-    representedTowers.add(picked.tower.name);
+    representedTowers.add(sourceName);
     selected.push(picked);
   }
+}
+function candidateSourceName(candidate) {
+  return candidate.tower?.name || candidate.hero?.name || "角色";
 }
 function weightedPickCandidate(pool) {
   const total = pool.reduce((sum, candidate) => sum + Math.max(1, candidate.weight || 1), 0);
@@ -2887,6 +3383,31 @@ function decayUpgradeRepeatLocks() {
     state.upgradeRepeatLocks[key] -= 1;
     if (state.upgradeRepeatLocks[key] <= 0) delete state.upgradeRepeatLocks[key];
   });
+}
+function decayHeroUpgradeRepeatLocks() {
+  if (!state.heroUpgradeRepeatLocks) state.heroUpgradeRepeatLocks = {};
+  Object.keys(state.heroUpgradeRepeatLocks).forEach(key => {
+    state.heroUpgradeRepeatLocks[key] -= 1;
+    if (state.heroUpgradeRepeatLocks[key] <= 0) delete state.heroUpgradeRepeatLocks[key];
+  });
+}
+function applyHeroUpgrade(hero, up) {
+  hero.upgrades.push(up.name);
+  hero.level += 1;
+  if (!hero.upgradeCounts) hero.upgradeCounts = {};
+  if (!hero.buffs) hero.buffs = {};
+  if (up.key === "damage") hero.damageMul *= 1 + params.heroDamageUpgradePct / 100;
+  else if (up.key === "speed") hero.rateMul *= 1 + params.heroRateUpgradePct / 100;
+  else if (up.key === "quantity") hero.extraShots += params.heroQuantityUpgrade;
+  else if (up.key === "resonance") {
+    hero.sameAttrBonus += params.heroResonanceBonusPct;
+    hero.buffs.resonance = true;
+  } else if (up.key === "allTower") {
+    hero.allTowerBonus += params.heroAllTowerBonusPct;
+    hero.buffs.allTower = true;
+  } else if (up.key) hero.buffs[up.key] = true;
+  hero.upgradeCounts[up.key] = (hero.upgradeCounts[up.key] || 0) + 1;
+  if (["damage","speed","quantity"].includes(up.key)) state.heroUpgradeRepeatLocks[up.key] = 3;
 }
 function markUpgradeRepeatLock(tower, up) {
   if (!state.upgradeRepeatLocks) state.upgradeRepeatLocks = {};
@@ -3187,6 +3708,7 @@ function completeRun() {
 function canCollect() { return state.started && !state.over && !state.waveActive && !state.monsters.length && !state.spawn && !state.choicesOpen && state.pot > 0; }
 
 function effect(type, from, to, opts={}) {
+  if (HEADLESS_SIM) return;
   const visualLife = {
     cone:.24, chain:.25, spark:.24, grenade:.42, frost:.46,
     gas:.4, trap:.42, needle:.28, blade:.32, impact:.34, hitBase:.4
@@ -3729,6 +4251,21 @@ function drawProjectile(p) {
     ctx.fillRect(-2, -8, 4, 16);
     ctx.fillStyle = "#ff5b24";
     ctx.beginPath(); ctx.arc(-7, -7, 2.4, 0, Math.PI * 2); ctx.fill();
+  } else if (p.type === "hero") {
+    ctx.translate(p.x, y);
+    ctx.rotate(angle);
+    ctx.shadowColor = p.tower.color;
+    ctx.shadowBlur = 12;
+    ctx.globalAlpha = .28;
+    ctx.fillStyle = p.tower.color;
+    ctx.beginPath(); ctx.ellipse(-12,0,20,6,0,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = p.tower.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0,0,7,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = p.tower.color;
+    ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill();
   } else if (p.type === "cryo") {
     ctx.translate(p.x, y);
     ctx.rotate(angle);
@@ -4278,6 +4815,7 @@ function updateAttributeIndicators(bossWarning) {
 }
 
 function updateUi() {
+  if (HEADLESS_SIM) return;
   ui.wallet.textContent = Math.floor(state.wallet);
   ui.pot.textContent = Math.floor(state.pot);
   ui.payout.textContent = payout();
@@ -4329,8 +4867,9 @@ function updateUi() {
 }
 
 function renderSlots() {
+  const totalSlots = MAX_TOWER_SLOTS + 1;
   if (!slotViews.length) {
-    for (let i=0; i<MAX_TOWER_SLOTS; i++) {
+    for (let i=0; i<totalSlots; i++) {
       const root = document.createElement("div");
       const icon = document.createElement("img");
       const name = document.createElement("div");
@@ -4349,20 +4888,22 @@ function renderSlots() {
     }
   }
 
-  for (let i=0;i<MAX_TOWER_SLOTS;i++) {
-    const t = state.towers[i];
+  for (let i=0;i<totalSlots;i++) {
+    const isHeroSlot = i === 0;
+    const t = isHeroSlot ? state.hero : state.towers[i - 1];
     const view = slotViews[i];
-    view.root.className = "slot" + (t ? "" : " empty");
+    view.root.className = "slot" + (isHeroSlot ? " hero-slot" : "") + (t ? "" : " empty");
     if (t) {
-      const ready = Math.round(cooldownProgress(t) * 100);
+      const ready = Math.round((isHeroSlot ? heroCooldownProgress(t) : cooldownProgress(t)) * 100);
       view.root.dataset.attr = towerAttr(t);
       view.icon.hidden = false;
-      if (view.icon.dataset.tower !== t.id) {
-        view.icon.src = towerIconDataUrl(t);
-        view.icon.dataset.tower = t.id;
+      const iconKey = isHeroSlot ? `hero:${t.heroId}` : t.id;
+      if (view.icon.dataset.tower !== iconKey) {
+        view.icon.src = isHeroSlot ? heroIconDataUrl(t) : towerIconDataUrl(t);
+        view.icon.dataset.tower = iconKey;
       }
       view.name.textContent = t.name;
-      view.info.textContent = `${t.attr} Lv.${t.level}`;
+      view.info.textContent = `${isHeroSlot ? "角色" : t.attr} Lv.${t.level}`;
       view.info.hidden = false;
       view.cooldown.hidden = false;
       view.fill.style.width = `${ready}%`;
@@ -4371,17 +4912,21 @@ function renderSlots() {
       view.icon.hidden = true;
       view.icon.removeAttribute?.("src");
       view.icon.dataset.tower = "";
-      view.name.textContent = `砲塔槽 ${i+1}`;
+      view.name.textContent = isHeroSlot ? "選擇角色" : `砲塔槽 ${i}`;
       view.info.hidden = true;
       view.cooldown.hidden = true;
     }
   }
 }
 
+function heroCooldownProgress(hero) {
+  return clamp(1 - Math.max(0, hero.cd || 0) / Math.max(.1, heroAttackCooldown(hero)), 0, 1);
+}
+
 function updateDebugSnapshot(now = performance.now()) {
   if (now - lastDebugFrame < DEBUG_FRAME_MS) return;
   lastDebugFrame = now;
-  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null, audio:{ state:audioState.ctx?.state || "none", bgm:audioState.bgmTimer !== null, voices:audioState.bgmSources.size } });
+  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, hero:state.hero?.heroId || null, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null, audio:{ state:audioState.ctx?.state || "none", bgm:audioState.bgmTimer !== null, voices:audioState.bgmSources.size } });
   if (snapshot === lastDebugSnapshot) return;
   lastDebugSnapshot = snapshot;
   document.body.dataset.debug = snapshot;
@@ -4461,4 +5006,69 @@ document.addEventListener("touchmove", event => {
 
 updateSoundButton();
 reset();
-requestAnimationFrame(loop);
+if (HEADLESS_SIM) {
+  let simSeed = 1;
+  const setSeed = value => {
+    simSeed = (Number(value) >>> 0) || 1;
+    Math.random = () => {
+      simSeed = (simSeed * 1664525 + 1013904223) >>> 0;
+      return simSeed / 4294967296;
+    };
+  };
+  const headlessSnapshot = (includeBuild=false) => {
+    const value = {
+      wallet:state.wallet, started:state.started, over:state.over, wave:state.wave, hp:state.hp, pot:state.pot,
+      exp:state.exp, level:state.level, choicesOpen:state.choicesOpen, waveActive:state.waveActive,
+      spawning:!!state.spawn, spawnBoss:!!state.spawn?.boss, monsters:state.monsters.length,
+      bossAlive:state.monsters.some(monster => monster.boss), bossSpawned:state.simBossSpawned || 0, bossSeen:state.bossSeen, bossRolled:state.bossRolled,
+      bossAdd:state.bossAdd, bossRolling:!!state.bossRoll, nextBoss:!!state.nextBoss,
+      selectedTemplate:state.selectedTemplate, currentWaveAttr:state.currentWaveAttr,
+      currentBet:currentBet(), payout:payout(),
+    };
+    if (includeBuild) {
+      value.mathTicket = state.mathTicket ? { wave:state.mathTicket.wave, clearChance:state.mathTicket.clearChance, success:state.mathTicket.success, result:state.mathTicket.result } : null;
+      value.hero = state.hero ? { id:state.hero.heroId, name:state.hero.name, attrKey:state.hero.attrKey, level:state.hero.level, upgrades:state.hero.upgrades.slice() } : null;
+      value.towers = state.towers.map(tower => ({ id:tower.id, name:tower.name, level:tower.level, upgrades:tower.upgrades.slice() }));
+    }
+    return value;
+  };
+  window.__tdHeadless = {
+    build: BUILD_VERSION,
+    ready: true,
+    params: () => ({ ...params }),
+    normalizeParams: values => cleanParams(migrateBossParams(values || {})),
+    setParams: values => { params = cleanParams(values || {}); },
+    lockParams: value => { headlessParamsLocked = !!value; },
+    setSeed,
+    resetRun: (wallet=INITIAL_WALLET, baseBetIndex=3) => {
+      if (state) state.wallet = Number(wallet) || INITIAL_WALLET;
+      reset();
+      state.wallet = Number(wallet) || INITIAL_WALLET;
+      state.baseBetIndex = Math.max(0, Math.min(BET_STEPS.length - 1, Math.round(baseBetIndex)));
+    },
+    setWallet: value => { state.wallet = Math.max(0, Number(value) || 0); },
+    setBaseBetIndex: value => { state.baseBetIndex = Math.max(0, Math.min(BET_STEPS.length - 1, Math.round(value))); },
+    startBet,
+    update,
+    stepFrames: count => {
+      const frames = Math.max(1, Math.min(12, Math.round(Number(count) || 1)));
+      for (let frame=0; frame<frames; frame+=1) update(1 / 60);
+    },
+    collect,
+    canCollect,
+    currentBet,
+    payout,
+    mathLedger: () => state.mathLedger.map(ticket => ({ ...ticket })),
+    choices: () => currentChoices.map(({ onPick, ...choice }) => ({ ...choice })),
+    pickChoice: index => {
+      const choice = currentChoices[index];
+      if (!choice) throw new Error(`Invalid choice index ${index}`);
+      choice.onPick();
+    },
+    snapshot: () => headlessSnapshot(true),
+    snapshotLite: () => headlessSnapshot(false),
+  };
+  document.body.dataset.headlessReady = "true";
+} else {
+  requestAnimationFrame(loop);
+}
