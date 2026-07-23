@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "hero-choice29";
+const BUILD_VERSION = "minion-death30";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -854,12 +854,15 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 27,
+  balanceRevision: 28,
   mathModelEnabled: 1,
   mathTargetRtp: 1.0,
   mathTolerancePct: 1.0,
   mathBuildInfluence: .22,
   mathBossPenalty: .28,
+  mathLossHpMul: 3.20,
+  mathLossAtkMul: 5.00,
+  mathLossSpeedMul: 2.00,
   mathMinClearChance: .18,
   mathMaxClearChance: .96,
   mathClearBand1: .93,
@@ -985,6 +988,9 @@ function cleanParams(input={}) {
   next.mathTolerancePct = Math.max(0, Math.min(20, next.mathTolerancePct));
   next.mathBuildInfluence = Math.max(0, Math.min(1, next.mathBuildInfluence));
   next.mathBossPenalty = Math.max(0, Math.min(.8, next.mathBossPenalty));
+  next.mathLossHpMul = Math.max(1, Math.min(5, next.mathLossHpMul));
+  next.mathLossAtkMul = Math.max(1, Math.min(5, next.mathLossAtkMul));
+  next.mathLossSpeedMul = Math.max(1, Math.min(3, next.mathLossSpeedMul));
   next.mathMinClearChance = Math.max(.01, Math.min(.99, next.mathMinClearChance));
   next.mathMaxClearChance = Math.max(next.mathMinClearChance, Math.min(.999, next.mathMaxClearChance));
   ["mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
@@ -1047,13 +1053,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:27 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:28 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:27 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:28 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -1175,6 +1181,11 @@ function migrateBossParams(input={}) {
     Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("hero_") || key.startsWith("heroSame") || key.startsWith("heroResonance") || key.startsWith("heroAll") || key.startsWith("heroDamage") || key.startsWith("heroRate") || key.startsWith("heroQuantity"))
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 27;
+  }
+  if ((Number(input.balanceRevision) || 0) < 28) {
+    ["mathLossHpMul", "mathLossAtkMul", "mathLossSpeedMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 28;
   }
   return next;
 }
@@ -1443,11 +1454,11 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
 
 function settleMathTicket() {
   const ticket = state.mathTicket;
-  if (!certifiedMathEnabled() || !ticket || ticket.settled || !ticket.success) return;
+  if (!certifiedMathEnabled() || !ticket || ticket.settled) return;
   state.certifiedPayout = ticket.targetPayout;
   state.pot = Math.max(0, ticket.targetPot);
   ticket.settled = true;
-  ticket.result = "clear";
+  ticket.result = ticket.success ? "clear" : "overcome";
   ticket.actualPayout = payout();
 }
 
@@ -2008,11 +2019,15 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   const difficultyHpMul = boss ? (bossDifficulty?.hpMul || 1) : 1;
   const difficultyAtkMul = boss ? (bossDifficulty?.atkMul || 1) : 1;
   const difficultySpeedMul = boss ? (bossDifficulty?.speedMul || 1) : 1;
-  const hp = Math.round(tunedBase.hp * hpMul * classHpMul * difficultyHpMul);
+  const lossPressure = certifiedMathEnabled() && state.mathTicket && !state.mathTicket.success;
+  const lossHpMul = lossPressure ? paramNumber("mathLossHpMul", 3.20) : 1;
+  const lossAtkMul = lossPressure ? paramNumber("mathLossAtkMul", 5.00) : 1;
+  const lossSpeedMul = lossPressure ? paramNumber("mathLossSpeedMul", 2.00) : 1;
+  const hp = Math.round(tunedBase.hp * hpMul * classHpMul * difficultyHpMul * lossHpMul);
   const minionAtkMul = { normal:.25, fast:.27, tank:.28, ranged:.30, special:.33 };
-  const atk = elite || boss ? Math.round(tunedBase.atk * classAtkMul * difficultyAtkMul) : Math.max(1, Math.round(tunedBase.atk * (minionAtkMul[kind] || .3) * classAtkMul));
+  const atk = elite || boss ? Math.round(tunedBase.atk * classAtkMul * difficultyAtkMul * lossAtkMul) : Math.max(1, Math.round(tunedBase.atk * (minionAtkMul[kind] || .3) * classAtkMul * lossAtkMul));
   const minionSpeedMul = { normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 };
-  const speed = elite || boss ? Math.max(1, Math.round(tunedBase.speed * classSpeedMul * difficultySpeedMul)) : Math.max(1, Math.round(tunedBase.speed * (minionSpeedMul[kind] || .72) * classSpeedMul));
+  const speed = elite || boss ? Math.max(1, Math.round(tunedBase.speed * classSpeedMul * difficultySpeedMul * lossSpeedMul)) : Math.max(1, Math.round(tunedBase.speed * (minionSpeedMul[kind] || .72) * classSpeedMul * lossSpeedMul));
   const attributeDefaults = ENEMY_ATTRIBUTE_DEFAULTS[tuneId] || {};
   const baseAttrMultipliers = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [
     attr,
@@ -2794,8 +2809,6 @@ function resolveDamage(m, amount, t) {
   if (towerAttr(t) === "electric" && m.electricVulnerableTime > 0) conditionalMul *= 1 + (m.electricVulnerableAmount || 0);
   const dealt = amount * vuln * attrMul * classMul * conditionalMul * heroTowerMul;
   m.hp -= dealt;
-  const ticket = state.mathTicket;
-  if (certifiedMathEnabled() && ticket && !ticket.success && (!ticket.boss || m.boss)) m.hp = Math.max(1, m.hp);
   const attrState = attrMul > 1.001 ? 1 : attrMul < .999 ? -1 : 0;
   showDamageNumber(m, dealt, t, attrState);
   return dealt;
