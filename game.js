@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "hero-center28";
+const BUILD_VERSION = "hero-choice29";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -547,11 +547,11 @@ const ATTRIBUTE_DISPLAY = {
   neutral:{ label:"無", color:"#d5dde8" },
 };
 const HEROES = [
-  { id:"fire", name:"烈焰戰士", attr:"火", attrKey:"fire", damage:92, rate:1.12, range:900, color:"#ff6b3d", status:18, statusTime:1.5, desc:"火焰彈附帶短暫燃燒，強化火屬性砲塔。" },
-  { id:"ice", name:"寒霜獵手", attr:"冰", attrKey:"ice", damage:84, rate:1.08, range:900, color:"#72d4ff", status:.12, statusTime:1.0, desc:"冰晶彈附帶輕微緩速，強化冰屬性砲塔。" },
-  { id:"electric", name:"雷霆特工", attr:"電", attrKey:"electric", damage:86, rate:1.18, range:900, color:"#d89cff", status:.10, statusTime:1.0, desc:"電能彈留下感電弱點，強化電屬性砲塔。" },
-  { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", damage:78, rate:1.10, range:900, color:"#66d86f", status:16, statusTime:1.5, desc:"毒液彈附帶持續毒傷，強化毒屬性砲塔。" },
-  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", damage:108, rate:1.05, range:900, color:"#d5dde8", status:0, statusTime:0, desc:"高直接傷害的實彈攻擊，強化無屬性砲塔。" },
+  { id:"fire", name:"烈焰戰士", attr:"火", attrKey:"fire", damage:92, rate:1.12, range:900, color:"#ff6b3d", status:18, statusTime:1.5, attackTrait:"燃燒", desc:"燃燒攻擊" },
+  { id:"ice", name:"寒霜獵手", attr:"冰", attrKey:"ice", damage:84, rate:1.08, range:900, color:"#72d4ff", status:.12, statusTime:1.0, attackTrait:"緩速", desc:"緩速攻擊" },
+  { id:"electric", name:"雷霆特工", attr:"電", attrKey:"electric", damage:86, rate:1.18, range:900, color:"#d89cff", status:.10, statusTime:1.0, attackTrait:"感電", desc:"感電攻擊" },
+  { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", damage:78, rate:1.10, range:900, color:"#66d86f", status:16, statusTime:1.5, attackTrait:"中毒", desc:"中毒攻擊" },
+  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", damage:108, rate:1.05, range:900, color:"#d5dde8", status:0, statusTime:0, attackTrait:"高傷", desc:"高傷實彈" },
 ];
 const UPGRADE_DIMENSIONS = {
   damage:{ label:"傷害", mark:"DMG" },
@@ -1619,7 +1619,10 @@ function showChoices(title, hint, choices) {
     btn.type = "button";
     btn.style.setProperty("--choice-color", (ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).color);
     const iconHtml = icon ? `<span class="choice-emblem"><img src="${icon}" alt=""></span>` : "";
-    btn.innerHTML = `${iconHtml}<span class="choice-copy"><span class="choice-top"><span class="choice-name">${choice.title}</span><span class="dimension-badge"><b>${dimensionInfo.mark}</b>${dimensionInfo.label}</span></span><span class="choice-sub">${choice.tag || choice.rarityLabel || rarityLabel(rarity)}</span><span class="choice-desc">${choice.desc}</span></span>`;
+    const heroBuffHtml = rarity === "hero"
+      ? `<span class="hero-buff-visual"><span class="hero-effect"><i class="hero-effect-icon attack"></i><span><small>攻擊</small><b>${choice.attackTrait}</b></span></span><span class="hero-effect"><i class="hero-effect-icon tower"></i><span><small>同屬塔</small><b>+${params.heroSameAttrBonusPct}%</b></span></span></span>`
+      : "";
+    btn.innerHTML = `${iconHtml}<span class="choice-copy"><span class="choice-top"><span class="choice-name">${choice.title}</span><span class="dimension-badge"><b>${dimensionInfo.mark}</b>${dimensionInfo.label}</span></span><span class="choice-sub">${choice.tag || choice.rarityLabel || rarityLabel(rarity)}</span><span class="choice-desc">${choice.desc}</span>${heroBuffHtml}</span>`;
     btn.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -1669,7 +1672,10 @@ function startBet() {
   if (!state.started) {
     state.wallet -= bet;
     if (!state.hero) showHeroDraft();
-    else showStartingTowerDraft();
+    else {
+      state.started = true;
+      startWave();
+    }
     return;
   }
   state.wallet -= bet;
@@ -1685,13 +1691,15 @@ function showHeroDraft() {
     rarity:"hero",
     dimension:"hero",
     desc:hero.desc,
+    attackTrait:hero.attackTrait,
     onPick:() => {
       addHero(hero);
       hideChoices();
-      showStartingTowerDraft();
+      state.started = true;
+      startWave();
     }
   }));
-  showChoices("選擇出戰角色", "角色會自動攻擊，並強化同屬性砲塔。", choices);
+  showChoices("選擇出戰角色", "選定角色後直接開始第一波。", choices);
 }
 
 function addHero(def) {
@@ -1715,25 +1723,6 @@ function addHero(def) {
     upgradeCounts:{},
     buffs:{},
   };
-}
-
-function showStartingTowerDraft() {
-  const singlePool = TOWERS.filter(t => TOWER_ROLE[t.id] === "single");
-  const areaPool = TOWERS.filter(t => ["flame", "grenade", "frostbomb", "chain", "gas"].includes(t.id));
-  const drafted = [pick(singlePool), pick(areaPool)];
-  const remaining = TOWERS.filter(t => !drafted.includes(t));
-  drafted.push(pick(remaining));
-  for (let i = drafted.length - 1; i > 0; i--) {
-    const j = rand(0, i);
-    [drafted[i], drafted[j]] = [drafted[j], drafted[i]];
-  }
-  const choices = drafted.map(t => towerChoice(t, () => {
-    addTower(t);
-    hideChoices();
-    state.started = true;
-    startWave();
-  }));
-  showChoices("選擇起始砲台", "三選一，選完後開始第一波。", choices);
 }
 
 function randomTowerChoices(n, excluded = new Set()) {
@@ -1789,19 +1778,67 @@ function heroIconDataUrl(hero) {
   const g = iconCanvas.getContext("2d");
   const attrKey = hero.attrKey || key;
   const color = (ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).color;
-  const bg = g.createRadialGradient(48, 36, 5, 48, 48, 46);
+  const bg = g.createRadialGradient(48, 28, 4, 48, 48, 54);
   bg.addColorStop(0, color);
-  bg.addColorStop(.34, "#252c38");
-  bg.addColorStop(1, "#080b10");
+  bg.addColorStop(.27, "#2c3441");
+  bg.addColorStop(1, "#07090d");
   g.fillStyle = bg;
   g.fillRect(0, 0, 96, 96);
+  g.globalAlpha = .22;
+  g.fillStyle = color;
+  g.beginPath(); g.arc(48,48,36,0,Math.PI*2); g.fill();
+  g.globalAlpha = 1;
   g.strokeStyle = color;
-  g.lineWidth = 4;
-  g.beginPath(); g.arc(48,48,39,0,Math.PI*2); g.stroke();
-  g.fillStyle = "#e8eef8";
-  g.beginPath(); g.arc(48,31,12,0,Math.PI*2); g.fill();
-  g.beginPath(); g.moveTo(25,76); g.quadraticCurveTo(28,48,48,47); g.quadraticCurveTo(68,48,71,76); g.closePath(); g.fill();
-  drawAttributeGlyph(g, attrKey, 48, 61, 9, color);
+  g.lineWidth = 3;
+  g.beginPath(); g.arc(48,48,40,0,Math.PI*2); g.stroke();
+
+  const skin = { fire:"#b97855", ice:"#efc7aa", electric:"#8f5b48", poison:"#cca07c", neutral:"#d5a075" }[attrKey] || "#d5a075";
+  g.fillStyle = "#111720";
+  g.beginPath(); g.moveTo(16,92); g.quadraticCurveTo(20,59,48,57); g.quadraticCurveTo(76,59,80,92); g.closePath(); g.fill();
+  g.fillStyle = color;
+  g.globalAlpha = .82;
+  g.beginPath(); g.moveTo(18,92); g.lineTo(27,66); g.lineTo(40,73); g.lineTo(48,91); g.lineTo(56,73); g.lineTo(69,66); g.lineTo(78,92); g.closePath(); g.fill();
+  g.globalAlpha = 1;
+  g.fillStyle = skin;
+  g.fillRect(42,52,12,12);
+  g.beginPath();
+  g.moveTo(32,28); g.quadraticCurveTo(33,16,48,15); g.quadraticCurveTo(64,16,65,29);
+  g.lineTo(62,47); g.quadraticCurveTo(56,57,48,58); g.quadraticCurveTo(39,57,34,47); g.closePath();
+  g.fill();
+  g.fillStyle = skin;
+  g.beginPath(); g.arc(32,37,4,0,Math.PI*2); g.arc(64,37,4,0,Math.PI*2); g.fill();
+
+  g.strokeStyle = "#171117";
+  g.lineWidth = 2;
+  g.beginPath(); g.moveTo(38,35); g.lineTo(44,34); g.moveTo(52,34); g.lineTo(58,35); g.stroke();
+  g.fillStyle = "#ecf8ff";
+  g.beginPath(); g.ellipse(41,38,3,1.5,0,0,Math.PI*2); g.ellipse(55,38,3,1.5,0,0,Math.PI*2); g.fill();
+  g.fillStyle = color;
+  g.beginPath(); g.arc(41,38,1.3,0,Math.PI*2); g.arc(55,38,1.3,0,Math.PI*2); g.fill();
+  g.strokeStyle = "rgba(80,38,32,.75)";
+  g.lineWidth = 1.4;
+  g.beginPath(); g.moveTo(48,39); g.lineTo(46,45); g.lineTo(49,46); g.moveTo(42,50); g.quadraticCurveTo(48,53,54,50); g.stroke();
+
+  g.fillStyle = attrKey === "ice" ? "#e7f5ff" : attrKey === "fire" ? "#271713" : attrKey === "electric" ? "#161421" : attrKey === "poison" ? "#17231b" : "#242018";
+  if (attrKey === "fire") {
+    g.beginPath(); g.moveTo(31,31); g.lineTo(34,16); g.lineTo(40,22); g.lineTo(47,10); g.lineTo(52,21); g.lineTo(64,15); g.lineTo(65,32); g.quadraticCurveTo(48,22,31,31); g.fill();
+  } else if (attrKey === "ice") {
+    g.beginPath(); g.moveTo(30,34); g.quadraticCurveTo(28,15,48,12); g.quadraticCurveTo(68,15,66,35); g.lineTo(61,28); g.lineTo(56,18); g.lineTo(50,29); g.lineTo(43,18); g.lineTo(36,30); g.fill();
+  } else if (attrKey === "electric") {
+    g.beginPath(); g.moveTo(31,29); g.lineTo(35,18); g.lineTo(43,21); g.lineTo(50,13); g.lineTo(57,21); g.lineTo(64,18); g.lineTo(66,31); g.quadraticCurveTo(49,24,31,29); g.fill();
+    g.strokeStyle = color; g.lineWidth = 2; g.beginPath(); g.moveTo(31,40); g.lineTo(65,40); g.stroke();
+  } else if (attrKey === "poison") {
+    g.beginPath(); g.moveTo(27,37); g.quadraticCurveTo(27,13,48,10); g.quadraticCurveTo(69,13,69,37); g.lineTo(62,29); g.quadraticCurveTo(48,19,34,29); g.closePath(); g.fill();
+    g.fillStyle = "#10171a"; g.fillRect(34,44,28,12);
+    g.strokeStyle = color; g.beginPath(); g.moveTo(38,49); g.lineTo(58,49); g.stroke();
+  } else {
+    g.beginPath(); g.moveTo(30,29); g.quadraticCurveTo(33,15,48,15); g.quadraticCurveTo(63,15,66,29); g.quadraticCurveTo(48,23,30,29); g.fill();
+    g.strokeStyle = color; g.lineWidth = 2; g.beginPath(); g.arc(66,39,7,-Math.PI/2,Math.PI/2); g.moveTo(72,44); g.lineTo(77,49); g.stroke();
+  }
+
+  g.fillStyle = "#080b10";
+  g.beginPath(); g.arc(48,78,12,0,Math.PI*2); g.fill();
+  drawAttributeGlyph(g, attrKey, 48, 78, 7, color);
   const url = iconCanvas.toDataURL("image/png");
   heroIconCache.set(key, url);
   return url;

@@ -1353,29 +1353,38 @@ body {
 
 .choice-list[data-layout="heroes"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  max-height: min(66vh, 570px);
+  max-height: min(72vh, 610px);
   overflow-y: auto;
   padding-right: 2px;
 }
 
 .choice-list[data-layout="heroes"] .choice-card {
-  min-height: 138px;
+  min-height: 150px;
   grid-template-columns: 1fr;
-  grid-template-rows: 52px auto;
+  grid-template-rows: 72px auto;
   justify-items: center;
-  gap: 6px;
+  gap: 5px;
   padding: 8px;
   text-align: center;
 }
 
+.choice-list[data-layout="heroes"] .choice-card:last-child:nth-child(odd) {
+  width: calc(50% - 5px);
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+
 .choice-list[data-layout="heroes"] .choice-emblem {
-  width: 50px;
-  height: 50px;
+  width: 66px;
+  height: 72px;
+  border-radius: 10px;
+  background: #06080c;
 }
 
 .choice-list[data-layout="heroes"] .choice-emblem img {
-  width: 44px;
-  height: 44px;
+  width: 62px;
+  height: 68px;
+  border-radius: 8px;
 }
 
 .choice-list[data-layout="heroes"] .choice-top {
@@ -1386,12 +1395,117 @@ body {
 
 .choice-list[data-layout="heroes"] .choice-name {
   width: 100%;
-  font-size: 13px;
+  font-size: 14px;
 }
 
-.choice-list[data-layout="heroes"] .choice-sub,
-.choice-list[data-layout="heroes"] .choice-desc {
+.choice-list[data-layout="heroes"] .choice-sub {
   font-size: 9px;
+  margin-bottom: 4px;
+}
+
+.choice-list[data-layout="heroes"] .choice-desc,
+.choice-list[data-layout="heroes"] .dimension-badge {
+  display: none;
+}
+
+.hero-buff-visual {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.hero-effect {
+  min-width: 0;
+  min-height: 31px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--choice-color) 48%, #29313d);
+  border-radius: 4px;
+  background: rgba(5,8,12,.76);
+  padding: 3px 4px;
+}
+
+.hero-effect > span {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  line-height: 1;
+}
+
+.hero-effect small {
+  color: #8f98a7;
+  font-size: 7px;
+}
+
+.hero-effect b {
+  margin-top: 2px;
+  color: #f5f8fc;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.hero-effect-icon {
+  position: relative;
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  color: var(--choice-color);
+}
+
+.hero-effect-icon.attack {
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 3px rgba(255,255,255,.06);
+}
+
+.hero-effect-icon.attack::before,
+.hero-effect-icon.attack::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+
+.hero-effect-icon.attack::before {
+  width: 9px;
+  height: 2px;
+  left: 2px;
+  top: 6px;
+}
+
+.hero-effect-icon.attack::after {
+  width: 2px;
+  height: 9px;
+  left: 6px;
+  top: 2px;
+}
+
+.hero-effect-icon.tower {
+  border-bottom: 3px solid currentColor;
+}
+
+.hero-effect-icon.tower::before {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 8px;
+  left: 4px;
+  bottom: 3px;
+  border: 2px solid currentColor;
+  border-bottom: 0;
+}
+
+.hero-effect-icon.tower::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 2px;
+  left: 7px;
+  top: 2px;
+  background: currentColor;
+  transform: rotate(-18deg);
+  transform-origin: left center;
 }
 
 .choice-card.rarity-newTower,
