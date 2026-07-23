@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "hero-trio27";
+const BUILD_VERSION = "hero-center28";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1707,6 +1707,10 @@ function addHero(def) {
     extraShots:0,
     sameAttrBonus:0,
     allTowerBonus:0,
+    aimAngle:-Math.PI / 2,
+    animTime:0,
+    recoil:0,
+    muzzleFlash:0,
     upgrades:[],
     upgradeCounts:{},
     buffs:{},
@@ -2015,6 +2019,9 @@ function heroDamage(hero) {
 function updateHero(dt) {
   const hero = state.hero;
   if (!hero) return;
+  hero.animTime = (hero.animTime || 0) + dt;
+  hero.recoil = Math.max(0, (hero.recoil || 0) - dt * 5.5);
+  hero.muzzleFlash = Math.max(0, (hero.muzzleFlash || 0) - dt);
   hero.cd -= dt;
   if (hero.cd > 0) return;
   const origin = fireOrigin();
@@ -2024,6 +2031,11 @@ function updateHero(dt) {
     .filter(item => item.monster.hp > 0 && item.distance <= range)
     .sort((a,b) => b.monster.y - a.monster.y);
   if (!targets.length) return;
+  const firstTarget = targets[0].monster;
+  const shoulder = heroShoulderPosition(hero);
+  hero.aimAngle = Math.atan2(firstTarget.y - shoulder.y, firstTarget.x - shoulder.x);
+  hero.recoil = 1;
+  hero.muzzleFlash = .11;
   const count = 1 + (hero.extraShots || 0);
   const offsets = spreadOffsets(count, 10);
   offsets.forEach((offset, index) => {
@@ -2177,7 +2189,21 @@ function zoneTick(t) {
 }
 function scaledRange(t) { return Math.min(towerParam(t, "range", t.range) * 0.62 * (t.rangeMul || 1), 720); }
 function scaledSplash(t, base) { return towerParam(t, "splash", base) * (t.splashMul || 1); }
-function fireOrigin() { return { x: FIELD.pathX, y: FIELD.h - 8 }; }
+function heroVisualPosition() { return { x:FIELD.pathX, y:FIELD.baseY - 17 }; }
+function heroShoulderPosition(hero=state.hero) {
+  const position = heroVisualPosition();
+  const bob = hero ? Math.sin((hero.animTime || 0) * 3.2) * .8 : 0;
+  return { x:position.x, y:position.y - 28 + bob };
+}
+function fireOrigin() {
+  const hero = state?.hero;
+  if (!hero) return { x:FIELD.pathX, y:FIELD.h - 8 };
+  const shoulder = heroShoulderPosition(hero);
+  const angle = Number.isFinite(hero.aimAngle) ? hero.aimAngle : -Math.PI / 2;
+  const recoil = (hero.recoil || 0) * 2.5;
+  const length = 24 - recoil;
+  return { x:shoulder.x + Math.cos(angle) * length, y:shoulder.y + Math.sin(angle) * length };
+}
 
 function startChannel(t, primary) {
   const origin = fireOrigin();
@@ -3730,6 +3756,177 @@ function draw() {
   drawActiveChannels();
   state.effects.forEach(drawEffect);
   state.monsters.forEach(drawEnemy);
+  drawHero();
+}
+
+function drawHero() {
+  const hero = state.hero;
+  if (!hero) return;
+  const position = heroVisualPosition();
+  const bob = Math.sin((hero.animTime || 0) * 3.2) * .8;
+  const x = position.x;
+  const y = position.y + bob;
+  const color = hero.color || (ATTRIBUTE_DISPLAY[hero.attrKey] || ATTRIBUTE_DISPLAY.neutral).color;
+  const angle = Number.isFinite(hero.aimAngle) ? hero.aimAngle : -Math.PI / 2;
+  const facing = Math.cos(angle) < 0 ? -1 : 1;
+  const pulse = .55 + Math.sin((hero.animTime || 0) * 4.4) * .12;
+  ctx.save();
+
+  ctx.globalAlpha = .28 + pulse * .12;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(x, y + 7, 27, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = .8;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(x, y + 6, 23 + pulse * 2, 6.5 + pulse, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  drawHeroGear(hero, x, y, color, facing);
+
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#141820";
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y - 7); ctx.lineTo(x - 10, y + 8);
+  ctx.moveTo(x + 7, y - 7); ctx.lineTo(x + 10, y + 8);
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y - 5); ctx.lineTo(x - 10, y + 8);
+  ctx.moveTo(x + 7, y - 5); ctx.lineTo(x + 10, y + 8);
+  ctx.stroke();
+  ctx.fillStyle = "#080a0e";
+  ctx.fillRect(x - 17, y + 6, 14, 5);
+  ctx.fillRect(x + 3, y + 6, 14, 5);
+
+  const torso = ctx.createLinearGradient(x, y - 29, x, y - 5);
+  torso.addColorStop(0, color);
+  torso.addColorStop(.26, "#313946");
+  torso.addColorStop(1, "#10141b");
+  ctx.fillStyle = torso;
+  ctx.strokeStyle = "#030507";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 15, y - 26);
+  ctx.lineTo(x + 15, y - 26);
+  ctx.lineTo(x + 12, y - 5);
+  ctx.lineTo(x - 12, y - 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(4,7,10,.86)";
+  ctx.fillRect(x - 4, y - 24, 8, 17);
+  drawAttributeGlyph(ctx, hero.attrKey, x, y - 16, 6, color);
+
+  ctx.fillStyle = "#d9b390";
+  ctx.strokeStyle = "#090b0f";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y - 36, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#171b22";
+  ctx.beginPath();
+  ctx.arc(x, y - 38, 9.5, Math.PI, Math.PI * 2);
+  ctx.lineTo(x + 9, y - 35);
+  ctx.lineTo(x - 9, y - 35);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.fillRect(x - 8, y - 38, 16, 3);
+  ctx.fillStyle = "#dff8ff";
+  ctx.fillRect(x + facing * 1, y - 35, facing * 6, 2);
+
+  const shoulder = { x, y:y - 28 };
+  ctx.strokeStyle = "#242b35";
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(x - facing * 9, y - 23);
+  ctx.lineTo(shoulder.x + Math.cos(angle) * 11, shoulder.y + Math.sin(angle) * 11);
+  ctx.stroke();
+
+  ctx.translate(shoulder.x, shoulder.y);
+  ctx.rotate(angle);
+  const recoil = (hero.recoil || 0) * 2.5;
+  ctx.translate(-recoil, 0);
+  ctx.fillStyle = "#11151c";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.fillRect(-5, -5, 23, 10);
+  ctx.strokeRect(-5, -5, 23, 10);
+  ctx.fillStyle = "#dce7f4";
+  ctx.fillRect(14, -2, 10, 4);
+  ctx.fillStyle = color;
+  ctx.fillRect(1, -3, 7, 6);
+  ctx.fillStyle = "#090b0f";
+  ctx.fillRect(4, 5, 5, 7);
+  if ((hero.muzzleFlash || 0) > 0) {
+    const flash = clamp(hero.muzzleFlash / .11, 0, 1);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = flash;
+    ctx.fillStyle = "#fff7b0";
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(32, -7);
+    ctx.lineTo(29, 0);
+    ctx.lineTo(32, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(24, 0, 5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawHeroGear(hero, x, y, color, facing) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2;
+  if (hero.attrKey === "fire") {
+    ctx.globalAlpha = .9;
+    ctx.fillRect(x - 20, y - 28, 7, 21);
+    ctx.fillRect(x + 13, y - 28, 7, 21);
+    [[x-16,y-31],[x+16,y-31]].forEach(([fx,fy]) => {
+      ctx.beginPath();
+      ctx.moveTo(fx, fy + 6); ctx.quadraticCurveTo(fx - 6, fy, fx, fy - 9); ctx.quadraticCurveTo(fx + 7, fy, fx, fy + 6); ctx.fill();
+    });
+  } else if (hero.attrKey === "ice") {
+    ctx.globalAlpha = .75;
+    ctx.beginPath();
+    ctx.moveTo(x - 15, y - 27); ctx.lineTo(x - 23, y + 3); ctx.lineTo(x - 7, y - 5); ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + 15, y - 27); ctx.lineTo(x + 23, y + 3); ctx.lineTo(x + 7, y - 5); ctx.closePath();
+    ctx.fill();
+  } else if (hero.attrKey === "electric") {
+    ctx.globalAlpha = .9;
+    ctx.beginPath(); ctx.arc(x - 18, y - 18, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x + 18, y - 18, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - 22, y - 31); ctx.lineTo(x - 14, y - 37); ctx.lineTo(x - 18, y - 27);
+    ctx.moveTo(x + 22, y - 31); ctx.lineTo(x + 14, y - 37); ctx.lineTo(x + 18, y - 27);
+    ctx.stroke();
+  } else if (hero.attrKey === "poison") {
+    ctx.globalAlpha = .84;
+    ctx.beginPath(); ctx.arc(x - 18, y - 13, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 18, y - 13, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#10151b";
+    ctx.beginPath(); ctx.arc(x - 18, y - 13, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 18, y - 13, 3, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.globalAlpha = .9;
+    ctx.fillRect(x - 20, y - 27, 8, 12);
+    ctx.fillRect(x + 12, y - 27, 8, 12);
+    ctx.fillStyle = "#111720";
+    ctx.fillRect(x - 18, y - 24, 4, 6);
+    ctx.fillRect(x + 14, y - 24, 4, 6);
+  }
+  ctx.restore();
 }
 
 function drawActiveChannels() {
