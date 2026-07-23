@@ -854,15 +854,15 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 28,
+  balanceRevision: 29,
   mathModelEnabled: 1,
   mathTargetRtp: 1.0,
   mathTolerancePct: 1.0,
   mathBuildInfluence: .22,
   mathBossPenalty: .28,
-  mathLossHpMul: 3.20,
+  mathLossHpMul: 5.00,
   mathLossAtkMul: 5.00,
-  mathLossSpeedMul: 2.00,
+  mathLossSpeedMul: 3.00,
   mathMinClearChance: .18,
   mathMaxClearChance: .96,
   mathClearBand1: .93,
@@ -1053,13 +1053,13 @@ function migrateBossParams(input={}) {
     if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
     next.balanceRevision = 1;
   }
-  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:28 };
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:29 };
   if ((Number(input.balanceRevision) || 0) < 3) {
     next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
     next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
     next.balanceRevision = 3;
   }
-  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:28 };
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:29 };
   if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
   if ((Number(input.balanceRevision) || 0) < 6) {
     ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
@@ -1186,6 +1186,11 @@ function migrateBossParams(input={}) {
     ["mathLossHpMul", "mathLossAtkMul", "mathLossSpeedMul"]
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 28;
+  }
+  if ((Number(input.balanceRevision) || 0) < 29) {
+    ["mathLossHpMul", "mathLossAtkMul", "mathLossSpeedMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 29;
   }
   return next;
 }
