@@ -35,6 +35,7 @@ jobs:
           cp index.html _site/
           cp game.js _site/
           cp styles.css _site/
+          cp -R assets _site/
 
       - name: Upload game
         uses: actions/upload-pages-artifact@v4
