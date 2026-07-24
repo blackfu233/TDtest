@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "hero-opening1";
+const BUILD_VERSION = "hero-identities1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -45,7 +45,7 @@ function towerSpritePath(tower, stage=towerVisualStage(tower)) {
 }
 
 function enemySpritePath(enemy) {
-  if (enemy.sprite) return `assets/enemies-v2/${enemy.sprite}`;
+  if (enemy.sprite) return `assets/enemies-v3/${enemy.sprite}`;
   if (enemy.boss) return `assets/enemies/${String(enemy.tuneId || "boss_1").replace("_", "-")}.webp`;
   if (enemy.elite) return `assets/enemies/${String(enemy.tuneId || "elite_1").replace("_", "-")}.webp`;
   return `assets/enemies/${["normal","fast","tank","ranged","special"].includes(enemy.kind) ? enemy.kind : "normal"}.webp`;
@@ -679,11 +679,11 @@ const ATTRIBUTE_DISPLAY = {
   neutral:{ label:"無", color:"#d5dde8" },
 };
 const HEROES = [
-  { id:"fire", name:"烈焰戰士", attr:"火", attrKey:"fire", damage:92, rate:1.12, range:900, color:"#ff6b3d", status:18, statusTime:1.5, attackTrait:"燃燒", desc:"燃燒攻擊" },
-  { id:"ice", name:"寒霜獵手", attr:"冰", attrKey:"ice", damage:84, rate:1.08, range:900, color:"#72d4ff", status:.12, statusTime:1.0, attackTrait:"緩速", desc:"緩速攻擊" },
-  { id:"electric", name:"雷霆特工", attr:"電", attrKey:"electric", damage:86, rate:1.18, range:900, color:"#d89cff", status:.10, statusTime:1.0, attackTrait:"感電", desc:"感電攻擊" },
-  { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", damage:78, rate:1.10, range:900, color:"#66d86f", status:16, statusTime:1.5, attackTrait:"中毒", desc:"中毒攻擊" },
-  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", damage:108, rate:1.05, range:900, color:"#d5dde8", status:0, statusTime:0, attackTrait:"高傷", desc:"高傷實彈" },
+  { id:"fire", name:"烈焰戰士", attr:"火", attrKey:"fire", attackMode:"blast", damage:126, rate:.72, range:780, color:"#ff6b3d", status:26, statusTime:2.0, splash:58, secondaryMul:.58, targets:1, projectileSpeed:680, zoneDuration:0, attackTrait:"爆燃火球", desc:"重擊爆破｜範圍燃燒" },
+  { id:"ice", name:"寒霜獵手", attr:"冰", attrKey:"ice", attackMode:"pierce", damage:170, rate:.58, range:980, color:"#72d4ff", status:.24, statusTime:1.35, splash:0, secondaryMul:.72, targets:3, projectileSpeed:1250, zoneDuration:0, attackTrait:"貫穿冰槍", desc:"直線貫穿｜強力緩速" },
+  { id:"electric", name:"雷霆特工", attr:"電", attrKey:"electric", attackMode:"chain", damage:76, rate:1.35, range:900, color:"#d89cff", status:.12, statusTime:1.0, splash:0, secondaryMul:.62, targets:3, projectileSpeed:0, zoneDuration:0, attackTrait:"連鎖電弧", desc:"瞬發連鎖｜多目標" },
+  { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", attackMode:"cloud", damage:58, rate:.68, range:820, color:"#66d86f", status:22, statusTime:2.6, splash:54, secondaryMul:.50, targets:1, projectileSpeed:520, zoneDuration:2.0, attackTrait:"腐蝕毒囊", desc:"拋射毒囊｜持續毒區" },
+  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", attackMode:"burst", damage:46, rate:.92, range:940, color:"#d5dde8", status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0, attackTrait:"三連實彈", desc:"高速三連｜純傷害" },
 ];
 const UPGRADE_DIMENSIONS = {
   damage:{ label:"傷害", mark:"DMG" },
@@ -832,6 +832,11 @@ function heroDefaultParams() {
     result[`hero_${hero.id}_range`] = hero.range;
     result[`hero_${hero.id}_status`] = hero.status;
     result[`hero_${hero.id}_statusTime`] = hero.statusTime;
+    result[`hero_${hero.id}_splash`] = hero.splash;
+    result[`hero_${hero.id}_secondaryMul`] = hero.secondaryMul;
+    result[`hero_${hero.id}_targets`] = hero.targets;
+    result[`hero_${hero.id}_projectileSpeed`] = hero.projectileSpeed;
+    result[`hero_${hero.id}_zoneDuration`] = hero.zoneDuration;
   });
   return result;
 }
@@ -1137,7 +1142,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 34,
+  balanceRevision: 35,
   mathModelEnabled: 1,
   mathTargetRtp: 1.0,
   mathTolerancePct: 1.0,
@@ -1292,6 +1297,19 @@ function cleanParams(input={}) {
   next.heroFirstUpgradeQuantity = Math.max(0, Math.round(next.heroFirstUpgradeQuantity));
   next.heroQuantityUpgrade = Math.max(1, Math.round(next.heroQuantityUpgrade));
   next.heroQuantityEveryLevels = Math.max(1, Math.round(next.heroQuantityEveryLevels));
+  HEROES.forEach(hero => {
+    const prefix = `hero_${hero.id}_`;
+    next[`${prefix}damage`] = Math.max(0, next[`${prefix}damage`]);
+    next[`${prefix}rate`] = Math.max(.05, next[`${prefix}rate`]);
+    next[`${prefix}range`] = Math.max(100, next[`${prefix}range`]);
+    next[`${prefix}status`] = Math.max(0, next[`${prefix}status`]);
+    next[`${prefix}statusTime`] = Math.max(0, next[`${prefix}statusTime`]);
+    next[`${prefix}splash`] = Math.max(0, next[`${prefix}splash`]);
+    next[`${prefix}secondaryMul`] = Math.max(0, next[`${prefix}secondaryMul`]);
+    next[`${prefix}targets`] = Math.max(1, Math.round(next[`${prefix}targets`]));
+    next[`${prefix}projectileSpeed`] = Math.max(0, next[`${prefix}projectileSpeed`]);
+    next[`${prefix}zoneDuration`] = Math.max(0, next[`${prefix}zoneDuration`]);
+  });
   next.bossRollDuration = Math.max(2.5, Math.min(8, next.bossRollDuration));
   next.bossRollHighThreshold = Math.max(1, next.bossRollHighThreshold);
   next.bossRollJackpotThreshold = Math.max(next.bossRollHighThreshold, next.bossRollJackpotThreshold);
@@ -1506,6 +1524,10 @@ function migrateBossParams(input={}) {
     ["heroDamageUpgradePct", "heroRateUpgradePct", "heroFirstUpgradeQuantity", "wave1MinionAtkMul", "mathFirstWaveClearChance"]
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 34;
+  }
+  if ((Number(input.balanceRevision) || 0) < 35) {
+    Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("hero_")).forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 35;
   }
   return next;
 }
@@ -2536,6 +2558,33 @@ function heroDamage(hero) {
   return heroParam(hero, "damage", hero.damage) * (hero.damageMul || 1) * params.heroDamageMul;
 }
 
+function heroAttackMode(hero) {
+  return hero.attackMode || ({ fire:"blast", ice:"pierce", electric:"chain", poison:"cloud", neutral:"burst" }[hero.attrKey] || "burst");
+}
+
+function heroSecondaryMultiplier(hero) {
+  return Math.max(0, heroParam(hero, "secondaryMul", hero.secondaryMul ?? .65));
+}
+
+function heroTargetCount(hero) {
+  return Math.max(1, Math.round(heroParam(hero, "targets", hero.targets || 1)));
+}
+
+function heroChainAttack(hero, root, orderedTargets) {
+  const hit = [root];
+  const pool = orderedTargets.map(item => item.monster).filter(monster => monster !== root && monster.hp > 0);
+  while (hit.length < heroTargetCount(hero) && pool.length) {
+    const from = hit[hit.length - 1];
+    pool.sort((a,b) => dist(from, a) - dist(from, b));
+    hit.push(pool.shift());
+  }
+  hit.forEach((monster, index) => {
+    damageEnemy(monster, heroDamage(hero) * (index ? heroSecondaryMultiplier(hero) : 1), hero);
+    applyHeroProjectileStatus(hero, monster);
+  });
+  effect("chain", { ...fireOrigin(), color:hero.color }, hit[0], { chain:hit.slice(1) });
+}
+
 function updateHero(dt) {
   const hero = state.hero;
   if (!hero) return;
@@ -2556,13 +2605,20 @@ function updateHero(dt) {
   hero.aimAngle = Math.atan2(firstTarget.y - shoulder.y, firstTarget.x - shoulder.x);
   hero.recoil = 1;
   hero.muzzleFlash = .11;
-  const count = 1 + (hero.extraShots || 0);
-  const offsets = spreadOffsets(count, 10);
-  offsets.forEach((offset, index) => {
-    const target = targets[index]?.monster || targets[0].monster;
-    launchProjectileAt(hero, target, "hero", target === targets[0].monster ? offset : 0);
-  });
-  playTowerSfx(hero.attrKey === "electric" ? "chain" : hero.attrKey === "ice" ? "cryo" : hero.attrKey === "poison" ? "needle" : "blade");
+  const mode = heroAttackMode(hero);
+  const baseCount = mode === "burst" ? heroTargetCount(hero) : 1;
+  const count = baseCount + (hero.extraShots || 0);
+  if (mode === "chain") {
+    const roots = targets.slice(0, count).map(item => item.monster);
+    (roots.length ? roots : [firstTarget]).forEach(root => heroChainAttack(hero, root, targets));
+  } else {
+    const offsets = spreadOffsets(count, mode === "burst" ? 7 : 12);
+    offsets.forEach((offset, index) => {
+      const target = mode === "burst" ? firstTarget : (targets[index]?.monster || firstTarget);
+      launchProjectileAt(hero, target, `hero_${mode}`, mode === "burst" ? offset : 0);
+    });
+  }
+  playTowerSfx(mode === "chain" ? "chain" : mode === "pierce" ? "cryo" : mode === "cloud" ? "needle" : mode === "blast" ? "flame" : "blade");
   hero.cd = heroAttackCooldown(hero);
 }
 
@@ -3133,9 +3189,13 @@ function targetPoints(target, count, gap = 34) {
 
 function launchProjectileAt(t, target, type, targetOffsetX) {
   const origin = fireOrigin();
-  const speed = type === "grenade" ? 520 : type === "blade" ? 760 : type === "hero" ? 980 : 900;
+  const isHeroProjectile = type.startsWith("hero_");
+  const speed = isHeroProjectile
+    ? Math.max(180, heroParam(t, "projectileSpeed", t.projectileSpeed || 900))
+    : type === "grenade" ? 520 : type === "blade" ? 760 : 900;
   const aim = { x: clamp(target.x + targetOffsetX, 12, FIELD.w - 12), y: target.y };
-  const end = type === "grenade" ? aim : projectileEdgePoint(origin.x, origin.y, aim.x, aim.y);
+  const impactAtAim = type === "grenade" || type === "hero_blast" || type === "hero_cloud";
+  const end = impactAtAim ? aim : projectileEdgePoint(origin.x, origin.y, aim.x, aim.y);
   const travel = clamp(dist(origin, end) / speed, .12, .72);
   state.projectiles.push({
     type,
@@ -3199,12 +3259,43 @@ function projectileHit(p) {
     const lineTargets = enemiesNearLine(p.sx, p.sy, p.fullTx || p.tx, p.fullTy || p.ty, 20).sort((a,b) => b.y - a.y).slice(0, (t.pierce || 2) + (t.extraPierce || 0));
     if (lineTargets.length) pierce(t, lineTargets.map(m => ({ m })), "cryo", { x:p.sx, y:p.sy }, false);
     effect("spark", { x:center.x, y:center.y, color:t.color }, center, { life: .18 });
-  } else if (p.type === "hero") {
-    const target = p.collided || nearestEnemy(center, 30);
+  } else if (p.type === "hero_blast") {
+    const target = p.collided || nearestEnemy(center, 42);
+    const impact = target || center;
+    const radius = Math.max(18, heroParam(t, "splash", t.splash || 58));
+    state.monsters.filter(monster => monster.hp > 0 && dist(monster, impact) <= radius).forEach(monster => {
+      damageEnemy(monster, heroDamage(t) * (monster === target ? 1 : heroSecondaryMultiplier(t)), t);
+      applyHeroProjectileStatus(t, monster);
+    });
+    effect("impact", { x:impact.x, y:impact.y, color:t.color }, impact, { radius });
+  } else if (p.type === "hero_pierce") {
+    const lineTargets = enemiesNearLine(p.sx, p.sy, p.fullTx || p.tx, p.fullTy || p.ty, 18)
+      .sort((a,b) => dist({x:p.sx,y:p.sy}, a) - dist({x:p.sx,y:p.sy}, b))
+      .slice(0, heroTargetCount(t));
+    lineTargets.forEach((monster, index) => {
+      damageEnemy(monster, heroDamage(t) * (index ? heroSecondaryMultiplier(t) : 1), t);
+      applyHeroProjectileStatus(t, monster);
+    });
+    effect("cryo", { x:p.sx, y:p.sy, color:t.color }, lineTargets[0] || center, { chain:lineTargets.slice(1) });
+  } else if (p.type === "hero_cloud") {
+    const target = p.collided || nearestEnemy(center, 46);
+    const impact = target || center;
+    const radius = Math.max(18, heroParam(t, "splash", t.splash || 54));
+    state.monsters.filter(monster => monster.hp > 0 && dist(monster, impact) <= radius).forEach(monster => {
+      damageEnemy(monster, heroDamage(t) * (monster === target ? 1 : heroSecondaryMultiplier(t)), t);
+      applyHeroProjectileStatus(t, monster);
+    });
+    const zoneDuration = heroParam(t, "zoneDuration", t.zoneDuration || 0);
+    if (zoneDuration > 0) {
+      const zonePoison = heroParam(t, "status", t.status || 0) * .55;
+      addZone(impact.x, impact.y, radius * .88, zoneDuration, 0, t, { poison:zonePoison, toxic:true, tick:.5 });
+    }
+    effect("gas", { x:impact.x, y:impact.y, color:t.color }, impact, { radius });
+  } else if (p.type === "hero_burst") {
+    const target = p.collided || nearestEnemy(center, 28);
     if (target) {
       damageEnemy(target, heroDamage(t), t);
-      applyHeroProjectileStatus(t, target);
-      effect("spark", { x:center.x, y:center.y, color:t.color }, target, { life:.16 });
+      effect("spark", { x:center.x, y:center.y, color:t.color }, target, { life:.12 });
     }
   }
 }
@@ -3373,6 +3464,7 @@ function updateProjectiles(dt) {
     p.x = p.sx + (p.tx - p.sx) * progress;
     p.y = p.sy + (p.ty - p.sy) * progress;
     if (p.type === "grenade") p.arc = Math.sin(progress * Math.PI) * 72;
+    else if (p.type === "hero_cloud") p.arc = Math.sin(progress * Math.PI) * 46;
     const hit = projectileCollision(p, prev, { x:p.x, y:p.y });
     if (hit) {
       p.collided = hit;
@@ -3388,8 +3480,11 @@ function updateProjectiles(dt) {
 }
 
 function projectileCollision(p, from, to) {
-  if (p.type !== "needle" && p.type !== "blade" && p.type !== "cryo" && p.type !== "hero") return null;
-  const projectileRadius = p.type === "blade" ? 12 : p.type === "hero" ? 9 : p.type === "cryo" ? 7 : 5;
+  const isHeroProjectile = p.type.startsWith("hero_");
+  if (p.type !== "needle" && p.type !== "blade" && p.type !== "cryo" && !isHeroProjectile) return null;
+  const projectileRadius = p.type === "blade" ? 12
+    : p.type === "hero_blast" || p.type === "hero_cloud" ? 11
+      : isHeroProjectile ? 7 : p.type === "cryo" ? 7 : 5;
   const hit = state.monsters
     .filter(m => m.hp > 0 && distanceToSegment(m, from, to) <= projectileRadius + enemyHitRadius(m) + 2)
     .sort((a,b) => dist(from, a) - dist(from, b))[0];
@@ -3398,7 +3493,7 @@ function projectileCollision(p, from, to) {
 
 function enemyHitRadius(m) {
   const size = Math.max(12, m.size || (m.boss ? 46 : m.elite ? 30 : 14));
-  return Math.max(6, size * .5);
+  return Math.max(9, size * (m.boss ? 1.42 : m.elite ? 1.30 : 1.16));
 }
 
 function distanceToSegment(point, from, to) {
@@ -5058,20 +5153,24 @@ function drawBossBody(m, size) {
 function drawEnemy(m) {
   const baseSize = Math.max(12, m.size || (m.boss ? 46 : m.elite ? 30 : 15));
   const depth = clamp((m.y + 18) / (FIELD.baseY + 18), 0, 1);
-  const perspective = .68 + depth * .32;
+  const perspective = .76 + depth * .24;
   const size = baseSize * perspective;
+  const spriteFactor = m.boss ? 3.70 : m.elite ? 3.55 : 3.55;
+  const spriteSize = size * spriteFactor;
   const hpPct = Math.max(0, m.hp / m.maxHp);
   ctx.save();
   ctx.fillStyle = `rgba(0,0,0,${.16 + depth * .22})`;
   ctx.beginPath();
-  ctx.ellipse(m.x, m.y + size * .46, size * .48, size * .17, 0, 0, Math.PI * 2);
+  ctx.ellipse(m.x, m.y + spriteSize * .34, spriteSize * .32, spriteSize * .10, 0, 0, Math.PI * 2);
   ctx.fill();
   const sprite = artImage(enemySpritePath(m));
   if (sprite?.complete && sprite.naturalWidth) {
-    const spriteSize = size * (m.boss ? 3.10 : m.elite ? 3.04 : 3.12);
     const stride = Math.sin(performance.now() / (m.kind === "fast" ? 80 : 135) + (m.x || 0) * .08) * (m.boss ? 1.2 : 1.8) * perspective;
     ctx.globalAlpha = m.stunTime > 0 || m.freezeTime > 0 ? .86 : 1;
+    ctx.shadowColor = m.color || "rgba(255,255,255,.35)";
+    ctx.shadowBlur = m.boss ? 12 : m.elite ? 8 : 5;
     ctx.drawImage(sprite, m.x - spriteSize / 2, m.y - spriteSize / 2 + stride, spriteSize, spriteSize);
+    ctx.shadowBlur = 0;
     if (m.elite || m.boss) {
       ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = m.boss ? .26 : .18;
@@ -5085,9 +5184,8 @@ function drawEnemy(m) {
   else if (m.elite) drawEliteBody(m, size);
   else drawMinionBody(m, size);
   ctx.restore();
-  drawEnemyAttributeMarker(m, size);
   const bw = (m.boss ? 58 : m.elite ? 46 : 32) * (.72 + perspective * .28);
-  const visualHalf = size * (m.boss ? 1.24 : m.elite ? 1.15 : 1.19);
+  const visualHalf = spriteSize * .44;
   if (m.boss) {
     const barW = 92;
     const barH = 7;
@@ -5273,21 +5371,50 @@ function drawProjectile(p) {
     ctx.fillRect(-2, -8, 4, 16);
     ctx.fillStyle = "#ff5b24";
     ctx.beginPath(); ctx.arc(-7, -7, 2.4, 0, Math.PI * 2); ctx.fill();
-  } else if (p.type === "hero") {
+  } else if (p.type === "hero_blast") {
     ctx.translate(p.x, y);
     ctx.rotate(angle);
-    ctx.shadowColor = p.tower.color;
-    ctx.shadowBlur = 12;
-    ctx.globalAlpha = .28;
-    ctx.fillStyle = p.tower.color;
-    ctx.beginPath(); ctx.ellipse(-12,0,20,6,0,0,Math.PI*2); ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = p.tower.color;
+    ctx.shadowColor = "#ff5a24";
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "rgba(255,78,28,.34)";
+    ctx.beginPath(); ctx.moveTo(-34,0); ctx.lineTo(-9,-10); ctx.lineTo(-4,10); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#ff6a27";
+    ctx.strokeStyle = "#ffd36a";
     ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(0,0,7,0,Math.PI*2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = p.tower.color;
-    ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#fff3b0";
+    ctx.beginPath(); ctx.arc(2,-2,4,0,Math.PI*2); ctx.fill();
+  } else if (p.type === "hero_pierce") {
+    ctx.translate(p.x, y);
+    ctx.rotate(angle);
+    ctx.shadowColor = "#8eeaff";
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = "rgba(114,212,255,.30)";
+    ctx.beginPath(); ctx.moveTo(-36,0); ctx.lineTo(-8,-8); ctx.lineTo(-2,8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#dffbff";
+    ctx.strokeStyle = "#45bff5";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(16,0); ctx.lineTo(-6,-6); ctx.lineTo(-18,0); ctx.lineTo(-6,6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (p.type === "hero_cloud") {
+    ctx.translate(p.x, y);
+    ctx.rotate(motion * Math.PI * 3);
+    ctx.shadowColor = "#67ef73";
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = "#223328";
+    ctx.strokeStyle = "#7cf074";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#b7ff64";
+    ctx.beginPath(); ctx.arc(-3,-2,3.5,0,Math.PI*2); ctx.arc(4,2,2.5,0,Math.PI*2); ctx.fill();
+  } else if (p.type === "hero_burst") {
+    ctx.translate(p.x, y);
+    ctx.rotate(angle);
+    ctx.shadowColor = "#fff0a8";
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = "#fff7ce";
+    ctx.strokeStyle = "#d7b85e";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(-7,-2.5,14,5,2.5); ctx.fill(); ctx.stroke();
   } else if (p.type === "cryo") {
     ctx.translate(p.x, y);
     ctx.rotate(angle);
