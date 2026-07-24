@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "minion-death30";
+const BUILD_VERSION = "depth-balance30";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -854,22 +854,22 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 29,
+  balanceRevision: 30,
   mathModelEnabled: 1,
   mathTargetRtp: 1.0,
   mathTolerancePct: 1.0,
-  mathBuildInfluence: .22,
-  mathBossPenalty: .28,
+  mathBuildInfluence: .24,
+  mathBossPenalty: .31,
   mathLossHpMul: 5.00,
   mathLossAtkMul: 5.00,
   mathLossSpeedMul: 3.00,
   mathMinClearChance: .18,
   mathMaxClearChance: .96,
-  mathClearBand1: .93,
-  mathClearBand2: .86,
-  mathClearBand3: .78,
-  mathClearBand4: .70,
-  mathClearBand5: .62,
+  mathClearBand1: .95,
+  mathClearBand2: .88,
+  mathClearBand3: .80,
+  mathClearBand4: .72,
+  mathClearBand5: .64,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -1191,6 +1191,11 @@ function migrateBossParams(input={}) {
     ["mathLossHpMul", "mathLossAtkMul", "mathLossSpeedMul"]
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 29;
+  }
+  if ((Number(input.balanceRevision) || 0) < 30) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 30;
   }
   return next;
 }
