@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防深追 Demo</title>
-  <link rel="stylesheet" href="styles.css?v=progression-ui36">
+  <link rel="stylesheet" href="styles.css?v=visual-art1">
 </head>
 <body>
   <main class="phone">
@@ -35,7 +35,7 @@
         <span></span>
         <span></span>
       </button>
-      <div class="hud-chip wave-chip player-hidden" aria-hidden="true">
+      <div class="hud-chip wave-chip">
         <span>波次</span>
         <strong class="wave-value"><b id="waveText">0</b><canvas id="waveAttrIcon" width="22" height="22" hidden></canvas></strong>
       </div>
@@ -51,12 +51,10 @@
 
     <section class="bottom-status" aria-label="基地與經驗狀態">
       <div class="status-row hp-status">
-        <div class="status-label"><span>HP</span><strong id="hpText">1000 / 1000</strong></div>
-        <div class="status-track"><div id="hpFill" class="status-fill hp-fill"></div></div>
+        <div class="status-track"><div id="hpFill" class="status-fill hp-fill"></div><strong id="hpText" class="status-value">HP 1000 / 1000</strong></div>
       </div>
       <div class="status-row exp-status">
-        <div class="status-label"><span>EXP Lv.<b id="levelText">1</b></span><strong id="expText">0/95</strong></div>
-        <div class="status-track"><div id="expFill" class="status-fill exp-fill"></div></div>
+        <div class="status-track"><div id="expFill" class="status-fill exp-fill"></div><strong class="status-value">EXP Lv.<b id="levelText">1</b>　<span id="expText">0/95</span></strong></div>
       </div>
     </section>
 
@@ -123,6 +121,6 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=progression-ui36" charset="utf-8"></script>
+  <script src="game.js?v=visual-art1" charset="utf-8"></script>
 </body>
 </html>

@@ -1,13 +1,54 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "progression-ui36";
+const BUILD_VERSION = "visual-art1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
 const MAX_TOWER_SLOTS = 3;
 const NEW_TOWER_GUARANTEE_LIMIT = 3;
 const HERO_SKILL_LEVELS = [5, 10, 15];
+const artImageCache = new Map();
+
+function artImage(src) {
+  if (HEADLESS_SIM || typeof Image === "undefined") return null;
+  if (!artImageCache.has(src)) {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = src;
+    artImageCache.set(src, image);
+  }
+  return artImageCache.get(src);
+}
+
+function heroVisualStage(hero) {
+  if (!hero) return 1;
+  if (hero.level >= HERO_SKILL_LEVELS[2] || hero.buffs?.ultimateSync) return 3;
+  if (hero.level >= HERO_SKILL_LEVELS[0] || hero.buffs?.resonance) return 2;
+  return 1;
+}
+
+function towerVisualStage(tower) {
+  if (!tower?.upgrades?.length) return 1;
+  if (tower.upgrades.some(name => SYNERGY_UPGRADE_NAMES?.has(name))) return 3;
+  if (tower.upgrades.some(name => ADVANCED_UPGRADE_NAMES?.has(name))) return 2;
+  return 1;
+}
+
+function heroSpritePath(hero, stage=heroVisualStage(hero)) {
+  const id = hero?.heroId || hero?.id || "neutral";
+  return `assets/heroes/${id}-stage-${clamp(Math.round(stage), 1, 3)}.webp`;
+}
+
+function towerSpritePath(tower, stage=towerVisualStage(tower)) {
+  return tower ? `assets/towers/${tower.id}-stage-${clamp(Math.round(stage), 1, 3)}.webp` : "";
+}
+
+function enemySpritePath(enemy) {
+  if (enemy.boss) return `assets/enemies/${String(enemy.tuneId || "boss_1").replace("_", "-")}.webp`;
+  if (enemy.elite) return `assets/enemies/${String(enemy.tuneId || "elite_1").replace("_", "-")}.webp`;
+  return `assets/enemies/${["normal","fast","tank","ranged","special"].includes(enemy.kind) ? enemy.kind : "normal"}.webp`;
+}
 
 const ui = {
   phone: document.querySelector(".phone"),
@@ -468,6 +509,13 @@ const UPGRADE_ROWS = [
 const CORE_UPGRADE_NAMES = new Set(
   UPGRADE_ROWS[4].filter(Boolean).map(upgrade => upgrade[0])
 );
+const ADVANCED_UPGRADE_NAMES = new Set(
+  UPGRADE_ROWS.slice(4, 7).flat().filter(Boolean).map(upgrade => upgrade[0])
+);
+const SYNERGY_UPGRADE_NAMES = new Set([
+  ...UPGRADE_ROWS.slice(7).flat().filter(Boolean).map(upgrade => upgrade[0]),
+  ...Object.keys(UPGRADE_REQUIREMENTS),
+]);
 
 const MONSTERS = {
   normal: { name:"普通怪", hp:300, speed:60, range:0, atk:20, interval:1.5, exp:10, money:[1,3], color:"#6d7a91", size:14, shape:"square" },
@@ -1638,6 +1686,26 @@ function rarityLabel(rarity) {
   }[rarity] || "普通";
 }
 
+function choiceCardType(choice, rarity, dimension) {
+  if (rarity === "hero") return "hero-pick";
+  if (rarity === "newTower") return "new-tower";
+  if (rarity === "heroBuff") return "hero-skill";
+  if (rarity === "heroUpgrade") return "hero-upgrade";
+  if (dimension === "synergy" || rarity === "synergy") return "tower-synergy";
+  if (dimension === "core" || rarity === "core" || rarity === "deepen") return "tower-core";
+  return "tower-stat";
+}
+
+const CHOICE_CARD_TYPES = {
+  "hero-pick": { label:"角色", mark:"★" },
+  "hero-upgrade": { label:"角色升級", mark:"↑" },
+  "new-tower": { label:"新砲台", mark:"＋" },
+  "tower-stat": { label:"砲台強化", mark:"▲" },
+  "tower-core": { label:"核心進化", mark:"◆" },
+  "tower-synergy": { label:"組合連動", mark:"∞" },
+  "hero-skill": { label:"角色技能", mark:"✦" },
+};
+
 function showChoices(title, hint, choices, options={}) {
   stopChannelAudio();
   state.choicesOpen = true;
@@ -1655,10 +1723,20 @@ function showChoices(title, hint, choices, options={}) {
     const rarity = choice.rarity || "common";
     const towerDef = choice.towerId ? TOWERS.find(tower => tower.id === choice.towerId) : null;
     const attrKey = choice.attrKey || (towerDef ? towerAttr(towerDef) : "neutral");
-    const icon = towerDef ? towerIconDataUrl(towerDef) : choice.heroId ? heroIconDataUrl(HEROES.find(hero => hero.id === choice.heroId)) : "";
+    const towerState = towerDef ? state.towers.find(tower => tower.id === towerDef.id) || towerDef : null;
+    const heroDef = choice.heroId ? HEROES.find(hero => hero.id === choice.heroId) : null;
+    const heroState = heroDef ? state.hero || heroDef : null;
     const dimension = choice.dimension || (rarity === "newTower" ? "newTower" : rarity === "synergy" ? "synergy" : rarity === "core" || rarity === "deepen" ? "core" : "damage");
     const dimensionInfo = UPGRADE_DIMENSIONS[dimension] || UPGRADE_DIMENSIONS.core;
-    btn.className = `choice-card rarity-${rarity} dimension-${dimension} attr-${attrKey}`;
+    const cardType = choiceCardType(choice, rarity, dimension);
+    const cardTypeInfo = CHOICE_CARD_TYPES[cardType];
+    const previewStage = choice.visualStage || (cardType === "new-tower" ? 1
+      : cardType === "tower-synergy" ? 3
+      : cardType === "tower-core" ? Math.max(2, towerVisualStage(towerState))
+      : cardType === "hero-skill" ? Math.min(3, heroVisualStage(heroState) + 1)
+      : towerState ? towerVisualStage(towerState) : heroVisualStage(heroState));
+    const icon = towerState ? towerSpritePath(towerState, previewStage) : heroDef ? heroSpritePath(heroDef, previewStage) : "";
+    btn.className = `choice-card rarity-${rarity} dimension-${dimension} choice-type-${cardType} attr-${attrKey}`;
     btn.__choice = choice;
     btn.type = "button";
     btn.style.setProperty("--choice-color", (ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).color);
@@ -1666,7 +1744,8 @@ function showChoices(title, hint, choices, options={}) {
     const heroBuffHtml = rarity === "hero"
       ? `<span class="hero-buff-visual"><span class="hero-effect"><i class="hero-effect-icon attack"></i><span><small>攻擊</small><b>${choice.attackTrait}</b></span></span><span class="hero-effect"><i class="hero-effect-icon tower"></i><span><small>同屬塔</small><b>+${params.heroSameAttrBonusPct}%</b></span></span></span>`
       : "";
-    btn.innerHTML = `${iconHtml}<span class="choice-copy"><span class="choice-top"><span class="choice-name">${choice.title}</span><span class="dimension-badge"><b>${dimensionInfo.mark}</b>${dimensionInfo.label}</span></span><span class="choice-sub">${choice.tag || choice.rarityLabel || rarityLabel(rarity)}</span><span class="choice-desc">${choice.desc}</span>${heroBuffHtml}</span>`;
+    const impact = choice.impact || choice.effect || choice.desc || "";
+    btn.innerHTML = `${iconHtml}<span class="choice-copy"><span class="choice-category"><i>${cardTypeInfo.mark}</i>${cardTypeInfo.label}</span><span class="choice-name">${choice.title}</span><span class="choice-impact">${impact}</span><span class="choice-sub">${choice.tag || choice.rarityLabel || rarityLabel(rarity)}</span>${heroBuffHtml}</span>`;
     btn.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -1756,6 +1835,7 @@ function showHeroDraft() {
     rarity:"hero",
     dimension:"hero",
     desc:hero.desc,
+    impact:`${hero.attackTrait}　同屬性砲台 +${params.heroSameAttrBonusPct}%`,
     attackTrait:hero.attackTrait,
     onPick:() => {
       addHero(hero);
@@ -1821,7 +1901,7 @@ function towerChoice(t, onPick) {
   const damage = towerParam(t, "damage", t.damage);
   const range = towerParam(t, "range", t.range);
   const rate = towerParam(t, "rate", t.rate);
-  return { title: t.name, tag: `${t.attr}屬性｜${towerRoleLabel(t)}`, towerId:t.id, attrKey:towerAttr(t), rarity:"newTower", dimension:"newTower", desc: `傷害 ${damage}｜攻速 ${rate}/秒｜${t.desc}`, onPick };
+  return { title: t.name, tag: `${t.attr}屬性｜${towerRoleLabel(t)}`, towerId:t.id, attrKey:towerAttr(t), rarity:"newTower", dimension:"newTower", desc: `傷害 ${damage}｜攻速 ${rate}/秒｜${t.desc}`, impact:`傷害 ${damage}　攻速 ${rate}/秒`, onPick };
 }
 
 function towerRoleLabel(t) {
@@ -1835,6 +1915,7 @@ const towerIconCache = new Map();
 const heroIconCache = new Map();
 function heroIconDataUrl(hero) {
   if (!hero) return "";
+  return heroSpritePath(hero);
   const key = hero.heroId || hero.id;
   if (heroIconCache.has(key)) return heroIconCache.get(key);
   const iconCanvas = document.createElement("canvas");
@@ -1911,6 +1992,7 @@ function heroIconDataUrl(hero) {
 }
 function towerIconDataUrl(tower) {
   if (!tower) return "";
+  return towerSpritePath(tower);
   if (towerIconCache.has(tower.id)) return towerIconCache.get(tower.id);
   const iconCanvas = document.createElement("canvas");
   iconCanvas.width = 96;
@@ -3325,8 +3407,12 @@ function buildUpgradeChoices(choiceCount) {
       attrKey: picked.tower ? towerAttr(picked.tower) : picked.hero.attrKey,
       rarity: picked.rarity,
       dimension: picked.dimension,
+      visualStage: picked.hero && picked.up.milestoneLevel
+        ? (picked.up.milestoneLevel >= HERO_SKILL_LEVELS[2] ? 3 : 2)
+        : undefined,
       repeatTaken: picked.takenCount > 0,
       desc: `${requirementNote}${picked.up.desc}｜${picked.up.effect}`,
+      impact: picked.up.effect,
       onPick: () => {
         if (picked.tower && !upgradeAvailable(picked.tower, picked.up)) {
           state.message = "此連動升級的前置條件尚未完整解鎖。";
@@ -3572,6 +3658,7 @@ function decayHeroUpgradeRepeatLocks() {
   });
 }
 function applyHeroUpgrade(hero, up) {
+  const visualStageBefore = heroVisualStage(hero);
   hero.upgrades.push(up.name);
   hero.level += 1;
   if (!hero.upgradeCounts) hero.upgradeCounts = {};
@@ -3597,6 +3684,11 @@ function applyHeroUpgrade(hero, up) {
     hero.buffs.adaptiveAttribute = true;
   } else if (up.key) hero.buffs[up.key] = true;
   hero.upgradeCounts[up.key] = (hero.upgradeCounts[up.key] || 0) + 1;
+  const position = heroVisualPosition();
+  effect("upgradeBurst", {x:position.x,y:position.y - 30,color:hero.color}, position, {
+    life: heroVisualStage(hero) > visualStageBefore ? 1.2 : .72,
+    text: heroVisualStage(hero) > visualStageBefore ? `STAGE ${heroVisualStage(hero)}` : "LEVEL UP"
+  });
 }
 function markUpgradeRepeatLock(tower, up) {
   if (!state.upgradeRepeatLocks) state.upgradeRepeatLocks = {};
@@ -3688,10 +3780,16 @@ function applyUpgrade(t, up) {
 
 const applyUpgradeBase = applyUpgrade;
 applyUpgrade = function(t, up) {
+  const visualStageBefore = towerVisualStage(t);
   const before = snapshotUpgradeStats(t);
   applyUpgradeBase(t, up);
   tuneAppliedUpgrade(t, before);
   tuneUpgradeEffectValues(t, up, before);
+  const position = [{x:66,y:699},{x:284,y:699},{x:112,y:718}][t.slot] || heroVisualPosition();
+  effect("upgradeBurst", {x:position.x,y:position.y - 12,color:t.color}, position, {
+    life: towerVisualStage(t) > visualStageBefore ? 1.2 : .72,
+    text: towerVisualStage(t) > visualStageBefore ? `STAGE ${towerVisualStage(t)}` : "POWER UP"
+  });
 };
 
 function snapshotUpgradeStats(t) {
@@ -3934,6 +4032,52 @@ function drawHero() {
   const angle = Number.isFinite(hero.aimAngle) ? hero.aimAngle : -Math.PI / 2;
   const facing = Math.cos(angle) < 0 ? -1 : 1;
   const pulse = .55 + Math.sin((hero.animTime || 0) * 4.4) * .12;
+  const visualStage = heroVisualStage(hero);
+  const sprite = artImage(heroSpritePath(hero, visualStage));
+  if (sprite?.complete && sprite.naturalWidth) {
+    const drawSize = visualStage === 3 ? 94 : visualStage === 2 ? 88 : 82;
+    ctx.save();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "rgba(0,0,0,.44)";
+    ctx.beginPath();
+    ctx.ellipse(x, y + 8, drawSize * .31, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = visualStage === 3 ? .30 : .18;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(x, y + 5, drawSize * (.38 + pulse * .03), 10 + pulse * 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (visualStage >= 2) {
+      ctx.globalAlpha = visualStage === 3 ? .78 : .42;
+      ctx.strokeStyle = visualStage === 3 ? "#fff0ae" : color;
+      ctx.lineWidth = visualStage === 3 ? 3 : 2;
+      ctx.beginPath();
+      ctx.arc(x, y - 26, drawSize * .43 + Math.sin((hero.animTime || 0) * 3) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.translate(x, y + bob - drawSize * .34);
+    ctx.scale(facing, 1);
+    ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+    ctx.restore();
+    if ((hero.muzzleFlash || 0) > 0) {
+      const origin = fireOrigin();
+      const flash = clamp(hero.muzzleFlash / .11, 0, 1);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = flash;
+      ctx.fillStyle = "#fff5a8";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, 5 + flash * 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    return;
+  }
   ctx.save();
 
   ctx.globalAlpha = .28 + pulse * .12;
@@ -4153,21 +4297,71 @@ function drawPersistentLaser(from, to, color, focused=false, secondary=false) {
 }
 
 let fieldLayer = null;
+const battlefieldArt = artImage("assets/backgrounds/battlefield-v1.webp");
+
+function drawArtCover(image, x, y, width, height) {
+  const sourceRatio = image.naturalWidth / image.naturalHeight;
+  const targetRatio = width / height;
+  let sx = 0, sy = 0, sw = image.naturalWidth, sh = image.naturalHeight;
+  if (sourceRatio > targetRatio) {
+    sw = image.naturalHeight * targetRatio;
+    sx = (image.naturalWidth - sw) / 2;
+  } else {
+    sh = image.naturalWidth / targetRatio;
+    sy = (image.naturalHeight - sh) / 2;
+  }
+  ctx.drawImage(image, sx, sy, sw, sh, x, y, width, height);
+}
 
 function drawField() {
+  if (battlefieldArt?.complete && battlefieldArt.naturalWidth) {
+    drawArtCover(battlefieldArt, 0, 0, canvas.width, canvas.height);
+    const shade = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    shade.addColorStop(0, "rgba(3,8,16,.10)");
+    shade.addColorStop(.58, "rgba(2,5,10,.03)");
+    shade.addColorStop(1, "rgba(2,4,8,.20)");
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
   if (!fieldLayer) fieldLayer = buildFieldLayer();
   ctx.drawImage(fieldLayer, 0, 0);
 }
 
 function drawDefenseStage() {
-  const positions = [{x:74,y:694},{x:276,y:694},{x:116,y:716}];
+  const positions = [{x:66,y:699},{x:284,y:699},{x:112,y:718}];
   state.towers.forEach((tower, index) => {
     const position = positions[index];
     if (!position) return;
     const ready = cooldownProgress(tower);
     const color = tower.color || (ATTRIBUTE_DISPLAY[towerAttr(tower)] || ATTRIBUTE_DISPLAY.neutral).color;
+    const visualStage = towerVisualStage(tower);
+    const sprite = artImage(towerSpritePath(tower, visualStage));
     ctx.save();
     ctx.translate(position.x, position.y);
+    if (sprite?.complete && sprite.naturalWidth) {
+      const bob = Math.sin(performance.now() / 420 + index * 1.7) * 1.2;
+      const drawSize = visualStage === 3 ? 64 : visualStage === 2 ? 59 : 55;
+      ctx.fillStyle = "rgba(0,0,0,.42)";
+      ctx.beginPath();
+      ctx.ellipse(0, 11, drawSize * .36, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = .16 + ready * .18;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, 3, drawSize * .46, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2 - 7 + bob, drawSize, drawSize);
+      ctx.strokeStyle = visualStage === 3 ? "#fff0ae" : color;
+      ctx.lineWidth = visualStage === 3 ? 2.5 : 1.5;
+      ctx.globalAlpha = .35 + ready * .5;
+      ctx.beginPath();
+      ctx.arc(0, 3, drawSize * .42, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     ctx.fillStyle = "rgba(5,8,12,.88)";
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
@@ -4479,7 +4673,7 @@ function drawBossBody(m, size) {
 function drawEnemy(m) {
   const baseSize = m.boss ? 44 : m.elite ? 32 : m.size;
   const depth = clamp((m.y + 18) / (FIELD.baseY + 18), 0, 1);
-  const perspective = .58 + depth * .42;
+  const perspective = .42 + depth * .58;
   const size = baseSize * perspective;
   const hpPct = Math.max(0, m.hp / m.maxHp);
   ctx.save();
@@ -4487,17 +4681,33 @@ function drawEnemy(m) {
   ctx.beginPath();
   ctx.ellipse(m.x, m.y + size * .46, size * .48, size * .17, 0, 0, Math.PI * 2);
   ctx.fill();
-  if (m.boss) drawBossBody(m, size);
+  const sprite = artImage(enemySpritePath(m));
+  if (sprite?.complete && sprite.naturalWidth) {
+    const spriteSize = size * (m.boss ? 2.48 : m.elite ? 2.30 : 2.38);
+    const stride = Math.sin(performance.now() / (m.kind === "fast" ? 80 : 135) + (m.x || 0) * .08) * (m.boss ? 1.2 : 1.8) * perspective;
+    ctx.globalAlpha = m.stunTime > 0 || m.freezeTime > 0 ? .86 : 1;
+    ctx.drawImage(sprite, m.x - spriteSize / 2, m.y - spriteSize / 2 + stride, spriteSize, spriteSize);
+    if (m.elite || m.boss) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = m.boss ? .26 : .18;
+      ctx.strokeStyle = m.boss ? "#ff574c" : "#ffd85c";
+      ctx.lineWidth = m.boss ? 4 : 2;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, spriteSize * .40 + Math.sin(performance.now() / 180) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (m.boss) drawBossBody(m, size);
   else if (m.elite) drawEliteBody(m, size);
   else drawMinionBody(m, size);
   ctx.restore();
   drawEnemyAttributeMarker(m, size);
   const bw = (m.boss ? 58 : m.elite ? 46 : 32) * (.72 + perspective * .28);
+  const visualHalf = size * (m.boss ? 1.24 : m.elite ? 1.15 : 1.19);
   if (m.boss) {
     const barW = 92;
     const barH = 7;
     const barX = m.x - barW / 2;
-    const barY = Math.max(20, m.y - size / 2 - 15);
+    const barY = Math.max(20, m.y - visualHalf - 15);
     const hpLabel = `${Math.ceil(m.hp)} / ${Math.ceil(m.maxHp)}`;
     ctx.save();
     ctx.fillStyle = "rgba(8, 10, 16, .82)";
@@ -4521,14 +4731,14 @@ function drawEnemy(m) {
     ctx.restore();
     return;
   }
-  ctx.fillStyle = "rgba(5,8,12,.82)"; ctx.fillRect(m.x-bw/2-1,m.y-size/2-11,bw+2,6);
+  ctx.fillStyle = "rgba(5,8,12,.82)"; ctx.fillRect(m.x-bw/2-1,m.y-visualHalf-11,bw+2,6);
   ctx.fillStyle = m.elite ? "#ffd85c" : "#41d47a";
-  ctx.fillRect(m.x-bw/2,m.y-size/2-10,bw*hpPct,4);
+  ctx.fillRect(m.x-bw/2,m.y-visualHalf-10,bw*hpPct,4);
   if (m.elite) {
     ctx.fillStyle = "#fff4c6";
     ctx.font = "900 9px Microsoft JhengHei";
     ctx.textAlign = "center";
-    ctx.fillText("ELITE", m.x, m.y-size/2-15);
+    ctx.fillText("ELITE", m.x, m.y-visualHalf-15);
   }
 }
 
@@ -4944,6 +5154,34 @@ function drawEffect(e) {
       ctx.stroke();
     }
   }
+  else if (e.type==="upgradeBurst") {
+    const progress = 1 - p;
+    ctx.translate(e.x, e.y);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = Math.min(1, p * 1.8);
+    ctx.strokeStyle = e.color;
+    ctx.lineWidth = 2 + p * 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, 15 + progress * 62, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 12; i += 1) {
+      const angle = i * Math.PI / 6 + progress * .6;
+      const inner = 20 + progress * 18;
+      const outer = inner + 18 + progress * 22;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+      ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.font = "900 15px Arial";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0,0,0,.8)";
+    ctx.fillStyle = "#fff7c4";
+    ctx.strokeText(e.text || "POWER UP", 0, -38 - progress * 18);
+    ctx.fillText(e.text || "POWER UP", 0, -38 - progress * 18);
+  }
   else if (e.type==="eliteDefeat") {
     const progress = 1 - p;
     ctx.globalAlpha = Math.min(1, p * 1.55);
@@ -5250,7 +5488,7 @@ function updateUi() {
   ui.pot.textContent = Math.floor(state.pot);
   ui.payout.textContent = payout();
   ui.wave.textContent = state.wave;
-  ui.hp.textContent = `${Math.ceil(state.hp)} / ${maxHp}`;
+  ui.hp.textContent = `HP ${Math.ceil(state.hp)} / ${maxHp}`;
   ui.hpFill.style.width = `${Math.round(hpPct * 100)}%`;
   ui.hpFill.classList.toggle("warning", hpPct <= .45);
   ui.hpFill.classList.toggle("danger", hpPct <= .2);
@@ -5360,9 +5598,10 @@ function renderSlots() {
       const ready = Math.round((isHeroSlot ? heroCooldownProgress(t) : cooldownProgress(t)) * 100);
       view.root.dataset.attr = towerAttr(t);
       view.icon.hidden = false;
-      const iconKey = isHeroSlot ? `hero:${t.heroId}` : t.id;
+      const visualStage = isHeroSlot ? heroVisualStage(t) : towerVisualStage(t);
+      const iconKey = isHeroSlot ? `hero:${t.heroId}:${visualStage}` : `${t.id}:${visualStage}`;
       if (view.icon.dataset.tower !== iconKey) {
-        view.icon.src = isHeroSlot ? heroIconDataUrl(t) : towerIconDataUrl(t);
+        view.icon.src = isHeroSlot ? heroSpritePath(t, visualStage) : towerSpritePath(t, visualStage);
         view.icon.dataset.tower = iconKey;
       }
       view.root.title = `${t.name} Lv.${t.level}`;
