@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "five-dim1";
+const BUILD_VERSION = "enemy-roster1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -41,10 +41,11 @@ function heroSpritePath(hero, stage=heroVisualStage(hero)) {
 }
 
 function towerSpritePath(tower, stage=towerVisualStage(tower)) {
-  return tower ? `assets/towers/${tower.id}-stage-${clamp(Math.round(stage), 1, 3)}.webp` : "";
+  return tower ? `assets/towers-v2/${tower.id}-stage-${clamp(Math.round(stage), 1, 3)}.webp` : "";
 }
 
 function enemySpritePath(enemy) {
+  if (enemy.sprite) return `assets/enemies-v2/${enemy.sprite}`;
   if (enemy.boss) return `assets/enemies/${String(enemy.tuneId || "boss_1").replace("_", "-")}.webp`;
   if (enemy.elite) return `assets/enemies/${String(enemy.tuneId || "elite_1").replace("_", "-")}.webp`;
   return `assets/enemies/${["normal","fast","tank","ranged","special"].includes(enemy.kind) ? enemy.kind : "normal"}.webp`;
@@ -710,6 +711,84 @@ const ENEMY_ATTRIBUTE_DEFAULTS = {
   boss_4:  { fire:1,    ice:1,    electric:.80,  poison:1.35, neutral:1 },
   boss_5:  { fire:1.35, ice:.80,  electric:1,    poison:1,    neutral:1 },
 };
+
+const ATTRIBUTE_COUNTER = {
+  fire:"ice",
+  ice:"fire",
+  electric:"poison",
+  poison:"electric",
+};
+
+function enemyAttributeProfile(enemyAttr) {
+  const result = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [attr, 1]));
+  if (!enemyAttr || enemyAttr === "neutral") return result;
+  result[enemyAttr] = .75;
+  result[ATTRIBUTE_COUNTER[enemyAttr]] = 1.30;
+  return result;
+}
+
+const MINION_VARIANTS = {
+  neutral: [
+    { id:"neutral_scout", name:"偵察蛛機", sprite:"neutral-scout.webp", enemyAttr:"neutral", hp:300, speed:38, range:0, atk:5, interval:1.5, exp:10, money:[1,3], color:"#d5dde8", size:15 },
+    { id:"neutral_gunner", name:"浮游砲機", sprite:"neutral-gunner.webp", enemyAttr:"neutral", hp:260, speed:35, range:110, atk:5, interval:1.7, exp:12, money:[1,3], color:"#d5dde8", size:16, special:true },
+    { id:"neutral_guard", name:"重盾履帶", sprite:"neutral-guard.webp", enemyAttr:"neutral", hp:650, speed:29, range:0, atk:9, interval:1.8, exp:18, money:[4,8], color:"#d5dde8", size:22 },
+  ],
+  fire: [
+    { id:"fire_charger", name:"燼火輪獸", sprite:"fire-charger.webp", enemyAttr:"fire", hp:230, speed:45, range:0, atk:11, interval:1.15, exp:10, money:[1,3], color:"#ff6b3d", size:15 },
+    { id:"fire_ray", name:"熔火飛魟", sprite:"fire-ray.webp", enemyAttr:"fire", hp:250, speed:39, range:115, atk:10, interval:1.25, exp:12, money:[1,3], color:"#ff6b3d", size:17, special:true },
+    { id:"fire_tortoise", name:"岩漿甲龜", sprite:"fire-tortoise.webp", enemyAttr:"fire", hp:500, speed:31, range:0, atk:15, interval:1.55, exp:18, money:[4,8], color:"#ff6b3d", size:22 },
+  ],
+  ice: [
+    { id:"ice_crab", name:"冰盾蟹", sprite:"ice-crab.webp", enemyAttr:"ice", hp:430, speed:31, range:0, atk:5, interval:1.6, exp:10, money:[1,3], color:"#72d4ff", size:16 },
+    { id:"ice_jelly", name:"冰晶水母", sprite:"ice-jelly.webp", enemyAttr:"ice", hp:360, speed:30, range:125, atk:5, interval:1.8, exp:12, money:[1,3], color:"#72d4ff", size:17, special:true },
+    { id:"ice_rhino", name:"冰河巨犀", sprite:"ice-rhino.webp", enemyAttr:"ice", hp:820, speed:26, range:0, atk:9, interval:1.9, exp:20, money:[4,8], color:"#72d4ff", size:24 },
+  ],
+  electric: [
+    { id:"electric_runner", name:"電弧疾蜥", sprite:"electric-runner.webp", enemyAttr:"electric", hp:170, speed:57, range:0, atk:7, interval:.95, exp:8, money:[1,2], color:"#d89cff", size:13 },
+    { id:"electric_pulse", name:"脈衝飛梭", sprite:"electric-pulse.webp", enemyAttr:"electric", hp:190, speed:52, range:105, atk:6, interval:.9, exp:10, money:[1,3], color:"#d89cff", size:14, special:true },
+    { id:"electric_beetle", name:"電容甲蟲", sprite:"electric-beetle.webp", enemyAttr:"electric", hp:330, speed:45, range:0, atk:9, interval:1.0, exp:14, money:[2,5], color:"#d89cff", size:18 },
+  ],
+  poison: [
+    { id:"poison_slug", name:"孢囊菌蛞", sprite:"poison-slug.webp", enemyAttr:"poison", hp:320, speed:31, range:75, atk:6, interval:1.05, exp:10, money:[1,3], color:"#66d86f", size:16 },
+    { id:"poison_squid", name:"毒針浮魷", sprite:"poison-squid.webp", enemyAttr:"poison", hp:280, speed:35, range:135, atk:7, interval:1.0, exp:12, money:[1,3], color:"#66d86f", size:17, special:true },
+    { id:"poison_snail", name:"腐蝕罐蝸", sprite:"poison-snail.webp", enemyAttr:"poison", hp:610, speed:27, range:90, atk:9, interval:1.15, exp:18, money:[4,8], color:"#66d86f", size:22 },
+  ],
+};
+
+const ELITE_VARIANTS = {
+  neutral: [
+    { id:"neutral_elite_shield", name:"戰術盾衛", sprite:"neutral-elite-shield.webp", enemyAttr:"neutral", hp:1850, speed:27, range:0, atk:42, interval:1.8, exp:50, money:[15,25], color:"#d5dde8", size:29 },
+    { id:"neutral_elite_siege", name:"六足攻城砲", sprite:"neutral-elite-siege.webp", enemyAttr:"neutral", hp:1550, speed:23, range:150, atk:38, interval:1.9, exp:55, money:[14,24], color:"#d5dde8", size:29 },
+  ],
+  fire: [
+    { id:"fire_elite_blade", name:"炎刃統領", sprite:"fire-elite-blade.webp", enemyAttr:"fire", hp:1450, speed:36, range:0, atk:57, interval:1.25, exp:48, money:[14,24], color:"#ff6b3d", size:28 },
+    { id:"fire_elite_furnace", name:"熔爐巨兵", sprite:"fire-elite-furnace.webp", enemyAttr:"fire", hp:2200, speed:22, range:0, atk:68, interval:1.75, exp:58, money:[16,27], color:"#ff6b3d", size:31 },
+  ],
+  ice: [
+    { id:"ice_elite_executioner", name:"凍原處刑者", sprite:"ice-elite-executioner.webp", enemyAttr:"ice", hp:2650, speed:20, range:0, atk:48, interval:1.8, exp:58, money:[16,27], color:"#72d4ff", size:31 },
+    { id:"ice_elite_wall", name:"行進冰壁", sprite:"ice-elite-wall.webp", enemyAttr:"ice", hp:3350, speed:16, range:0, atk:42, interval:2.0, exp:62, money:[18,30], color:"#72d4ff", size:33 },
+  ],
+  electric: [
+    { id:"electric_elite_panther", name:"雷襲獵豹", sprite:"electric-elite-panther.webp", enemyAttr:"electric", hp:1200, speed:48, range:0, atk:43, interval:.9, exp:46, money:[13,23], color:"#d89cff", size:27 },
+    { id:"electric_elite_overload", name:"過載球體", sprite:"electric-elite-overload.webp", enemyAttr:"electric", hp:1700, speed:35, range:115, atk:38, interval:1.0, exp:52, money:[14,25], color:"#d89cff", size:29 },
+  ],
+  poison: [
+    { id:"poison_elite_witch", name:"瘴氣巫株", sprite:"poison-elite-witch.webp", enemyAttr:"poison", hp:1650, speed:25, range:155, atk:36, interval:1.05, exp:52, money:[14,25], color:"#66d86f", size:29 },
+    { id:"poison_elite_centipede", name:"毒甲蜈蚣", sprite:"poison-elite-centipede.webp", enemyAttr:"poison", hp:2250, speed:28, range:85, atk:42, interval:1.0, exp:58, money:[16,27], color:"#66d86f", size:31 },
+  ],
+};
+
+const BOSS_VARIANTS = {
+  neutral:{ id:"neutral_boss_fortress", name:"鋼鐵堡壘", sprite:"neutral-boss-fortress.webp", enemyAttr:"neutral", hp:9500, speed:19, range:0, atk:130, interval:2.1, exp:120, color:"#d5dde8", size:46 },
+  fire:{ id:"fire_boss_tyrant", name:"煉獄暴君", sprite:"fire-boss-tyrant.webp", enemyAttr:"fire", hp:8200, speed:24, range:0, atk:170, interval:1.65, exp:120, color:"#ff6b3d", size:46 },
+  ice:{ id:"ice_boss_frostbeast", name:"永凍巨獸", sprite:"ice-boss-frostbeast.webp", enemyAttr:"ice", hp:14000, speed:15, range:0, atk:120, interval:2.25, exp:120, color:"#72d4ff", size:48 },
+  electric:{ id:"electric_boss_stormcore", name:"風暴核心", sprite:"electric-boss-stormcore.webp", enemyAttr:"electric", hp:7200, speed:30, range:80, atk:145, interval:1.35, exp:120, color:"#d89cff", size:45 },
+  poison:{ id:"poison_boss_plaguemother", name:"疫病母體", sprite:"poison-boss-plaguemother.webp", enemyAttr:"poison", hp:10600, speed:17, range:165, atk:92, interval:1.15, exp:120, color:"#66d86f", size:48 },
+};
+
+const ALL_MINION_VARIANTS = Object.values(MINION_VARIANTS).flat();
+const ALL_ELITE_VARIANTS = Object.values(ELITE_VARIANTS).flat();
+const ALL_BOSS_VARIANTS = Object.values(BOSS_VARIANTS);
 const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v3";
 const PARAM_CHANNEL = "tower-defense-param-sync";
 const INITIAL_WALLET = 10000;
@@ -766,16 +845,16 @@ function monsterDefaultParams() {
     result[`monster_${id}_atk`] = base.atk;
     result[`monster_${id}_interval`] = base.interval;
     result[`monster_${id}_exp`] = base.exp || 120;
-    const attributes = ENEMY_ATTRIBUTE_DEFAULTS[id] || {};
+    const attributes = base.enemyAttr ? enemyAttributeProfile(base.enemyAttr) : ENEMY_ATTRIBUTE_DEFAULTS[id] || {};
     ATTRIBUTE_KEYS.forEach(attr => result[`monster_${id}_${attr}Mul`] = attributes[attr] ?? 1);
     if (base.money) {
       result[`monster_${id}_moneyMin`] = base.money[0];
       result[`monster_${id}_moneyMax`] = base.money[1];
     }
   };
-  Object.entries(MONSTERS).forEach(([id, base]) => add(id, base));
-  ELITES.forEach((base, index) => add(`elite_${index + 1}`, base));
-  BOSSES.forEach((base, index) => add(`boss_${index + 1}`, { ...base, exp:120 }));
+  ALL_MINION_VARIANTS.forEach(base => add(base.id, base));
+  ALL_ELITE_VARIANTS.forEach(base => add(base.id, base));
+  ALL_BOSS_VARIANTS.forEach(base => add(base.id, base));
   return result;
 }
 
@@ -1058,7 +1137,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 32,
+  balanceRevision: 33,
   mathModelEnabled: 1,
   mathTargetRtp: 1.0,
   mathTolerancePct: 1.0,
@@ -1066,7 +1145,7 @@ const DEFAULT_PARAMS = {
   mathBossPenalty: .31,
   mathLossHpMul: 5.00,
   mathLossAtkMul: 5.00,
-  mathLossSpeedMul: 3.00,
+  mathLossSpeedMul: 1.12,
   mathMinClearChance: .18,
   mathMaxClearChance: .96,
   mathClearBand1: .95,
@@ -1136,8 +1215,8 @@ const DEFAULT_PARAMS = {
   bossFirstDiffBrutalWeight: 2,
   bossFirstDifficultyCompression: .65,
   spawnInterval: .26,
-  waveAttrBiasEarly: 0.72,
-  waveAttrBias: 0.58,
+  waveAttrBiasEarly: 0.82,
+  waveAttrBias: 0.72,
   eliteMoneyMul: 1.0,
   dropChanceMul: 1.0,
   expMul: 1.0,
@@ -1195,7 +1274,7 @@ function cleanParams(input={}) {
   next.mathBossPenalty = Math.max(0, Math.min(.8, next.mathBossPenalty));
   next.mathLossHpMul = Math.max(1, Math.min(5, next.mathLossHpMul));
   next.mathLossAtkMul = Math.max(1, Math.min(5, next.mathLossAtkMul));
-  next.mathLossSpeedMul = Math.max(1, Math.min(3, next.mathLossSpeedMul));
+  next.mathLossSpeedMul = Math.max(1, Math.min(1.25, next.mathLossSpeedMul));
   next.mathMinClearChance = Math.max(.01, Math.min(.99, next.mathMinClearChance));
   next.mathMaxClearChance = Math.max(next.mathMinClearChance, Math.min(.999, next.mathMaxClearChance));
   ["mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
@@ -1413,6 +1492,10 @@ function migrateBossParams(input={}) {
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 32;
   }
+  if ((Number(input.balanceRevision) || 0) < 33) {
+    ["mathLossSpeedMul", "waveAttrBiasEarly", "waveAttrBias"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 33;
+  }
   return next;
 }
 
@@ -1533,7 +1616,10 @@ function waveAttributeBias(wave) {
 }
 function pickWaveMonster(templateId) { return pickWeighted(tunedTemplate(templateId)); }
 function pickWaveAttribute(primaryAttr, wave, force=false) {
-  return force || Math.random() < waveAttributeBias(wave) ? primaryAttr : null;
+  if (force || Math.random() < waveAttributeBias(wave)) return primaryAttr;
+  if (primaryAttr === "neutral") return pick(ATTRIBUTE_KEYS.filter(attr => attr !== "neutral"));
+  if (Math.random() < .68) return "neutral";
+  return pick(ATTRIBUTE_KEYS.filter(attr => attr !== primaryAttr && attr !== "neutral"));
 }
 function applyWaveAttributeBias(attrMultipliers, primaryAttr) {
   if (!primaryAttr || !ATTRIBUTE_KEYS.includes(primaryAttr)) return attrMultipliers;
@@ -2115,10 +2201,17 @@ function randomTowerChoices(n, excluded = new Set()) {
 }
 
 function towerChoice(t, onPick) {
-  const damage = towerParam(t, "damage", t.damage);
-  const range = towerParam(t, "range", t.range);
-  const rate = towerParam(t, "rate", t.rate);
-  return { title: t.name, tag: `${t.attr}屬性｜${towerRoleLabel(t)}`, towerId:t.id, attrKey:towerAttr(t), rarity:"newTower", dimension:"newTower", desc: `傷害 ${damage}｜攻速 ${rate}/秒｜${t.desc}`, impact:`傷害 ${damage}　攻速 ${rate}/秒`, onPick };
+  return {
+    title:t.name,
+    tag:`${t.attr}屬性　${towerRoleLabel(t)}`,
+    towerId:t.id,
+    attrKey:towerAttr(t),
+    rarity:"newTower",
+    dimension:"newTower",
+    desc:t.desc,
+    impact:towerRoleLabel(t),
+    onPick,
+  };
 }
 
 function towerRoleLabel(t) {
@@ -2300,7 +2393,7 @@ function startWave() {
     return { kind, rewardWeight:normalRewardWeight(kind, band) };
   });
   const eliteQueue = Array.from({ length:elites }, () => {
-    const index = rand(0, ELITES.length - 1);
+    const index = rand(0, 1);
     return { index, rewardWeight:eliteRewardWeight(index) };
   });
   const reward = mathTicket
@@ -2331,21 +2424,26 @@ function eliteCount(info) {
 }
 
 function spawnMonster(kind, hpMul, band, primaryAttr, wave, rewardWeight=0) {
-  const base = MONSTERS[kind];
+  const enemyAttr = pickWaveAttribute(primaryAttr, wave);
+  const variants = MINION_VARIANTS[enemyAttr] || MINION_VARIANTS.neutral;
+  const variantIndex = kind === "tank" ? 2 : kind === "ranged" || kind === "special" ? 1 : kind === "fast" && Math.random() < .42 ? 1 : 0;
+  const base = variants[variantIndex];
   const lane = base.special ? rand(-68, 68) : pick([-70, -35, 0, 35, 70]) + rand(-4, 4);
   const x = FIELD.pathX + lane;
   const curve = base.special ? rand(30, 54) * pick([-1, 1]) : 0;
-  state.monsters.push(makeEnemy(base, hpMul, x, curve, kind, band.drop[kind], false, false, base.special ? "sway" : "straight", kind, pickWaveAttribute(primaryAttr, wave), 0, rewardWeight));
+  state.monsters.push(makeEnemy(base, hpMul, x, curve, kind, band.drop[kind], false, false, base.special ? "sway" : "straight", base.id, enemyAttr, 0, rewardWeight));
 }
 function spawnElite(hpMul, primaryAttr, wave, index=rand(0, ELITES.length - 1), rewardWeight=0) {
-  const base = ELITES[index];
-  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX + pick([-54, -18, 18, 54]) + rand(-4, 4), 0, "elite", 1, true, false, "straight", `elite_${index + 1}`, pickWaveAttribute(primaryAttr, wave), 0, rewardWeight));
+  const enemyAttr = pickWaveAttribute(primaryAttr, wave);
+  const variants = ELITE_VARIANTS[enemyAttr] || ELITE_VARIANTS.neutral;
+  const base = variants[index % variants.length];
+  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX + pick([-54, -18, 18, 54]) + rand(-4, 4), 0, "elite", 1, true, false, "straight", base.id, enemyAttr, 0, rewardWeight));
 }
 function spawnBoss(hpMul, primaryAttr, wave, difficulty=null) {
-  const index = rand(0, BOSSES.length - 1);
-  const base = BOSSES[index];
+  const enemyAttr = pickWaveAttribute(primaryAttr, wave, true);
+  const base = BOSS_VARIANTS[enemyAttr] || BOSS_VARIANTS.neutral;
   if (HEADLESS_SIM) state.simBossSpawned += 1;
-  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", `boss_${index + 1}`, pickWaveAttribute(primaryAttr, wave, true), state.bossRolled, 0, difficulty));
+  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", base.id, enemyAttr, state.bossRolled, 0, difficulty));
 }
 function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind, primaryAttr=null, bossOrdinal=0, rewardWeight=0, bossDifficulty=null) {
   const tunedBase = {
@@ -2374,18 +2472,20 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   const lossPressure = certifiedMathEnabled() && state.mathTicket && !state.mathTicket.success;
   const lossHpMul = lossPressure ? paramNumber("mathLossHpMul", 3.20) : 1;
   const lossAtkMul = lossPressure ? paramNumber("mathLossAtkMul", 5.00) : 1;
-  const lossSpeedMul = lossPressure ? paramNumber("mathLossSpeedMul", 2.00) : 1;
+  const lossSpeedMul = lossPressure ? clamp(paramNumber("mathLossSpeedMul", 1.12), 1, 1.25) : 1;
   const hp = Math.round(tunedBase.hp * hpMul * classHpMul * difficultyHpMul * lossHpMul);
-  const minionAtkMul = { normal:.25, fast:.27, tank:.28, ranged:.30, special:.33 };
-  const atk = elite || boss ? Math.round(tunedBase.atk * classAtkMul * difficultyAtkMul * lossAtkMul) : Math.max(1, Math.round(tunedBase.atk * (minionAtkMul[kind] || .3) * classAtkMul * lossAtkMul));
-  const minionSpeedMul = { normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 };
-  const speed = elite || boss ? Math.max(1, Math.round(tunedBase.speed * classSpeedMul * difficultySpeedMul * lossSpeedMul)) : Math.max(1, Math.round(tunedBase.speed * (minionSpeedMul[kind] || .72) * classSpeedMul * lossSpeedMul));
-  const attributeDefaults = ENEMY_ATTRIBUTE_DEFAULTS[tuneId] || {};
+  const legacyAtkMul = base.enemyAttr ? 1 : ({ normal:.25, fast:.27, tank:.28, ranged:.30, special:.33 }[kind] || .3);
+  const atk = Math.max(1, Math.round(tunedBase.atk * legacyAtkMul * classAtkMul * difficultyAtkMul * lossAtkMul));
+  const legacySpeedMul = base.enemyAttr ? 1 : ({ normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 }[kind] || .72);
+  const rawSpeed = tunedBase.speed * legacySpeedMul * classSpeedMul * difficultySpeedMul * lossSpeedMul;
+  const speedCap = boss ? (primaryAttr === "electric" ? 34 : 30) : elite ? (primaryAttr === "electric" ? 48 : 40) : (primaryAttr === "electric" ? 54 : 46);
+  const speed = Math.max(1, Math.round(Math.min(rawSpeed, speedCap)));
+  const attributeDefaults = base.enemyAttr ? enemyAttributeProfile(base.enemyAttr) : ENEMY_ATTRIBUTE_DEFAULTS[tuneId] || {};
   const baseAttrMultipliers = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [
     attr,
     paramNumber(`monster_${tuneId}_${attr}Mul`, attributeDefaults[attr] ?? 1)
   ]));
-  const attrMultipliers = applyWaveAttributeBias(baseAttrMultipliers, primaryAttr);
+  const attrMultipliers = base.enemyAttr ? baseAttrMultipliers : applyWaveAttributeBias(baseAttrMultipliers, primaryAttr);
   return { ...tunedBase, kind, elite, boss, pathType, x, y: FIELD.spawnY, sx:x, curve, hp, maxHp:hp, atk, speed, atkCd:0, stopped:false,
     tuneId, attrMultipliers, burn:0, burnTime:0, poison:0, poisonTime:0, toxicTime:0, slowTime:0, slowPct:0, stunTime:0, freezeTime:0,
     focusMarkTime:0, electricVulnerableTime:0, electricVulnerableAmount:0, vulnerable:0, vulnerableAmount:0, dropChance, rewardWeight, bossDifficulty };
@@ -5859,7 +5959,7 @@ function renderSlots() {
       const visualStage = isHeroSlot ? heroVisualStage(t) : towerVisualStage(t);
       const iconKey = isHeroSlot ? `hero:${t.heroId}:${visualStage}` : `${t.id}:${visualStage}`;
       if (view.icon.dataset.tower !== iconKey) {
-        view.icon.src = isHeroSlot ? heroIconDataUrl(t) : towerIconDataUrl(t);
+        view.icon.src = isHeroSlot ? heroIconDataUrl(t) : towerSpritePath(t, visualStage);
         view.icon.dataset.tower = iconKey;
       }
       view.root.title = `${t.name} Lv.${t.level}`;

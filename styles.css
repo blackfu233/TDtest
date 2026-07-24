@@ -863,6 +863,95 @@ canvas {
   .collect-button { height: 46px; }
 }
 
+/* Enemy roster / card identity pass. */
+.slot:not(.hero-slot) .slot-icon {
+  object-fit: contain;
+  transform: scale(1.42);
+  transform-origin: 50% 43%;
+}
+
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-new-tower {
+  grid-template-columns: 102px minmax(0,1fr);
+  min-height: 108px;
+  border: 2px solid color-mix(in srgb, var(--choice-color) 72%, #ffcf65);
+  background:
+    linear-gradient(135deg, rgba(255,185,79,.22) 0 22%, transparent 22% 76%, rgba(255,185,79,.08) 76%),
+    #0b1119;
+  box-shadow: inset 7px 0 0 #ffb94f, 0 6px 16px rgba(0,0,0,.48);
+}
+.choice-type-new-tower .choice-emblem,
+.choice-type-new-tower .choice-emblem img { width: 98px; height: 98px; }
+.choice-type-new-tower .choice-emblem {
+  background: radial-gradient(circle, color-mix(in srgb,var(--choice-color) 23%,transparent), transparent 67%);
+}
+.choice-type-new-tower .choice-category { color: #ffd28d; }
+.choice-type-new-tower .choice-name { color: #fff; font-size: 21px; }
+.choice-type-new-tower .choice-impact { display: none; }
+.choice-type-new-tower .choice-sub {
+  width: max-content;
+  max-width: 100%;
+  margin-top: 5px;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb,var(--choice-color) 75%,#fff);
+  border-radius: 3px;
+  color: #fff4db;
+  background: color-mix(in srgb,var(--choice-color) 17%,rgba(8,12,18,.95));
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-hero-upgrade {
+  border: 2px solid #63d9ff;
+  background:
+    repeating-linear-gradient(135deg,rgba(92,219,255,.07) 0 8px,transparent 8px 17px),
+    linear-gradient(100deg,#102b3a,#091019 66%);
+  box-shadow: inset 7px 0 0 #57dcff,0 0 18px rgba(75,212,255,.18),0 6px 16px rgba(0,0,0,.44);
+}
+.choice-type-hero-upgrade .choice-emblem {
+  clip-path: polygon(50% 0,94% 24%,94% 76%,50% 100%,6% 76%,6% 24%);
+  background: radial-gradient(circle,rgba(87,220,255,.26),transparent 68%);
+}
+.choice-type-hero-upgrade .choice-category { color:#8ee8ff; }
+.choice-type-hero-upgrade .choice-name { font-size:20px; }
+.choice-type-hero-upgrade .choice-sub {
+  width:max-content;
+  padding:3px 8px;
+  border:1px solid rgba(119,228,255,.45);
+  color:#b9f1ff;
+  background:rgba(70,192,225,.1);
+}
+
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-hero-skill {
+  border: 2px solid #68f1b3;
+  background:
+    radial-gradient(circle at 22% 50%,rgba(86,239,177,.28),transparent 32%),
+    linear-gradient(115deg,#103528,#091712 62%,#08100e);
+  box-shadow: inset 0 0 0 2px rgba(174,255,218,.12),0 0 24px rgba(85,242,177,.26),0 6px 16px rgba(0,0,0,.46);
+}
+.choice-type-hero-skill .choice-emblem {
+  border:2px solid #68f1b3;
+  border-radius:50%;
+  box-shadow:0 0 0 5px rgba(104,241,179,.1),0 0 18px rgba(104,241,179,.24);
+}
+.choice-type-hero-skill .choice-category { color:#96ffd0; }
+.choice-type-hero-skill .choice-name { color:#edfff7;font-size:19px; }
+
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-tower-core {
+  clip-path: polygon(0 0,calc(100% - 15px) 0,100% 15px,100% 100%,15px 100%,0 calc(100% - 15px));
+}
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-tower-synergy {
+  border-left-color:#59ddff;
+  border-right-color:#ff7887;
+}
+
+@media (max-height:700px) {
+  .choice-list:not([data-layout="heroes"]) .choice-card.choice-type-new-tower { min-height:88px;grid-template-columns:78px minmax(0,1fr); }
+  .choice-type-new-tower .choice-emblem,
+  .choice-type-new-tower .choice-emblem img { width:74px;height:74px; }
+  .choice-type-new-tower .choice-name { font-size:18px; }
+  .choice-type-new-tower .choice-sub { padding:3px 7px;font-size:10px; }
+}
+
 /* Visual art pass */
 .top-hud {
   grid-template-columns: 70px minmax(0, 1fr) 34px 34px;
@@ -2754,4 +2843,65 @@ body {
   .choice-type-tower-synergy .choice-emblem img { width: 72px; height: 72px; }
   .choice-type-tower-core .choice-impact,
   .choice-type-tower-synergy .choice-impact { display: none; }
+}
+
+/* Final enemy-roster card and icon overrides. */
+.slot:not(.hero-slot) .slot-icon {
+  object-fit: contain;
+  transform: scale(1.42);
+  transform-origin: 50% 43%;
+}
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-new-tower {
+  grid-template-columns: 102px minmax(0,1fr);
+  min-height: 108px;
+  border: 2px solid color-mix(in srgb,var(--choice-color) 72%,#ffcf65);
+  background: linear-gradient(135deg,rgba(255,185,79,.22) 0 22%,transparent 22% 76%,rgba(255,185,79,.08) 76%),#0b1119;
+  box-shadow: inset 7px 0 0 #ffb94f,0 6px 16px rgba(0,0,0,.48);
+}
+.choice-type-new-tower .choice-emblem,
+.choice-type-new-tower .choice-emblem img { width:98px;height:98px; }
+.choice-type-new-tower .choice-emblem { background:radial-gradient(circle,color-mix(in srgb,var(--choice-color) 23%,transparent),transparent 67%); }
+.choice-type-new-tower .choice-category { color:#ffd28d; }
+.choice-type-new-tower .choice-name { color:#fff;font-size:21px; }
+.choice-type-new-tower .choice-impact { display:none; }
+.choice-type-new-tower .choice-sub {
+  width:max-content;
+  max-width:100%;
+  margin-top:5px;
+  padding:5px 9px;
+  border:1px solid color-mix(in srgb,var(--choice-color) 75%,#fff);
+  border-radius:3px;
+  color:#fff4db;
+  background:color-mix(in srgb,var(--choice-color) 17%,rgba(8,12,18,.95));
+  font-size:12px;
+  font-weight:900;
+}
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-hero-upgrade {
+  border:2px solid #63d9ff;
+  background:repeating-linear-gradient(135deg,rgba(92,219,255,.07) 0 8px,transparent 8px 17px),linear-gradient(100deg,#102b3a,#091019 66%);
+  box-shadow:inset 7px 0 0 #57dcff,0 0 18px rgba(75,212,255,.18),0 6px 16px rgba(0,0,0,.44);
+}
+.choice-type-hero-upgrade .choice-emblem {
+  clip-path:polygon(50% 0,94% 24%,94% 76%,50% 100%,6% 76%,6% 24%);
+  background:radial-gradient(circle,rgba(87,220,255,.26),transparent 68%);
+}
+.choice-type-hero-upgrade .choice-category { color:#8ee8ff; }
+.choice-type-hero-upgrade .choice-name { font-size:20px; }
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-hero-skill {
+  border:2px solid #68f1b3;
+  background:radial-gradient(circle at 22% 50%,rgba(86,239,177,.28),transparent 32%),linear-gradient(115deg,#103528,#091712 62%,#08100e);
+  box-shadow:inset 0 0 0 2px rgba(174,255,218,.12),0 0 24px rgba(85,242,177,.26),0 6px 16px rgba(0,0,0,.46);
+}
+.choice-type-hero-skill .choice-emblem { border:2px solid #68f1b3;border-radius:50%;box-shadow:0 0 0 5px rgba(104,241,179,.1),0 0 18px rgba(104,241,179,.24); }
+.choice-type-hero-skill .choice-category { color:#96ffd0; }
+.choice-type-hero-skill .choice-name { color:#edfff7;font-size:19px; }
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-tower-core { clip-path:polygon(0 0,calc(100% - 15px) 0,100% 15px,100% 100%,15px 100%,0 calc(100% - 15px)); }
+.choice-list:not([data-layout="heroes"]) .choice-card.choice-type-tower-synergy { border-left-color:#59ddff;border-right-color:#ff7887; }
+
+@media (max-height:700px) {
+  .choice-list:not([data-layout="heroes"]) .choice-card.choice-type-new-tower { min-height:88px;grid-template-columns:78px minmax(0,1fr); }
+  .choice-type-new-tower .choice-emblem,
+  .choice-type-new-tower .choice-emblem img { width:74px;height:74px; }
+  .choice-type-new-tower .choice-name { font-size:18px; }
+  .choice-type-new-tower .choice-sub { padding:3px 7px;font-size:10px; }
 }
