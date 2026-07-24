@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防深追 Demo</title>
-  <link rel="stylesheet" href="styles.css?v=depthbalance35">
+  <link rel="stylesheet" href="styles.css?v=progression-ui36">
 </head>
 <body>
   <main class="phone">
@@ -39,47 +39,59 @@
         <span>波次</span>
         <strong class="wave-value"><b id="waveText">0</b><canvas id="waveAttrIcon" width="22" height="22" hidden></canvas></strong>
       </div>
-      <div class="danger-chip" hidden>
-        <span>基地 HP</span>
-        <strong id="hpText">1000</strong>
-      </div>
-      <div class="exp-chip">
-        <div class="exp-label">
-          <span>EXP Lv.<b id="levelText">1</b></span>
-          <strong id="expText">0/95</strong>
-        </div>
-        <div class="exp-track">
-          <div id="expFill" class="exp-fill"></div>
-        </div>
-      </div>
     </section>
 
     <section class="battlefield">
       <span id="nextAttrHint" class="next-attr-hint" role="img"><canvas id="nextAttrIcon" width="44" height="44"></canvas></span>
       <canvas id="game" width="350" height="760" aria-label="塔防戰場"></canvas>
-      <div id="messageText" class="message">調整 BET 後按下 BET 開始。</div>
+      <div id="messageText" class="message">選擇 BET 與角色後開始戰鬥。</div>
     </section>
 
     <section id="towerSlots" class="tower-slots"></section>
 
-    <section class="bottom-ui">
-      <div class="bet-stepper">
-        <button id="betMinusBtn" type="button">−</button>
-        <div>
-          <span>本波 BET</span>
-          <strong id="betText">100</strong>
-        </div>
-        <button id="betPlusBtn" type="button">＋</button>
+    <section class="bottom-status" aria-label="基地與經驗狀態">
+      <div class="status-row hp-status">
+        <div class="status-label"><span>HP</span><strong id="hpText">1000 / 1000</strong></div>
+        <div class="status-track"><div id="hpFill" class="status-fill hp-fill"></div></div>
       </div>
-      <div class="main-actions">
-        <button id="betBtn" class="bet-button" type="button">
-          <span>BET</span>
-          <small id="waveBetText">100</small>
+      <div class="status-row exp-status">
+        <div class="status-label"><span>EXP Lv.<b id="levelText">1</b></span><strong id="expText">0/95</strong></div>
+        <div class="status-track"><div id="expFill" class="status-fill exp-fill"></div></div>
+      </div>
+    </section>
+
+    <section id="entryOverlay" class="entry-overlay">
+      <div class="entry-panel">
+        <span class="entry-kicker">ENTER BATTLE</span>
+        <h2>選擇 BET</h2>
+        <div class="entry-wallet"><span>錢包</span><strong id="entryWalletText">10000</strong></div>
+        <div class="entry-stepper">
+          <button id="betMinusBtn" type="button" aria-label="降低 BET">−</button>
+          <div><span>BET</span><strong id="betText">100</strong></div>
+          <button id="betPlusBtn" type="button" aria-label="提高 BET">＋</button>
+        </div>
+        <div id="betOptions" class="bet-options" aria-label="BET 選項"></div>
+        <button id="betBtn" class="entry-start" type="button">
+          <span>開始戰局</span><small>BET <b id="entryBetText">100</b></small>
         </button>
-        <button id="collectBtn" class="collect-button" type="button" disabled>
-          <span>COLLECT</span>
-          <strong id="collectText">0</strong>
-        </button>
+      </div>
+    </section>
+
+    <section id="waveDecision" class="wave-decision hidden" aria-live="polite">
+      <div class="decision-panel">
+        <div class="decision-head">
+          <span id="decisionWave">第 1 波完成</span>
+          <i id="decisionDanger" class="decision-danger hidden" aria-label="下一波為 BOSS">!</i>
+        </div>
+        <div class="decision-score"><span>目前總得分</span><strong id="decisionPayout">0</strong></div>
+        <div class="decision-actions">
+          <button id="continueBtn" class="continue-button" type="button">
+            <span>繼續</span><small>BET <b id="waveBetText">100</b></small>
+          </button>
+          <button id="collectBtn" class="collect-button" type="button" disabled>
+            <span>COLLECT</span><strong id="collectText">0</strong>
+          </button>
+        </div>
       </div>
     </section>
 
@@ -93,6 +105,13 @@
         <h2 id="choiceTitle">三選一</h2>
         <p id="choiceHint">選擇一個項目。</p>
         <div id="choiceList" class="choice-list"></div>
+        <div class="choice-actions">
+          <button id="rerollBtn" class="reroll-button hidden" type="button">
+            <span aria-hidden="true">↻</span>
+            <b>REROLL</b>
+            <small id="rerollCostText">BET 100</small>
+          </button>
+        </div>
       </div>
     </section>
 
@@ -104,6 +123,6 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=depthbalance35" charset="utf-8"></script>
+  <script src="game.js?v=progression-ui36" charset="utf-8"></script>
 </body>
 </html>

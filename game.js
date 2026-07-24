@@ -1,12 +1,13 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "depth-balance30";
+const BUILD_VERSION = "progression-ui36";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
 const MAX_TOWER_SLOTS = 3;
 const NEW_TOWER_GUARANTEE_LIMIT = 3;
+const HERO_SKILL_LEVELS = [5, 10, 15];
 
 const ui = {
   phone: document.querySelector(".phone"),
@@ -17,13 +18,17 @@ const ui = {
   wave: document.getElementById("waveText"),
   waveChip: document.getElementById("waveText").closest(".hud-chip"),
   hp: document.getElementById("hpText"),
+  hpFill: document.getElementById("hpFill"),
   level: document.getElementById("levelText"),
   exp: document.getElementById("expText"),
   expFill: document.getElementById("expFill"),
   bossMult: document.getElementById("bossMultText"),
   message: document.getElementById("messageText"),
   slots: document.getElementById("towerSlots"),
-  bottomUi: document.querySelector(".bottom-ui"),
+  entryOverlay: document.getElementById("entryOverlay"),
+  entryWallet: document.getElementById("entryWalletText"),
+  entryBet: document.getElementById("entryBetText"),
+  betOptions: document.getElementById("betOptions"),
   betMinus: document.getElementById("betMinusBtn"),
   betPlus: document.getElementById("betPlusBtn"),
   betText: document.getElementById("betText"),
@@ -32,6 +37,11 @@ const ui = {
   betRaiseFrom: document.getElementById("betRaiseFrom"),
   betRaiseTo: document.getElementById("betRaiseTo"),
   bet: document.getElementById("betBtn"),
+  waveDecision: document.getElementById("waveDecision"),
+  decisionWave: document.getElementById("decisionWave"),
+  decisionDanger: document.getElementById("decisionDanger"),
+  decisionPayout: document.getElementById("decisionPayout"),
+  continue: document.getElementById("continueBtn"),
   nextAttrHint: document.getElementById("nextAttrHint"),
   nextAttrCanvas: document.getElementById("nextAttrIcon"),
   waveAttrCanvas: document.getElementById("waveAttrIcon"),
@@ -44,6 +54,8 @@ const ui = {
   choiceTitle: document.getElementById("choiceTitle"),
   choiceHint: document.getElementById("choiceHint"),
   choiceList: document.getElementById("choiceList"),
+  reroll: document.getElementById("rerollBtn"),
+  rerollCost: document.getElementById("rerollCostText"),
   resultOverlay: document.getElementById("resultOverlay"),
   resultTitle: document.getElementById("resultTitle"),
   resultBody: document.getElementById("resultBody"),
@@ -854,7 +866,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 30,
+  balanceRevision: 31,
   mathModelEnabled: 1,
   mathTargetRtp: 1.0,
   mathTolerancePct: 1.0,
@@ -942,9 +954,10 @@ const DEFAULT_PARAMS = {
   heroSameAttrBonusPct: 15,
   heroResonanceBonusPct: 10,
   heroAllTowerBonusPct: 8,
-  heroDamageUpgradePct: 25,
-  heroRateUpgradePct: 20,
+  heroDamageUpgradePct: 8,
+  heroRateUpgradePct: 6,
   heroQuantityUpgrade: 1,
+  heroQuantityEveryLevels: 3,
   bossRollDuration: 4.8,
   bossRollHighThreshold: 2.5,
   bossRollJackpotThreshold: 3.8,
@@ -1002,6 +1015,7 @@ function cleanParams(input={}) {
   next.heroDamageUpgradePct = Math.max(0, Math.min(200, next.heroDamageUpgradePct));
   next.heroRateUpgradePct = Math.max(0, Math.min(200, next.heroRateUpgradePct));
   next.heroQuantityUpgrade = Math.max(1, Math.round(next.heroQuantityUpgrade));
+  next.heroQuantityEveryLevels = Math.max(1, Math.round(next.heroQuantityEveryLevels));
   next.bossRollDuration = Math.max(2.5, Math.min(8, next.bossRollDuration));
   next.bossRollHighThreshold = Math.max(1, next.bossRollHighThreshold);
   next.bossRollJackpotThreshold = Math.max(next.bossRollHighThreshold, next.bossRollJackpotThreshold);
@@ -1197,6 +1211,11 @@ function migrateBossParams(input={}) {
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 30;
   }
+  if ((Number(input.balanceRevision) || 0) < 31) {
+    ["heroDamageUpgradePct", "heroRateUpgradePct", "heroQuantityUpgrade", "heroQuantityEveryLevels"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 31;
+  }
   return next;
 }
 
@@ -1225,6 +1244,7 @@ window.addEventListener("storage", event => {
 
 let state;
 let currentChoices = [];
+let currentChoiceOptions = null;
 let last = performance.now();
 let speedIndex = 0;
 let lastUiFrame = 0;
@@ -1239,7 +1259,7 @@ function reset() {
   mathRunSeed = ((Math.random() * 4294967296) >>> 0) || 1;
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
-    hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
+    hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, choiceKind:"", choiceRerollUsed:false, rerollSpent:0, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
     spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", simBossSpawned:0,
     certifiedPayout:0, mathTicket:null, mathLedger:[],
   };
@@ -1618,9 +1638,12 @@ function rarityLabel(rarity) {
   }[rarity] || "普通";
 }
 
-function showChoices(title, hint, choices) {
+function showChoices(title, hint, choices, options={}) {
   stopChannelAudio();
   state.choicesOpen = true;
+  state.choiceKind = options.kind || "standard";
+  state.choiceRerollUsed = !!options.rerollUsed;
+  currentChoiceOptions = options;
   currentChoices = choices.slice();
   if (HEADLESS_SIM) return;
   ui.choiceTitle.textContent = title;
@@ -1661,18 +1684,39 @@ function showChoices(title, hint, choices) {
     });
     ui.choiceList.appendChild(btn);
   });
+  const rerollable = state.choiceKind === "upgrade" && typeof options.rerollFactory === "function";
+  ui.reroll.classList.toggle("hidden", !rerollable);
+  ui.reroll.disabled = !rerollable || state.choiceRerollUsed || state.wallet < currentBet();
+  ui.reroll.classList.toggle("used", state.choiceRerollUsed);
+  ui.reroll.querySelector("b").textContent = state.choiceRerollUsed ? "已重抽" : "REROLL";
+  ui.rerollCost.textContent = state.choiceRerollUsed ? "本次升級已使用" : `BET ${currentBet()}`;
   ui.choiceOverlay.classList.remove("hidden");
   updateUi();
 }
 function hideChoices() {
   const wasOpen = state.choicesOpen;
   state.choicesOpen = false;
+  state.choiceKind = "";
+  state.choiceRerollUsed = false;
+  currentChoiceOptions = null;
   currentChoices = [];
   if (HEADLESS_SIM) return;
   ui.choiceOverlay.classList.add("hidden");
   ui.choiceList.innerHTML = "";
   delete ui.choiceList.dataset.layout;
   if (wasOpen) resumeChannelAudio();
+}
+
+function rerollUpgradeChoices() {
+  if (!state.choicesOpen || state.choiceKind !== "upgrade" || state.choiceRerollUsed) return;
+  const factory = currentChoiceOptions?.rerollFactory;
+  const cost = currentBet();
+  if (typeof factory !== "function" || state.wallet < cost) return;
+  state.wallet -= cost;
+  state.rerollSpent += cost;
+  state.choiceRerollUsed = true;
+  playSfx("bet");
+  factory();
 }
 function showResult(title, body) {
   stopChannelAudio();
@@ -1742,6 +1786,7 @@ function addHero(def) {
     muzzleFlash:0,
     upgrades:[],
     upgradeCounts:{},
+    triadRanks:0,
     buffs:{},
   };
 }
@@ -3167,9 +3212,9 @@ function showBetIncrease(from, to) {
   ui.betRaise.classList.remove("hidden", "play");
   void ui.betRaise.offsetWidth;
   ui.betRaise.classList.add("play");
-  ui.bottomUi?.classList.remove("bet-increased");
-  void ui.bottomUi?.offsetWidth;
-  ui.bottomUi?.classList.add("bet-increased");
+  ui.waveDecision?.classList.remove("bet-increased");
+  void ui.waveDecision?.offsetWidth;
+  ui.waveDecision?.classList.add("bet-increased");
   playSfx("betUp");
   try { navigator.vibrate?.([35, 35, 65]); } catch {}
 }
@@ -3181,7 +3226,7 @@ function updateBetIncrease(dt) {
   state.betRaise = null;
   ui.betRaise?.classList.add("hidden");
   ui.betRaise?.classList.remove("play");
-  ui.bottomUi?.classList.remove("bet-increased");
+  ui.waveDecision?.classList.remove("bet-increased");
 }
 function bossMultiplier() {
   const weights = [
@@ -3229,6 +3274,21 @@ function showUpgradeChoices() {
   decayHeroUpgradeRepeatLocks();
   state.exp -= expRequired(state.level);
   state.level += 1;
+  openUpgradeChoices(3, false);
+}
+
+function openUpgradeChoices(choiceCount, rerollUsed) {
+  const choices = buildUpgradeChoices(choiceCount);
+  const rerollFactory = () => openUpgradeChoices(4, true);
+  showChoices(
+    rerollUsed ? "四選一" : "三選一",
+    rerollUsed ? "已支付一個 BET，本次從四個新選項擇一。" : "角色升等、新砲台或砲台五維強化。",
+    choices,
+    { kind:"upgrade", rerollUsed, rerollFactory }
+  );
+}
+
+function buildUpgradeChoices(choiceCount) {
   const choices = [];
   const newTowerIds = new Set();
   const addNewTowerChoices = (count) => {
@@ -3241,10 +3301,10 @@ function showUpgradeChoices() {
   const guaranteeNewTower = state.towers.length < NEW_TOWER_GUARANTEE_LIMIT;
   if (guaranteeNewTower) addNewTowerChoices(1);
   const candidates = [...collectUpgradeCandidates(), ...collectHeroUpgradeCandidates()];
-  const pickedCandidates = selectUpgradeCandidates(candidates, choices, 3 - choices.length);
-  if (guaranteeNewTower && pickedCandidates.length < 3 - choices.length) {
+  const pickedCandidates = selectUpgradeCandidates(candidates, choices, choiceCount - choices.length);
+  if (guaranteeNewTower && pickedCandidates.length < choiceCount - choices.length) {
     const openTowerSlots = MAX_TOWER_SLOTS - state.towers.length - newTowerIds.size;
-    const openChoiceSlots = 3 - choices.length - pickedCandidates.length;
+    const openChoiceSlots = choiceCount - choices.length - pickedCandidates.length;
     addNewTowerChoices(Math.min(openTowerSlots, openChoiceSlots));
   }
   state.lastUpgradeDebug = {
@@ -3279,8 +3339,8 @@ function showUpgradeChoices() {
       }
     });
   });
-  if (choices.length < 3 && guaranteeNewTower) addNewTowerChoices(3 - choices.length);
-  showChoices("升級選項", "看分類選效果：角色、砲台或跨塔連動。", choices);
+  if (choices.length < choiceCount && guaranteeNewTower) addNewTowerChoices(choiceCount - choices.length);
+  return choices.slice(0, choiceCount);
 }
 function nextUpgrade(tower, offset = 0) {
   const idx = TOWERS.findIndex(t => t.id === tower.id);
@@ -3317,32 +3377,66 @@ function collectUpgradeCandidates() {
 function collectHeroUpgradeCandidates() {
   const hero = state.hero;
   if (!hero) return [];
-  const repeats = [
-    { name:"角色威力", desc:"角色傷害提升", effect:`傷害+${params.heroDamageUpgradePct}%`, key:"damage", dimension:"damage" },
-    { name:"角色超頻", desc:"角色攻擊速度提升", effect:`攻速+${params.heroRateUpgradePct}%`, key:"speed", dimension:"speed" },
-    { name:"多重射擊", desc:"同時發射更多彈體", effect:`彈體+${params.heroQuantityUpgrade}`, key:"quantity", dimension:"quantity" },
-  ];
+  const nextLevel = hero.level + 1;
+  const milestone = heroMilestoneSkill(hero, nextLevel);
+  if (milestone) {
+    return [{
+      hero,
+      up:{ ...milestone, rowIndex:nextLevel, milestoneLevel:nextLevel },
+      rarity:"heroBuff",
+      dimension:"buff",
+      repeat:{repeatable:false,limit:1},
+      takenCount:0,
+      lock:0,
+      weight:150 + nextLevel * 2,
+    }];
+  }
+  const every = Math.max(1, params.heroQuantityEveryLevels || 3);
+  const nextRank = (hero.triadRanks || 0) + 1;
+  const quantityText = nextRank % every === 0
+    ? `彈體+${params.heroQuantityUpgrade}`
+    : `彈體進度 ${nextRank % every}/${every}`;
+  const upgrade = {
+    name:`角色升等 Lv.${nextLevel}`,
+    desc:"角色三維同步小幅提升",
+    effect:`傷害+${params.heroDamageUpgradePct}%｜攻速+${params.heroRateUpgradePct}%｜${quantityText}`,
+    key:"triad",
+    dimension:"hero",
+    rowIndex:nextLevel,
+  };
+  return [{
+    hero,
+    up:upgrade,
+    rarity:"heroUpgrade",
+    dimension:"hero",
+    repeat:{repeatable:true,limit:99},
+    takenCount:0,
+    lock:0,
+    weight:104 + Math.min(24, state.level * 1.5),
+  }];
+}
+
+function heroMilestoneSkill(hero, level) {
   const buffByAttr = {
     fire:{ name:"霜火轉化", desc:"火屬性砲塔附帶輕微冰緩", effect:"同屬性塔命中時短暫緩速", key:"frostInfusion" },
     ice:{ name:"導電冰晶", desc:"冰屬性砲塔附帶感電弱點", effect:"同屬性塔命中時留下感電易傷", key:"electricInfusion" },
     electric:{ name:"熱能電弧", desc:"電屬性砲塔附帶短暫燃燒", effect:"同屬性塔命中時附加燃燒", key:"burnInfusion" },
     poison:{ name:"寒毒配方", desc:"毒屬性砲塔附帶輕微冰緩", effect:"同屬性塔命中時短暫緩速", key:"frostInfusion" },
-    neutral:{ name:"全域校準", desc:"提高所有砲塔的輸出", effect:`所有砲塔傷害+${params.heroAllTowerBonusPct}%`, key:"allTower" },
+    neutral:{ name:"戰術解析", desc:"角色自動鎖定敵人弱點", effect:"角色攻擊自動採用有效屬性", key:"adaptiveAttribute" },
   };
-  const buffs = [
-    { name:"屬性共鳴", desc:`提高${hero.attr}屬性砲塔加成`, effect:`同屬性加成+${params.heroResonanceBonusPct}%`, key:"resonance" },
-    buffByAttr[hero.attrKey],
-  ].filter(Boolean);
-  return [
-    ...repeats.map((entry, rowIndex) => {
-      const takenCount = hero.upgradeCounts?.[entry.key] || 0;
-      const lock = state.heroUpgradeRepeatLocks?.[entry.key] || 0;
-      return { hero, up:{ ...entry, rowIndex }, rarity:"heroUpgrade", dimension:entry.dimension, repeat:{repeatable:true,limit:99}, takenCount, lock, weight:upgradeChoiceWeight("heroUpgrade", {repeatable:true}, takenCount, rowIndex, lock) };
-    }),
-    ...buffs.filter(entry => !hero.buffs?.[entry.key]).map((entry, index) => ({
-      hero, up:{ ...entry, rowIndex:3+index }, rarity:"heroBuff", dimension:"buff", repeat:{repeatable:false,limit:1}, takenCount:0, lock:0, weight:118 + state.level * 2
-    }))
-  ];
+  if (level === HERO_SKILL_LEVELS[0]) {
+    return { name:"屬性共鳴", desc:`強化${hero.attr}屬性砲台`, effect:`同屬性砲台傷害+${params.heroResonanceBonusPct}%`, key:"resonance" };
+  }
+  if (level === HERO_SKILL_LEVELS[1]) return buffByAttr[hero.attrKey];
+  if (level === HERO_SKILL_LEVELS[2]) {
+    return {
+      name:"終極同步",
+      desc:"角色與整組砲台進入完成型",
+      effect:`角色傷害/攻速強化｜所有砲台傷害+${params.heroAllTowerBonusPct}%`,
+      key:"ultimateSync",
+    };
+  }
+  return null;
 }
 function towerUpgradeDimension(up) {
   if (UPGRADE_REQUIREMENTS[up.name] || up.rowIndex >= 7) return "synergy";
@@ -3482,18 +3576,27 @@ function applyHeroUpgrade(hero, up) {
   hero.level += 1;
   if (!hero.upgradeCounts) hero.upgradeCounts = {};
   if (!hero.buffs) hero.buffs = {};
-  if (up.key === "damage") hero.damageMul *= 1 + params.heroDamageUpgradePct / 100;
-  else if (up.key === "speed") hero.rateMul *= 1 + params.heroRateUpgradePct / 100;
-  else if (up.key === "quantity") hero.extraShots += params.heroQuantityUpgrade;
-  else if (up.key === "resonance") {
+  if (up.key === "triad") {
+    hero.triadRanks = (hero.triadRanks || 0) + 1;
+    hero.damageMul *= 1 + params.heroDamageUpgradePct / 100;
+    hero.rateMul *= 1 + params.heroRateUpgradePct / 100;
+    if (hero.triadRanks % Math.max(1, params.heroQuantityEveryLevels || 3) === 0) {
+      hero.extraShots += params.heroQuantityUpgrade;
+    }
+  } else if (up.key === "resonance") {
     hero.sameAttrBonus += params.heroResonanceBonusPct;
     hero.buffs.resonance = true;
-  } else if (up.key === "allTower") {
+  } else if (up.key === "ultimateSync") {
+    hero.damageMul *= 1 + params.heroDamageUpgradePct * 2 / 100;
+    hero.rateMul *= 1 + params.heroRateUpgradePct * 2 / 100;
+    hero.sameAttrBonus += params.heroAllTowerBonusPct;
     hero.allTowerBonus += params.heroAllTowerBonusPct;
-    hero.buffs.allTower = true;
+    hero.buffs.ultimateSync = true;
+  } else if (up.key === "adaptiveAttribute") {
+    hero.adaptiveAttribute = true;
+    hero.buffs.adaptiveAttribute = true;
   } else if (up.key) hero.buffs[up.key] = true;
   hero.upgradeCounts[up.key] = (hero.upgradeCounts[up.key] || 0) + 1;
-  if (["damage","speed","quantity"].includes(up.key)) state.heroUpgradeRepeatLocks[up.key] = 3;
 }
 function markUpgradeRepeatLock(tower, up) {
   if (!state.upgradeRepeatLocks) state.upgradeRepeatLocks = {};
@@ -3811,6 +3914,7 @@ function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
 function draw() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawField();
+  drawDefenseStage();
   state.zones.forEach(drawZone);
   state.projectiles.forEach(drawProjectile);
   drawActiveChannels();
@@ -4053,7 +4157,40 @@ let fieldLayer = null;
 function drawField() {
   if (!fieldLayer) fieldLayer = buildFieldLayer();
   ctx.drawImage(fieldLayer, 0, 0);
-  drawBaseHpBar();
+}
+
+function drawDefenseStage() {
+  const positions = [{x:74,y:694},{x:276,y:694},{x:116,y:716}];
+  state.towers.forEach((tower, index) => {
+    const position = positions[index];
+    if (!position) return;
+    const ready = cooldownProgress(tower);
+    const color = tower.color || (ATTRIBUTE_DISPLAY[towerAttr(tower)] || ATTRIBUTE_DISPLAY.neutral).color;
+    ctx.save();
+    ctx.translate(position.x, position.y);
+    ctx.fillStyle = "rgba(5,8,12,.88)";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 10, 25, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = .18 + ready * .26;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = "rgba(255,255,255,.25)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
+    ctx.stroke();
+    ctx.translate(-14, -14);
+    ctx.scale(.29, .29);
+    drawTowerGlyph(ctx, tower.id, color);
+    ctx.restore();
+  });
 }
 
 function buildFieldLayer() {
@@ -4068,55 +4205,79 @@ function buildFieldLayer() {
   g.fillStyle = ground;
   g.fillRect(0, 0, layer.width, layer.height);
 
+  const topRoadHalf = 106;
+  const bottomRoadHalf = 174;
+  const topInnerHalf = 94;
+  const bottomInnerHalf = 160;
   const road = g.createLinearGradient(0, 0, layer.width, 0);
-  road.addColorStop(0, "#2b2624");
-  road.addColorStop(.08, "#17191d");
-  road.addColorStop(.5, "#232429");
-  road.addColorStop(.92, "#17191d");
-  road.addColorStop(1, "#2b2624");
+  road.addColorStop(0, "#302722");
+  road.addColorStop(.09, "#15181d");
+  road.addColorStop(.5, "#282a30");
+  road.addColorStop(.91, "#15181d");
+  road.addColorStop(1, "#302722");
   g.fillStyle = road;
-  g.fillRect(8, 0, layer.width - 16, FIELD.baseY + 12);
+  g.beginPath();
+  g.moveTo(FIELD.pathX - topRoadHalf, 0);
+  g.lineTo(FIELD.pathX + topRoadHalf, 0);
+  g.lineTo(FIELD.pathX + bottomRoadHalf, FIELD.baseY + 12);
+  g.lineTo(FIELD.pathX - bottomRoadHalf, FIELD.baseY + 12);
+  g.closePath();
+  g.fill();
 
-  g.fillStyle = "#090c11";
-  g.fillRect(20, 0, layer.width - 40, FIELD.baseY + 12);
   const innerRoad = g.createLinearGradient(0, 0, layer.width, 0);
-  innerRoad.addColorStop(0, "#1b1d22");
-  innerRoad.addColorStop(.5, "#292a2f");
-  innerRoad.addColorStop(1, "#1b1d22");
+  innerRoad.addColorStop(0, "#181b20");
+  innerRoad.addColorStop(.5, "#303138");
+  innerRoad.addColorStop(1, "#181b20");
   g.fillStyle = innerRoad;
-  g.fillRect(27, 0, layer.width - 54, FIELD.baseY + 12);
+  g.beginPath();
+  g.moveTo(FIELD.pathX - topInnerHalf, 0);
+  g.lineTo(FIELD.pathX + topInnerHalf, 0);
+  g.lineTo(FIELD.pathX + bottomInnerHalf, FIELD.baseY + 12);
+  g.lineTo(FIELD.pathX - bottomInnerHalf, FIELD.baseY + 12);
+  g.closePath();
+  g.fill();
 
   g.strokeStyle = "rgba(126, 220, 255, .22)";
   g.lineWidth = 2;
-  [-98, -49, 49, 98].forEach(offset => {
+  [-.66, -.33, .33, .66].forEach(ratio => {
     g.beginPath();
-    g.moveTo(FIELD.pathX + offset, 0);
-    g.lineTo(FIELD.pathX + offset, FIELD.baseY - 30);
+    g.moveTo(FIELD.pathX + topInnerHalf * ratio, 0);
+    g.lineTo(FIELD.pathX + bottomInnerHalf * ratio, FIELD.baseY - 24);
     g.stroke();
   });
 
-  for (let y = 42; y < FIELD.baseY - 48; y += 62) {
-    g.fillStyle = y % 124 ? "rgba(255,255,255,.035)" : "rgba(255,138,68,.045)";
-    g.fillRect(29, y, layer.width - 58, 2);
-    g.strokeStyle = "rgba(137, 228, 255, .18)";
-    g.lineWidth = 3;
+  for (let step = 1; step < 11; step += 1) {
+    const t = step / 11;
+    const y = Math.pow(t, 1.45) * (FIELD.baseY - 46);
+    const half = topInnerHalf + (bottomInnerHalf - topInnerHalf) * (y / FIELD.baseY);
+    g.strokeStyle = step % 2 ? "rgba(255,255,255,.035)" : "rgba(255,138,68,.055)";
+    g.lineWidth = 1 + t * 1.5;
     g.beginPath();
-    g.moveTo(FIELD.pathX - 10, y + 25);
-    g.lineTo(FIELD.pathX + 10, y + 20);
+    g.moveTo(FIELD.pathX - half, y);
+    g.lineTo(FIELD.pathX + half, y);
+    g.stroke();
+    g.strokeStyle = "rgba(137, 228, 255, .2)";
+    g.lineWidth = 2 + t;
+    g.beginPath();
+    g.moveTo(FIELD.pathX - 5 - t * 7, y + 18 + t * 9);
+    g.lineTo(FIELD.pathX + 5 + t * 7, y + 15 + t * 8);
     g.stroke();
   }
 
-  for (let y = 10; y < FIELD.baseY - 24; y += 32) {
-    g.fillStyle = (y / 32) % 2 ? "#c98228" : "#282c32";
+  for (let step = 0; step < 13; step += 1) {
+    const t = step / 12;
+    const y = Math.pow(t, 1.35) * (FIELD.baseY - 30);
+    const sideX = topRoadHalf + (bottomRoadHalf - topRoadHalf) * (y / FIELD.baseY);
+    g.fillStyle = step % 2 ? "#c98228" : "#282c32";
     g.save();
-    g.translate(12, y);
+    g.translate(FIELD.pathX - sideX - 5, y);
     g.rotate(-.42);
-    g.fillRect(-8, -5, 22, 8);
+    g.fillRect(-8, -4, 20 + t * 8, 7 + t * 3);
     g.restore();
     g.save();
-    g.translate(layer.width - 12, y);
+    g.translate(FIELD.pathX + sideX + 5, y);
     g.rotate(.42);
-    g.fillRect(-14, -5, 22, 8);
+    g.fillRect(-12 - t * 8, -4, 20 + t * 8, 7 + t * 3);
     g.restore();
   }
 
@@ -4316,15 +4477,22 @@ function drawBossBody(m, size) {
 }
 
 function drawEnemy(m) {
-  const size = m.boss ? 44 : m.elite ? 32 : m.size;
+  const baseSize = m.boss ? 44 : m.elite ? 32 : m.size;
+  const depth = clamp((m.y + 18) / (FIELD.baseY + 18), 0, 1);
+  const perspective = .58 + depth * .42;
+  const size = baseSize * perspective;
   const hpPct = Math.max(0, m.hp / m.maxHp);
   ctx.save();
+  ctx.fillStyle = `rgba(0,0,0,${.16 + depth * .22})`;
+  ctx.beginPath();
+  ctx.ellipse(m.x, m.y + size * .46, size * .48, size * .17, 0, 0, Math.PI * 2);
+  ctx.fill();
   if (m.boss) drawBossBody(m, size);
   else if (m.elite) drawEliteBody(m, size);
   else drawMinionBody(m, size);
   ctx.restore();
   drawEnemyAttributeMarker(m, size);
-  const bw = m.boss ? 58 : m.elite ? 46 : 32;
+  const bw = (m.boss ? 58 : m.elite ? 46 : 32) * (.72 + perspective * .28);
   if (m.boss) {
     const barW = 92;
     const barH = 7;
@@ -4457,7 +4625,9 @@ function drawEnemyAttributeMarker(m, size) {
   const weak = entries.reduce((best, entry) => !best || entry[1] > best[1] ? entry : best, null);
   if (!weak || weak[0] === "neutral" || weak[1] <= 1.001) return;
   const display = ATTRIBUTE_DISPLAY[weak[0]] || ATTRIBUTE_DISPLAY.neutral;
-  const radius = m.boss ? 11 : m.elite ? 9.5 : 8;
+  const baseSize = m.boss ? 44 : m.elite ? 32 : (m.size || 14);
+  const scale = clamp(size / Math.max(1, baseSize), .55, 1);
+  const radius = (m.boss ? 11 : m.elite ? 9.5 : 8) * scale;
   const x = m.x - size / 2 - radius + 1;
   const y = m.y;
   ctx.save();
@@ -5073,17 +5243,24 @@ function updateAttributeIndicators(bossWarning) {
 
 function updateUi() {
   if (HEADLESS_SIM) return;
+  const maxHp = Math.max(1, Math.round(params.baseHp));
+  const hpPct = clamp(state.hp / maxHp, 0, 1);
   ui.wallet.textContent = Math.floor(state.wallet);
+  ui.entryWallet.textContent = Math.floor(state.wallet);
   ui.pot.textContent = Math.floor(state.pot);
   ui.payout.textContent = payout();
   ui.wave.textContent = state.wave;
-  ui.hp.textContent = Math.floor(state.hp);
+  ui.hp.textContent = `${Math.ceil(state.hp)} / ${maxHp}`;
+  ui.hpFill.style.width = `${Math.round(hpPct * 100)}%`;
+  ui.hpFill.classList.toggle("warning", hpPct <= .45);
+  ui.hpFill.classList.toggle("danger", hpPct <= .2);
   const nextExp = expRequired(state.level);
   const expPct = clamp(state.exp / nextExp, 0, 1);
   ui.level.textContent = state.level;
   ui.exp.textContent = `${Math.floor(state.exp)}/${nextExp}`;
   ui.expFill.style.width = `${Math.round(expPct * 100)}%`;
-  ui.betText.textContent = state.started ? currentBet() : BET_STEPS[state.baseBetIndex];
+  ui.betText.textContent = BET_STEPS[state.baseBetIndex];
+  ui.entryBet.textContent = BET_STEPS[state.baseBetIndex];
   ui.waveBet.textContent = currentBet();
   ui.speed.classList.toggle("fast", speedMultiplier() > 1);
   SPEED_STEPS.forEach(step => ui.speed.classList.toggle(`speed-${step}`, speedMultiplier() === step));
@@ -5101,26 +5278,55 @@ function updateUi() {
   ui.bossMult.classList.toggle("rolling-high", state.bossRoll?.tier === "high");
   ui.bossMult.classList.toggle("rolling-jackpot", state.bossRoll?.tier === "jackpot");
   ui.collectText.textContent = payout();
-  ui.message.textContent = canCollect()
-    ? (bossWarning ? "危險：下一波 BOSS，可以 Collect 或繼續 BET 挑戰。" : "場上無怪，可以 Collect 或繼續 BET。")
-    : state.choicesOpen
+  const waveCleared = state.started && state.wave > 0 && !state.over && !state.choicesOpen && !state.waveActive && !state.monsters.length && !state.spawn && !state.bossRoll;
+  ui.message.textContent = state.choicesOpen
       ? "請選擇一個項目。"
       : state.waveActive
         ? (state.message || "戰鬥中。")
-        : state.started
-          ? (bossWarning ? "危險：下一波 BOSS。" : "場上無怪，可以繼續 BET。")
-          : "調整 BET 後按下 BET 開始。";
-  ui.bet.disabled = state.over || state.choicesOpen || state.waveActive || state.monsters.length || state.wallet < currentBet();
-  const readyForNextWave = state.started && state.wave > 0 && !state.over && !state.choicesOpen && !state.waveActive && !state.monsters.length && !state.spawn && state.wallet >= currentBet();
-  ui.bet.classList.toggle("ready-next", readyForNextWave);
-  ui.bottomUi?.classList.toggle("bet-ready", readyForNextWave);
-  ui.message.classList.toggle("bet-ready", readyForNextWave);
-  ui.bet.setAttribute?.("aria-label", readyForNextWave ? `繼續第 ${state.wave + 1} 波，BET ${currentBet()}` : `BET ${currentBet()}`);
+        : waveCleared
+          ? (bossWarning ? "下一波為 BOSS。" : "波次完成。")
+          : state.started ? "準備下一波。" : "選擇 BET 與角色後開始戰鬥。";
+  ui.entryOverlay.classList.toggle("hidden", state.started || state.choicesOpen || state.over);
+  ui.bet.disabled = state.started || state.over || state.choicesOpen || state.wallet < BET_STEPS[state.baseBetIndex];
+  ui.bet.setAttribute?.("aria-label", `以 BET ${BET_STEPS[state.baseBetIndex]} 進入戰局`);
+  ui.waveDecision.classList.toggle("hidden", !waveCleared);
+  ui.waveDecision.classList.toggle("boss-next", waveCleared && bossWarning);
+  ui.decisionWave.textContent = `第 ${state.wave} 波完成`;
+  ui.decisionPayout.textContent = payout();
+  ui.decisionDanger.classList.toggle("hidden", !bossWarning);
+  ui.continue.disabled = !waveCleared || state.wallet < currentBet();
+  ui.continue.setAttribute?.("aria-label", `繼續第 ${state.wave + 1} 波，BET ${currentBet()}`);
   ui.collect.disabled = !canCollect();
   ui.betMinus.disabled = state.started || state.baseBetIndex <= 0;
   ui.betPlus.disabled = state.started || state.baseBetIndex >= BET_STEPS.length-1;
+  if (state.choiceKind === "upgrade" && !ui.reroll.classList.contains("hidden")) {
+    ui.reroll.disabled = state.choiceRerollUsed || state.wallet < currentBet();
+    ui.rerollCost.textContent = state.choiceRerollUsed ? "本次升級已使用" : `BET ${currentBet()}`;
+  }
+  renderBetOptions();
   renderSlots();
   updateDebugSnapshot();
+}
+
+function renderBetOptions() {
+  if (!ui.betOptions.childElementCount) {
+    BET_STEPS.forEach((bet, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = bet;
+      button.addEventListener("click", () => {
+        if (state.started) return;
+        state.baseBetIndex = index;
+        playSfx("ui");
+        updateUi();
+      });
+      ui.betOptions.appendChild(button);
+    });
+  }
+  Array.from(ui.betOptions.children).forEach((button, index) => {
+    button.classList.toggle("selected", index === state.baseBetIndex);
+    button.disabled = state.started || state.wallet < BET_STEPS[index];
+  });
 }
 
 function renderSlots() {
@@ -5159,8 +5365,10 @@ function renderSlots() {
         view.icon.src = isHeroSlot ? heroIconDataUrl(t) : towerIconDataUrl(t);
         view.icon.dataset.tower = iconKey;
       }
-      view.name.textContent = t.name;
-      view.info.textContent = `${isHeroSlot ? "角色" : t.attr} Lv.${t.level}`;
+      view.root.title = `${t.name} Lv.${t.level}`;
+      view.name.textContent = "";
+      view.name.hidden = true;
+      view.info.textContent = t.level;
       view.info.hidden = false;
       view.cooldown.hidden = false;
       view.fill.style.width = `${ready}%`;
@@ -5169,7 +5377,9 @@ function renderSlots() {
       view.icon.hidden = true;
       view.icon.removeAttribute?.("src");
       view.icon.dataset.tower = "";
-      view.name.textContent = isHeroSlot ? "選擇角色" : `砲塔槽 ${i}`;
+      view.root.removeAttribute("title");
+      view.name.textContent = "";
+      view.name.hidden = true;
       view.info.hidden = true;
       view.cooldown.hidden = true;
     }
@@ -5220,7 +5430,9 @@ function toggleSpeed() {
 ui.betMinus.onclick = () => { if (!state.started) { state.baseBetIndex = Math.max(0,state.baseBetIndex-1); playSfx("ui"); } updateUi(); };
 ui.betPlus.onclick = () => { if (!state.started) { state.baseBetIndex = Math.min(BET_STEPS.length-1,state.baseBetIndex+1); playSfx("ui"); } updateUi(); };
 ui.bet.onclick = startBet;
+ui.continue.onclick = startBet;
 ui.collect.onclick = collect;
+ui.reroll.onclick = rerollUpgradeChoices;
 ui.reset.onclick = () => { playSfx("ui"); reset(); };
 ui.sound.onclick = toggleSound;
 ui.speed.onclick = toggleSpeed;
@@ -5276,6 +5488,7 @@ if (HEADLESS_SIM) {
     const value = {
       wallet:state.wallet, started:state.started, over:state.over, wave:state.wave, hp:state.hp, pot:state.pot,
       exp:state.exp, level:state.level, choicesOpen:state.choicesOpen, waveActive:state.waveActive,
+      choiceRerollUsed:state.choiceRerollUsed, rerollSpent:state.rerollSpent,
       spawning:!!state.spawn, spawnBoss:!!state.spawn?.boss, monsters:state.monsters.length,
       bossAlive:state.monsters.some(monster => monster.boss), bossSpawned:state.simBossSpawned || 0, bossSeen:state.bossSeen, bossRolled:state.bossRolled,
       bossAdd:state.bossAdd, bossRolling:!!state.bossRoll, nextBoss:!!state.nextBoss,
@@ -5322,6 +5535,7 @@ if (HEADLESS_SIM) {
       if (!choice) throw new Error(`Invalid choice index ${index}`);
       choice.onPick();
     },
+    rerollUpgradeChoices,
     snapshot: () => headlessSnapshot(true),
     snapshotLite: () => headlessSnapshot(false),
   };
