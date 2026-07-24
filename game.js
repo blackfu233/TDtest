@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "enemy-roster1";
+const BUILD_VERSION = "battle-scale1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -2693,7 +2693,14 @@ function zoneTick(t) {
 }
 function scaledRange(t) { return Math.min(towerParam(t, "range", t.range) * 0.62 * (t.rangeMul || 1), 720); }
 function scaledSplash(t, base) { return towerParam(t, "splash", base) * (t.splashMul || 1); }
-function heroVisualPosition() { return { x:FIELD.pathX, y:FIELD.baseY - 17 }; }
+function heroVisualPosition() { return { x:FIELD.pathX, y:FIELD.baseY - 72 }; }
+function towerVisualPosition(slot) {
+  return [
+    { x:56, y:FIELD.baseY - 5 },
+    { x:FIELD.pathX, y:FIELD.baseY + 3 },
+    { x:294, y:FIELD.baseY - 5 },
+  ][slot] || { x:FIELD.pathX, y:FIELD.baseY - 5 };
+}
 function heroShoulderPosition(hero=state.hero) {
   const position = heroVisualPosition();
   const bob = hero ? Math.sin((hero.animTime || 0) * 3.2) * .8 : 0;
@@ -4138,7 +4145,7 @@ applyUpgrade = function(t, up) {
   applyUpgradeBase(t, up);
   tuneAppliedUpgrade(t, before);
   tuneUpgradeEffectValues(t, up, before);
-  const position = [{x:66,y:699},{x:284,y:699},{x:112,y:718}][t.slot] || heroVisualPosition();
+  const position = towerVisualPosition(t.slot);
   effect("upgradeBurst", {x:position.x,y:position.y - 12,color:t.color}, position, {
     life: towerVisualStage(t) > visualStageBefore ? 1.2 : .72,
     text: towerVisualStage(t) > visualStageBefore ? `STAGE ${towerVisualStage(t)}` : "POWER UP"
@@ -4367,13 +4374,13 @@ function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
 function draw() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawField();
+  drawHero();
   drawDefenseStage();
   state.zones.forEach(drawZone);
   state.projectiles.forEach(drawProjectile);
   drawActiveChannels();
   state.effects.forEach(drawEffect);
   state.monsters.forEach(drawEnemy);
-  drawHero();
 }
 
 function drawHero() {
@@ -4390,7 +4397,7 @@ function drawHero() {
   const visualStage = heroVisualStage(hero);
   const sprite = artImage(heroSpritePath(hero, visualStage));
   if (sprite?.complete && sprite.naturalWidth) {
-    const drawSize = visualStage === 3 ? 126 : visualStage === 2 ? 116 : 106;
+    const drawSize = visualStage === 3 ? 142 : visualStage === 2 ? 130 : 118;
     ctx.save();
     ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = "rgba(0,0,0,.44)";
@@ -4684,9 +4691,8 @@ function drawField() {
 }
 
 function drawDefenseStage() {
-  const positions = [{x:55,y:704},{x:295,y:704},{x:103,y:658}];
   state.towers.forEach((tower, index) => {
-    const position = positions[index];
+    const position = towerVisualPosition(index);
     if (!position) return;
     const ready = cooldownProgress(tower);
     const color = tower.color || (ATTRIBUTE_DISPLAY[towerAttr(tower)] || ATTRIBUTE_DISPLAY.neutral).color;
@@ -4696,23 +4702,25 @@ function drawDefenseStage() {
     ctx.translate(position.x, position.y);
     if (sprite?.complete && sprite.naturalWidth) {
       const bob = Math.sin(performance.now() / 420 + index * 1.7) * 1.2;
-      const drawSize = visualStage === 3 ? 84 : visualStage === 2 ? 77 : 70;
+      const drawSize = visualStage === 3 ? 116 : visualStage === 2 ? 106 : 96;
       ctx.fillStyle = "rgba(0,0,0,.42)";
       ctx.beginPath();
-      ctx.ellipse(0, 11, drawSize * .36, 7, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 12, drawSize * .34, 6, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.globalAlpha = .16 + ready * .18;
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = .045 + ready * .055;
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(0, 3, drawSize * .46, 0, Math.PI * 2);
+      ctx.ellipse(0, 8, drawSize * .36, 7, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
       ctx.globalAlpha = 1;
-      ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2 - 7 + bob, drawSize, drawSize);
+      ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2 - 12 + bob, drawSize, drawSize);
       ctx.strokeStyle = visualStage === 3 ? "#fff0ae" : color;
       ctx.lineWidth = visualStage === 3 ? 2.5 : 1.5;
-      ctx.globalAlpha = .35 + ready * .5;
+      ctx.globalAlpha = .24 + ready * .42;
       ctx.beginPath();
-      ctx.arc(0, 3, drawSize * .42, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
+      ctx.ellipse(0, 9, drawSize * .34, 7, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
       ctx.stroke();
       ctx.restore();
       return;
@@ -5026,9 +5034,9 @@ function drawBossBody(m, size) {
 }
 
 function drawEnemy(m) {
-  const baseSize = m.boss ? 44 : m.elite ? 32 : m.size;
+  const baseSize = Math.max(12, m.size || (m.boss ? 46 : m.elite ? 30 : 15));
   const depth = clamp((m.y + 18) / (FIELD.baseY + 18), 0, 1);
-  const perspective = .42 + depth * .58;
+  const perspective = .68 + depth * .32;
   const size = baseSize * perspective;
   const hpPct = Math.max(0, m.hp / m.maxHp);
   ctx.save();
@@ -5038,7 +5046,7 @@ function drawEnemy(m) {
   ctx.fill();
   const sprite = artImage(enemySpritePath(m));
   if (sprite?.complete && sprite.naturalWidth) {
-    const spriteSize = size * (m.boss ? 2.48 : m.elite ? 2.30 : 2.38);
+    const spriteSize = size * (m.boss ? 3.10 : m.elite ? 3.04 : 3.12);
     const stride = Math.sin(performance.now() / (m.kind === "fast" ? 80 : 135) + (m.x || 0) * .08) * (m.boss ? 1.2 : 1.8) * perspective;
     ctx.globalAlpha = m.stunTime > 0 || m.freezeTime > 0 ? .86 : 1;
     ctx.drawImage(sprite, m.x - spriteSize / 2, m.y - spriteSize / 2 + stride, spriteSize, spriteSize);
@@ -5190,7 +5198,7 @@ function drawEnemyAttributeMarker(m, size) {
   const weak = entries.reduce((best, entry) => !best || entry[1] > best[1] ? entry : best, null);
   if (!weak || weak[0] === "neutral" || weak[1] <= 1.001) return;
   const display = ATTRIBUTE_DISPLAY[weak[0]] || ATTRIBUTE_DISPLAY.neutral;
-  const baseSize = m.boss ? 44 : m.elite ? 32 : (m.size || 14);
+  const baseSize = Math.max(12, m.size || (m.boss ? 46 : m.elite ? 30 : 14));
   const scale = clamp(size / Math.max(1, baseSize), .55, 1);
   const radius = (m.boss ? 11 : m.elite ? 9.5 : 8) * scale;
   const x = m.x - size / 2 - radius + 1;
