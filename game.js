@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "hero-identities1";
+const BUILD_VERSION = "balance-v56";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -664,11 +664,11 @@ const TOWER_ROLE = {
   chain:"area", gas:"area", needle:"single", blade:"general", trap:"control",
 };
 const MATH_TOWER_POWER = {
-  flame:{ minion:1.16, boss:.88 }, grenade:{ minion:1.28, boss:.62 },
-  cryo:{ minion:.56, boss:1.30 }, frostbomb:{ minion:1.24, boss:.76 },
-  laser:{ minion:.58, boss:1.36 }, chain:{ minion:1.20, boss:.80 },
-  gas:{ minion:1.26, boss:.70 }, needle:{ minion:1.00, boss:1.16 },
-  blade:{ minion:1.00, boss:.88 }, trap:{ minion:1.14, boss:.78 },
+  flame:{ minion:1.16, boss:.70 }, grenade:{ minion:1.28, boss:1.10 },
+  cryo:{ minion:.56, boss:1.50 }, frostbomb:{ minion:1.24, boss:1.08 },
+  laser:{ minion:.58, boss:1.90 }, chain:{ minion:1.20, boss:.45 },
+  gas:{ minion:1.26, boss:1.06 }, needle:{ minion:1.00, boss:2.00 },
+  blade:{ minion:1.00, boss:.80 }, trap:{ minion:1.14, boss:.65 },
 };
 const ATTRIBUTE_KEYS = ["fire", "ice", "electric", "poison", "neutral"];
 const ATTRIBUTE_DISPLAY = {
@@ -1142,23 +1142,50 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 35,
+  balanceRevision: 56,
   mathModelEnabled: 1,
   mathTargetRtp: 1.0,
   mathTolerancePct: 1.0,
-  mathBuildInfluence: .24,
-  mathBossPenalty: .31,
+  mathBuildInfluence: .80,
+  mathBossBuildInfluence: 1.20,
+  mathMinionBuildInfluence: .10,
+  mathAreaBossRiskDiscount: .05,
+  mathHpInfluence: 1.50,
+  mathHpReference: .91,
+  mathHeroPower_fire: 1.00,
+  mathHeroPower_ice: 1.12,
+  mathHeroPower_electric: .90,
+  mathHeroPower_poison: .75,
+  mathHeroPower_neutral: .90,
+  mathCoreRiskBonus: 0,
+  mathTowerBossPower_flame: .70,
+  mathTowerBossPower_grenade: 1.10,
+  mathTowerBossPower_cryo: 1.50,
+  mathTowerBossPower_frostbomb: 1.08,
+  mathTowerBossPower_laser: 1.90,
+  mathTowerBossPower_chain: .45,
+  mathTowerBossPower_gas: 1.06,
+  mathTowerBossPower_needle: 2.00,
+  mathTowerBossPower_blade: .80,
+  mathTowerBossPower_trap: .65,
+  mathBossPenalty: .68,
+  mathPayoutCalibration: 1.040,
+  mathPayoutBand1: 1.000,
+  mathPayoutBand2: 1.040,
+  mathPayoutBand3: 1.005,
+  mathPayoutBand4: 1.025,
+  mathPayoutBand5: .950,
   mathLossHpMul: 5.00,
   mathLossAtkMul: 5.00,
   mathLossSpeedMul: 1.12,
-  mathMinClearChance: .18,
-  mathMaxClearChance: .96,
-  mathFirstWaveClearChance: .985,
-  mathClearBand1: .95,
-  mathClearBand2: .88,
-  mathClearBand3: .80,
-  mathClearBand4: .72,
-  mathClearBand5: .64,
+  mathMinClearChance: .25,
+  mathMaxClearChance: .999,
+  mathFirstWaveClearChance: .999,
+  mathClearBand1: .999,
+  mathClearBand2: .999,
+  mathClearBand3: .999,
+  mathClearBand4: .999,
+  mathClearBand5: .999,
   bossLowWeight: 55,
   bossMidWeight: 38,
   bossHighWeight: 7,
@@ -1182,8 +1209,8 @@ const DEFAULT_PARAMS = {
   wave1MinionAtkMul: .55,
   eliteHpMul: 1.05,
   eliteAtkMul: 1.05,
-  bossFirstHpMul: 1.22,
-  bossHpMul: .62,
+  bossFirstHpMul: 2.60,
+  bossHpMul: 1.25,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
   moneyMul: 1.085,
@@ -1279,7 +1306,18 @@ function cleanParams(input={}) {
   next.mathTargetRtp = Math.max(0, Math.min(2, next.mathTargetRtp));
   next.mathTolerancePct = Math.max(0, Math.min(20, next.mathTolerancePct));
   next.mathBuildInfluence = Math.max(0, Math.min(1, next.mathBuildInfluence));
+  next.mathBossBuildInfluence = Math.max(0, Math.min(2, next.mathBossBuildInfluence));
+  next.mathMinionBuildInfluence = Math.max(0, Math.min(2, next.mathMinionBuildInfluence));
+  next.mathAreaBossRiskDiscount = Math.max(0, Math.min(.25, next.mathAreaBossRiskDiscount));
+  next.mathHpInfluence = Math.max(0, Math.min(2, next.mathHpInfluence));
+  next.mathHpReference = Math.max(0, Math.min(1, next.mathHpReference));
+  next.mathCoreRiskBonus = Math.max(0, Math.min(.25, next.mathCoreRiskBonus));
+  Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("mathHeroPower_") || key.startsWith("mathTowerBossPower_"))
+    .forEach(key => { next[key] = Math.max(.25, Math.min(2.5, next[key])); });
   next.mathBossPenalty = Math.max(0, Math.min(.8, next.mathBossPenalty));
+  next.mathPayoutCalibration = Math.max(.5, Math.min(1.5, next.mathPayoutCalibration));
+  ["mathPayoutBand1", "mathPayoutBand2", "mathPayoutBand3", "mathPayoutBand4", "mathPayoutBand5"]
+    .forEach(key => { next[key] = Math.max(.5, Math.min(1.5, next[key])); });
   next.mathLossHpMul = Math.max(1, Math.min(5, next.mathLossHpMul));
   next.mathLossAtkMul = Math.max(1, Math.min(5, next.mathLossAtkMul));
   next.mathLossSpeedMul = Math.max(1, Math.min(1.25, next.mathLossSpeedMul));
@@ -1529,6 +1567,118 @@ function migrateBossParams(input={}) {
     Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("hero_")).forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 35;
   }
+  if ((Number(input.balanceRevision) || 0) < 36) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathMinClearChance", "mathMaxClearChance", "mathFirstWaveClearChance", "mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 36;
+  }
+  if ((Number(input.balanceRevision) || 0) < 37) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathMaxClearChance", "mathFirstWaveClearChance", "mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 37;
+  }
+  if ((Number(input.balanceRevision) || 0) < 38) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 38;
+  }
+  if ((Number(input.balanceRevision) || 0) < 39) {
+    next.mathBossPenalty = DEFAULT_PARAMS.mathBossPenalty;
+    next.balanceRevision = 39;
+  }
+  if ((Number(input.balanceRevision) || 0) < 40) {
+    next.mathBossPenalty = DEFAULT_PARAMS.mathBossPenalty;
+    next.balanceRevision = 40;
+  }
+  if ((Number(input.balanceRevision) || 0) < 41) {
+    next.mathBuildInfluence = DEFAULT_PARAMS.mathBuildInfluence;
+    next.mathBossPenalty = DEFAULT_PARAMS.mathBossPenalty;
+    next.balanceRevision = 41;
+  }
+  if ((Number(input.balanceRevision) || 0) < 42) {
+    [
+      "mathBuildInfluence", "mathBossPenalty", "mathPayoutCalibration",
+      "mathPayoutBand1", "mathPayoutBand2", "mathPayoutBand3", "mathPayoutBand4", "mathPayoutBand5",
+      "mathMinClearChance", "bossFirstHpMul", "bossHpMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 42;
+  }
+  if ((Number(input.balanceRevision) || 0) < 43) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathPayoutCalibration", "bossFirstHpMul", "bossHpMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 43;
+  }
+  if ((Number(input.balanceRevision) || 0) < 44) {
+    next.mathBossPenalty = DEFAULT_PARAMS.mathBossPenalty;
+    next.balanceRevision = 44;
+  }
+  if ((Number(input.balanceRevision) || 0) < 45) {
+    ["mathBossPenalty", "mathMinClearChance"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 45;
+  }
+  if ((Number(input.balanceRevision) || 0) < 46) {
+    ["mathHpInfluence", "mathHpReference"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 46;
+  }
+  if ((Number(input.balanceRevision) || 0) < 47) {
+    ["mathHpInfluence", "mathHpReference"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 47;
+  }
+  if ((Number(input.balanceRevision) || 0) < 48) {
+    Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("mathHeroPower_") || key.startsWith("mathTowerBossPower_"))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 48;
+  }
+  if ((Number(input.balanceRevision) || 0) < 49) {
+    [
+      "mathHeroPower_fire", "mathHeroPower_poison", "mathTowerBossPower_flame",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_needle",
+      "mathTowerBossPower_blade", "mathTowerBossPower_trap"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 49;
+  }
+  if ((Number(input.balanceRevision) || 0) < 50) {
+    [
+      "mathHeroPower_fire", "mathHeroPower_poison", "mathHeroPower_neutral", "mathCoreRiskBonus",
+      "mathTowerBossPower_grenade", "mathTowerBossPower_cryo", "mathTowerBossPower_frostbomb",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_needle", "mathTowerBossPower_trap"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 50;
+  }
+  if ((Number(input.balanceRevision) || 0) < 51) {
+    next.mathCoreRiskBonus = DEFAULT_PARAMS.mathCoreRiskBonus;
+    next.balanceRevision = 51;
+  }
+  if ((Number(input.balanceRevision) || 0) < 52) {
+    [
+      "mathBossBuildInfluence", "mathMinionBuildInfluence", "mathPayoutCalibration",
+      "mathHeroPower_fire", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "mathTowerBossPower_grenade", "mathTowerBossPower_cryo", "mathTowerBossPower_frostbomb",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_needle", "mathTowerBossPower_trap"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 52;
+  }
+  if ((Number(input.balanceRevision) || 0) < 53) {
+    [
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "mathTowerBossPower_flame", "mathTowerBossPower_grenade", "mathTowerBossPower_cryo",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_needle",
+      "mathTowerBossPower_blade", "mathTowerBossPower_trap"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 53;
+  }
+  if ((Number(input.balanceRevision) || 0) < 54) {
+    next.mathMinionBuildInfluence = DEFAULT_PARAMS.mathMinionBuildInfluence;
+    next.balanceRevision = 54;
+  }
+  if ((Number(input.balanceRevision) || 0) < 55) {
+    ["mathBossBuildInfluence", "mathMinionBuildInfluence"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 55;
+  }
+  if ((Number(input.balanceRevision) || 0) < 56) {
+    ["mathAreaBossRiskDiscount", "mathPayoutCalibration"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 56;
+  }
   return next;
 }
 
@@ -1706,28 +1856,46 @@ function mathBaseClearChance(wave) {
   return paramNumber(key, .75);
 }
 
+function mathPayoutBandScale(wave) {
+  const key = wave <= 2 ? "mathPayoutBand1" : wave <= 5 ? "mathPayoutBand2" : wave <= 10 ? "mathPayoutBand3" : wave <= 20 ? "mathPayoutBand4" : "mathPayoutBand5";
+  return paramNumber(key, 1);
+}
+
 function mathBuildPower(boss=false) {
   if (!state.towers.length) {
     const heroRanks = state.hero?.triadRanks || 0;
     return .72 + Math.min(.28, heroRanks * .22);
   }
   const key = boss ? "boss" : "minion";
-  const roleAverage = state.towers.reduce((sum, tower) => sum + (MATH_TOWER_POWER[tower.id]?.[key] || 1), 0) / state.towers.length;
+  const roleAverage = state.towers.reduce((sum, tower) => {
+    const fallback = MATH_TOWER_POWER[tower.id]?.[key] || 1;
+    const power = boss ? paramNumber(`mathTowerBossPower_${tower.id}`, fallback) : fallback;
+    return sum + power;
+  }, 0) / state.towers.length;
   const slotFactor = .82 + Math.min(3, state.towers.length - 1) * .10;
   const upgrades = state.towers.reduce((sum, tower) => sum + (tower.upgrades?.length || 0), 0);
   const upgradeFactor = 1 + Math.min(.30, upgrades * .02);
+  const coreUpgrades = state.towers.reduce((sum, tower) => sum + (tower.upgrades || []).filter(name => CORE_UPGRADE_NAMES.has(name) || !!UPGRADE_REQUIREMENTS[name]).length, 0);
+  const coreFactor = 1 + Math.min(.35, coreUpgrades * paramNumber("mathCoreRiskBonus", .06));
   const heroUpgradeFactor = 1 + Math.min(.18, (state.hero?.upgrades?.length || 0) * .018);
   const matchingTowers = state.hero ? state.towers.filter(tower => towerAttr(tower) === state.hero.attrKey).length : 0;
   const resonanceFactor = 1 + matchingTowers * .02 + (state.hero?.sameAttrBonus || 0) / 500;
-  return roleAverage * slotFactor * upgradeFactor * heroUpgradeFactor * resonanceFactor;
+  const heroPower = state.hero ? paramNumber(`mathHeroPower_${state.hero.attrKey}`, 1) : 1;
+  return roleAverage * slotFactor * upgradeFactor * coreFactor * heroUpgradeFactor * resonanceFactor * heroPower;
 }
 
 function mathClearChance(wave, boss=false, difficulty=null) {
   if (wave === 1 && !boss) return paramNumber("mathFirstWaveClearChance", .985);
   const base = mathBaseClearChance(wave);
-  const buildShift = (mathBuildPower(boss) - 1) * paramNumber("mathBuildInfluence", .22);
+  const buildInfluence = boss ? paramNumber("mathBossBuildInfluence", .8) : paramNumber("mathMinionBuildInfluence", .1);
+  const buildShift = (mathBuildPower(boss) - 1) * buildInfluence;
+  const hpRatio = clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1);
+  const hpShift = (hpRatio - paramNumber("mathHpReference", .85)) * paramNumber("mathHpInfluence", .9);
+  const areaCount = boss ? state.towers.filter(tower => TOWER_ROLE[tower.id] === "area").length : 0;
+  const singleCount = boss ? state.towers.filter(tower => TOWER_ROLE[tower.id] === "single").length : 0;
+  const areaRiskShift = boss ? -Math.max(0, areaCount - singleCount) * paramNumber("mathAreaBossRiskDiscount", .05) : 0;
   const difficultyShift = boss ? ({ easy:.08, normal:0, hard:-.08, brutal:-.16 }[difficulty?.id] || 0) : 0;
-  const raw = base + buildShift + difficultyShift - (boss ? paramNumber("mathBossPenalty", .28) : 0);
+  const raw = base + buildShift + hpShift + areaRiskShift + difficultyShift - (boss ? paramNumber("mathBossPenalty", .28) : 0);
   const min = paramNumber("mathMinClearChance", .18);
   const max = Math.max(min, paramNumber("mathMaxClearChance", .96));
   return Math.round(clamp(raw, min, max) * 10000) / 10000;
@@ -1773,14 +1941,13 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
     bossRewardFactor = rolledAdd/Math.max(.1,expectedBossAdd(rewardMul));
   }
   const rewardFactor = waveReward.factor*bossRewardFactor;
-  const expectedAfter = before + bet * targetRtp * rewardFactor;
+  const payoutScale = paramNumber("mathPayoutCalibration", 1) * mathPayoutBandScale(wave);
+  const expectedAfter = before + bet * targetRtp * payoutScale * rewardFactor;
   const conditionalPayoutExact = expectedAfter / clearChance;
   const payoutUniform = mathUniform(wave, 1);
-  const successUniform = mathUniform(wave, 2);
   const targetPayout = stochasticRound(conditionalPayoutExact, payoutUniform);
-  const success = successUniform < clearChance;
   let bossAdd = 0;
-  if (boss && success) {
+  if (boss) {
     const currentMultiplier = 1 + state.bossAdd;
     const maxAffordableAdd = state.pot > 0 ? Math.max(0, targetPayout / state.pot - currentMultiplier) : rolledAdd;
     bossAdd = Math.round(Math.min(rolledAdd, maxAffordableAdd) * 10) / 10;
@@ -1789,8 +1956,8 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const targetPot = Math.max(state.pot, stochasticRound(targetPayout / targetMultiplier, mathUniform(wave, 3)));
   const ticket = {
     id:state.mathLedger.length + 1, wave, bet, boss, bossDifficulty:difficulty?.id || null,
-    buildPower:mathBuildPower(boss), clearChance, success, before, targetRtp,
-    expectedAfter, conditionalPayoutExact, targetPayout, targetPot, payoutUniform, successUniform,
+    buildPower:mathBuildPower(boss), hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, before, targetRtp, payoutScale,
+    expectedAfter, conditionalPayoutExact, targetPayout, targetPot, payoutUniform,
     waveRewardTier:waveReward.id,waveRewardMultiplier:waveReward.multiplier,waveRewardFactor:waveReward.factor,
     bossRewardFactor,rewardFactor,rolledBossAdd:rolledAdd,
     rewardBudget:Math.max(0, targetPot - state.pot), bossAdd,
@@ -1808,7 +1975,7 @@ function settleMathTicket() {
   state.certifiedPayout = ticket.targetPayout;
   state.pot = Math.max(0, ticket.targetPot);
   ticket.settled = true;
-  ticket.result = ticket.success ? "clear" : "overcome";
+  ticket.result = "clear";
   ticket.actualPayout = payout();
 }
 
@@ -2506,16 +2673,12 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   const difficultyHpMul = boss ? (bossDifficulty?.hpMul || 1) : 1;
   const difficultyAtkMul = boss ? (bossDifficulty?.atkMul || 1) : 1;
   const difficultySpeedMul = boss ? (bossDifficulty?.speedMul || 1) : 1;
-  const lossPressure = certifiedMathEnabled() && state.mathTicket && !state.mathTicket.success;
-  const lossHpMul = lossPressure ? paramNumber("mathLossHpMul", 3.20) : 1;
-  const lossAtkMul = lossPressure ? paramNumber("mathLossAtkMul", 5.00) : 1;
-  const lossSpeedMul = lossPressure ? clamp(paramNumber("mathLossSpeedMul", 1.12), 1, 1.25) : 1;
-  const hp = Math.round(tunedBase.hp * hpMul * classHpMul * difficultyHpMul * lossHpMul);
+  const hp = Math.round(tunedBase.hp * hpMul * classHpMul * difficultyHpMul);
   const legacyAtkMul = base.enemyAttr ? 1 : ({ normal:.25, fast:.27, tank:.28, ranged:.30, special:.33 }[kind] || .3);
   const openingAtkMul = !elite && !boss && state.wave === 1 ? paramNumber("wave1MinionAtkMul", .55) : 1;
-  const atk = Math.max(1, Math.round(tunedBase.atk * legacyAtkMul * classAtkMul * difficultyAtkMul * lossAtkMul * openingAtkMul));
+  const atk = Math.max(1, Math.round(tunedBase.atk * legacyAtkMul * classAtkMul * difficultyAtkMul * openingAtkMul));
   const legacySpeedMul = base.enemyAttr ? 1 : ({ normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 }[kind] || .72);
-  const rawSpeed = tunedBase.speed * legacySpeedMul * classSpeedMul * difficultySpeedMul * lossSpeedMul;
+  const rawSpeed = tunedBase.speed * legacySpeedMul * classSpeedMul * difficultySpeedMul;
   const speedCap = boss ? (primaryAttr === "electric" ? 34 : 30) : elite ? (primaryAttr === "electric" ? 48 : 40) : (primaryAttr === "electric" ? 54 : 46);
   const speed = Math.max(1, Math.round(Math.min(rawSpeed, speedCap)));
   const attributeDefaults = base.enemyAttr ? enemyAttributeProfile(base.enemyAttr) : ENEMY_ATTRIBUTE_DEFAULTS[tuneId] || {};
@@ -2540,9 +2703,52 @@ function update(dt) {
   updateProjectiles(dt);
   updateEnemies(dt);
   checkWaveClear();
-  state.effects = state.effects.map(e => ({ ...e, t:e.t-dt * (e.type === "bossReward" ? 1 / speedMultiplier() : 1) })).filter(e => e.t > 0);
-  state.monsters.forEach(m => { if (m.damageTextCd > 0) m.damageTextCd -= dt; });
+  if (!HEADLESS_SIM) {
+    state.effects = state.effects.map(e => ({ ...e, t:e.t-dt * (e.type === "bossReward" ? 1 / speedMultiplier() : 1) })).filter(e => e.t > 0);
+    state.monsters.forEach(m => { if (m.damageTextCd > 0) m.damageTextCd -= dt; });
+  }
   updateBossRoll(presentationDt);
+}
+
+function headlessIdleFrameSkip(maxFrames=600) {
+  if (!HEADLESS_SIM || state.over || state.choicesOpen || !state.waveActive || state.bossRoll) return 1;
+  if (state.projectiles.length || state.zones.length || state.towers.some(tower => tower.channel)) return 1;
+  if (!state.monsters.length && !state.spawn) return 1;
+
+  const origin = fireOrigin();
+  let attackRange = state.hero ? heroParam(state.hero, "range", state.hero.range) : 0;
+  for (const tower of state.towers) attackRange = Math.max(attackRange, scaledRange(tower));
+  if (attackRange <= 0) return 1;
+
+  let safeFrames = Math.max(1,Math.floor(maxFrames));
+  const fixedDt = 1 / 60;
+  const spawn = state.spawn;
+  if (spawn) {
+    if (spawn.remain <= 0 || spawn.timer <= fixedDt) return 1;
+    safeFrames = Math.min(safeFrames, Math.max(1,Math.ceil(spawn.timer / fixedDt - 1e-9) - 1));
+  }
+
+  for (const monster of state.monsters) {
+    if (monster.hp <= 0 || monster.pathType !== "straight" || monster.stopped ||
+        monster.burnTime > 0 || monster.poisonTime > 0 || monster.freezeTime > 0 || monster.stunTime > 0 ||
+        monster.slowTime > 0 || monster.toxicTime > 0 || monster.vulnerable > 0 || monster.electricVulnerableTime > 0) return 1;
+    if (distSquared(origin,monster) <= attackRange * attackRange || (FIELD.attackLineY - monster.y) <= monster.range) return 1;
+    const speed = Math.max(0,monster.speed);
+    if (!speed) return 1;
+
+    const dx = Math.abs(monster.x - origin.x);
+    if (dx < attackRange) {
+      const targetY = origin.y - Math.sqrt(Math.max(0,attackRange * attackRange - dx * dx));
+      const targetFrames = Math.floor(Math.max(0,targetY - monster.y) / speed / fixedDt + 1e-9);
+      if (targetFrames <= 1) return 1;
+      safeFrames = Math.min(safeFrames,targetFrames);
+    }
+    const baseY = FIELD.attackLineY - monster.range;
+    const baseFrames = Math.floor(Math.max(0,baseY - monster.y) / speed / fixedDt + 1e-9);
+    if (baseFrames <= 1) return 1;
+    safeFrames = Math.min(safeFrames,baseFrames);
+  }
+  return Math.max(1,safeFrames);
 }
 
 function heroParam(hero, key, fallback) {
@@ -2595,10 +2801,13 @@ function updateHero(dt) {
   if (hero.cd > 0) return;
   const origin = fireOrigin();
   const range = heroParam(hero, "range", hero.range);
-  const targets = state.monsters
-    .map(monster => ({ monster, distance:dist(origin, monster) }))
-    .filter(item => item.monster.hp > 0 && item.distance <= range)
-    .sort((a,b) => b.monster.y - a.monster.y);
+  const targets = [];
+  for (const monster of state.monsters) {
+    if (monster.hp <= 0) continue;
+    const distance2 = distSquared(origin,monster);
+    if (distance2 <= range * range) targets.push({monster,distance:Math.sqrt(distance2)});
+  }
+  targets.sort((a,b) => b.monster.y - a.monster.y);
   if (!targets.length) return;
   const firstTarget = targets[0].monster;
   const shoulder = heroShoulderPosition(hero);
@@ -2649,7 +2858,7 @@ function updateZones(dt) {
     z.tickTimer = (z.tickTimer ?? 0) - dt;
     const tickCount = z.tickTimer <= 0 ? 1 + Math.floor(Math.abs(z.tickTimer) / tick) : 0;
     for (const m of state.monsters) {
-      if (dist(z, m) <= z.radius) {
+      if (distSquared(z,m) <= z.radius * z.radius) {
         if (tickCount > 0 && z.damage) damageEnemy(m, z.damage * tick * tickCount, z.tower);
         if (z.slow) {
           m.slowTime = Math.max(m.slowTime, z.slow);
@@ -2688,7 +2897,12 @@ function updateZones(dt) {
       m.y += (z.y - m.y) * control.pull * dt;
     }
   });
-  state.zones = state.zones.filter(z => z.time > 0);
+  let zoneWrite = 0;
+  for (let zoneRead=0; zoneRead<state.zones.length; zoneRead+=1) {
+    const zone = state.zones[zoneRead];
+    if (zone.time > 0) state.zones[zoneWrite++] = zone;
+  }
+  state.zones.length = zoneWrite;
 }
 
 function updateTowers(dt) {
@@ -2704,7 +2918,15 @@ function updateTowers(dt) {
 
 function findTargets(t) {
   const origin = fireOrigin();
-  return state.monsters.map(m => ({ m, d: dist(origin,m) })).filter(o => o.d <= scaledRange(t)).sort((a,b) => b.m.y - a.m.y);
+  const range = scaledRange(t);
+  const range2 = range * range;
+  const targets = [];
+  for (const monster of state.monsters) {
+    const distance2 = distSquared(origin,monster);
+    if (distance2 <= range2) targets.push({m:monster,d:Math.sqrt(distance2)});
+  }
+  targets.sort((a,b) => b.m.y - a.m.y);
+  return targets;
 }
 
 function attack(t) {
@@ -3434,10 +3656,10 @@ function showDamageNumber(m, amount, t, attrState=0) {
 }
 function nearestEnemy(point, radius = Infinity) {
   let best = null;
-  let bestD = radius;
+  let bestD2 = radius * radius;
   for (const m of state.monsters) {
-    const d = dist(point, m);
-    if (d <= bestD) { best = m; bestD = d; }
+    const d2 = distSquared(point,m);
+    if (d2 <= bestD2) { best = m; bestD2 = d2; }
   }
   return best;
 }
@@ -3449,22 +3671,28 @@ function enemiesNearLine(x1, y1, x2, y2, width) {
     const t = clamp(((m.x-x1)*dx + (m.y-y1)*dy) / len2, 0, 1);
     const px = x1 + dx*t;
     const py = y1 + dy*t;
-    return Math.hypot(m.x-px, m.y-py) <= width;
+    const offsetX = m.x - px;
+    const offsetY = m.y - py;
+    return offsetX * offsetX + offsetY * offsetY <= width * width;
   });
 }
 
 function updateProjectiles(dt) {
-  const alive = [];
-  for (const p of state.projectiles) {
+  const projectiles = state.projectiles;
+  let write = 0;
+  for (let read=0; read<projectiles.length; read+=1) {
+    const p = projectiles[read];
     const prev = { x: p.x, y: p.y };
     p.time -= dt;
-    p.spin += dt * 12;
+    if (!HEADLESS_SIM) p.spin += dt * 12;
     const done = p.time <= 0;
     const progress = clamp(1 - p.time / p.total, 0, 1);
     p.x = p.sx + (p.tx - p.sx) * progress;
     p.y = p.sy + (p.ty - p.sy) * progress;
-    if (p.type === "grenade") p.arc = Math.sin(progress * Math.PI) * 72;
-    else if (p.type === "hero_cloud") p.arc = Math.sin(progress * Math.PI) * 46;
+    if (!HEADLESS_SIM) {
+      if (p.type === "grenade") p.arc = Math.sin(progress * Math.PI) * 72;
+      else if (p.type === "hero_cloud") p.arc = Math.sin(progress * Math.PI) * 46;
+    }
     const hit = projectileCollision(p, prev, { x:p.x, y:p.y });
     if (hit) {
       p.collided = hit;
@@ -3474,9 +3702,9 @@ function updateProjectiles(dt) {
       p.ty = hit.y;
       projectileHit(p);
     } else if (done) projectileHit(p);
-    else alive.push(p);
+    else projectiles[write++] = p;
   }
-  state.projectiles = alive;
+  projectiles.length = write;
 }
 
 function projectileCollision(p, from, to) {
@@ -3485,10 +3713,20 @@ function projectileCollision(p, from, to) {
   const projectileRadius = p.type === "blade" ? 12
     : p.type === "hero_blast" || p.type === "hero_cloud" ? 11
       : isHeroProjectile ? 7 : p.type === "cryo" ? 7 : 5;
-  const hit = state.monsters
-    .filter(m => m.hp > 0 && distanceToSegment(m, from, to) <= projectileRadius + enemyHitRadius(m) + 2)
-    .sort((a,b) => dist(from, a) - dist(from, b))[0];
-  return hit || null;
+  let hit = null;
+  let hitDistance = Infinity;
+  for (const monster of state.monsters) {
+    const collisionRadius = projectileRadius + enemyHitRadius(monster) + 2;
+    if (monster.hp <= 0 || distanceToSegmentSquared(monster,from,to) > collisionRadius * collisionRadius) continue;
+    const dx = monster.x - from.x;
+    const dy = monster.y - from.y;
+    const distance = dx * dx + dy * dy;
+    if (distance < hitDistance) {
+      hit = monster;
+      hitDistance = distance;
+    }
+  }
+  return hit;
 }
 
 function enemyHitRadius(m) {
@@ -3497,11 +3735,16 @@ function enemyHitRadius(m) {
 }
 
 function distanceToSegment(point, from, to) {
+  return Math.sqrt(distanceToSegmentSquared(point,from,to));
+}
+function distanceToSegmentSquared(point, from, to) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const len2 = dx * dx + dy * dy || 1;
   const ratio = clamp(((point.x - from.x) * dx + (point.y - from.y) * dy) / len2, 0, 1);
-  return Math.hypot(point.x - (from.x + dx * ratio), point.y - (from.y + dy * ratio));
+  const offsetX = point.x - (from.x + dx * ratio);
+  const offsetY = point.y - (from.y + dy * ratio);
+  return offsetX * offsetX + offsetY * offsetY;
 }
 function updateEnemies(dt) {
   for (const m of state.monsters) {
@@ -3542,10 +3785,14 @@ function updateEnemies(dt) {
         m.stopped = true;
         m.atkCd -= dt;
         if (m.atkCd <= 0) {
-          state.hp -= m.atk;
+          state.hp = Math.max(0, state.hp - m.atk);
           m.atkCd = m.interval;
           effect("hitBase", {x:m.x,y:m.y,color:"#ff5d4f"}, {x:FIELD.pathX,y:FIELD.attackLineY});
           playSfx("baseHit");
+          if (state.hp <= 0) {
+            defeatRun();
+            break;
+          }
         }
       } else {
         const slow = m.slowTime > 0 ? 1 - clamp(m.slowPct || .45, 0, .9) : 1;
@@ -3558,22 +3805,24 @@ function updateEnemies(dt) {
       }
     }
   }
-  const alive = [];
-  for (const m of state.monsters) {
+  let monsterWrite = 0;
+  for (let monsterRead=0; monsterRead<state.monsters.length; monsterRead+=1) {
+    const m = state.monsters[monsterRead];
     if (m.hp <= 0) kill(m);
-    else alive.push(m);
+    else state.monsters[monsterWrite++] = m;
   }
-  state.monsters = alive;
-  if (certifiedMathEnabled() && state.mathTicket?.success && state.hp <= 0) state.hp = 1;
-  if (state.hp <= 0) {
-    state.hp = 0;
-    state.pot = 0;
-    state.certifiedPayout = 0;
-    failMathTicket();
-    stopChannelAudio();
-    playSfx("fail");
-    showResult("防線突破", "基地 HP 歸零，本局失敗，POT 歸零。");
-  }
+  state.monsters.length = monsterWrite;
+}
+
+function defeatRun() {
+  if (state.over) return;
+  state.hp = 0;
+  state.pot = 0;
+  state.certifiedPayout = 0;
+  failMathTicket();
+  stopChannelAudio();
+  playSfx("fail");
+  showResult("防線突破", "基地 HP 歸零，本局失敗，POT 歸零。");
 }
 
 function kill(m) {
@@ -3655,6 +3904,11 @@ function pulsePotMoney() {
 }
 
 function showBossReward(add, previousBet, nextBet) {
+  if (HEADLESS_SIM) {
+    state.bossAdd += add;
+    state.bossRoll = null;
+    return;
+  }
   playSfx("boss");
   const from = 1 + state.bossAdd;
   const to = 1 + state.bossAdd + add;
@@ -4486,7 +4740,14 @@ function effect(type, from, to, opts={}) {
   }
   state.effects.push({ type, x:from.x, y:from.y, tx:to.x, ty:to.y, color:from.color || "#fff", t:life, life, radius:opts.radius || 0, width:opts.width || 40, amount:opts.amount || 0, weak:!!opts.weak, chain: opts.chain ? opts.chain.map(m => ({x:m.x,y:m.y})) : [], text: opts.text });
 }
-function dist(a,b) { return Math.hypot(a.x-b.x, a.y-b.y); }
+function dist(a,b) {
+  return Math.sqrt(distSquared(a,b));
+}
+function distSquared(a,b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
 
 function draw() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -6250,7 +6511,7 @@ if (HEADLESS_SIM) {
       currentBet:currentBet(), payout:payout(),
     };
     if (includeBuild) {
-      value.mathTicket = state.mathTicket ? { wave:state.mathTicket.wave, clearChance:state.mathTicket.clearChance, success:state.mathTicket.success, result:state.mathTicket.result } : null;
+      value.mathTicket = state.mathTicket ? { wave:state.mathTicket.wave, clearChance:state.mathTicket.clearChance, result:state.mathTicket.result } : null;
       value.hero = state.hero ? { id:state.hero.heroId, name:state.hero.name, attrKey:state.hero.attrKey, level:state.hero.level, upgrades:state.hero.upgrades.slice() } : null;
       value.towers = state.towers.map(tower => ({ id:tower.id, name:tower.name, level:tower.level, upgrades:tower.upgrades.slice() }));
     }
@@ -6276,7 +6537,29 @@ if (HEADLESS_SIM) {
     update,
     stepFrames: count => {
       const frames = Math.max(1, Math.min(12, Math.round(Number(count) || 1)));
-      for (let frame=0; frame<frames; frame+=1) update(1 / 60);
+      const idleFrames = headlessIdleFrameSkip();
+      if (idleFrames > 1) {
+        update(idleFrames / 60);
+        return idleFrames;
+      }
+      let advanced = 0;
+      for (let frame=0; frame<frames; frame+=1) {
+        const before = {
+          bossSpawned:state.simBossSpawned || 0,
+          bossSeen:state.bossSeen,
+          bossRolling:!!state.bossRoll,
+          idle:!state.waveActive && !state.spawn && state.monsters.length === 0,
+        };
+        update(1 / 60);
+        advanced += 1;
+        const idle = !state.waveActive && !state.spawn && state.monsters.length === 0;
+        if (state.over || state.choicesOpen ||
+            (state.simBossSpawned || 0) !== before.bossSpawned ||
+            state.bossSeen !== before.bossSeen ||
+            !!state.bossRoll !== before.bossRolling ||
+            idle !== before.idle) break;
+      }
+      return advanced;
     },
     collect,
     canCollect,
