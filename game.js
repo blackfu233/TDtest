@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "battle-scale1";
+const BUILD_VERSION = "hero-opening1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1137,7 +1137,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 33,
+  balanceRevision: 34,
   mathModelEnabled: 1,
   mathTargetRtp: 1.0,
   mathTolerancePct: 1.0,
@@ -1148,6 +1148,7 @@ const DEFAULT_PARAMS = {
   mathLossSpeedMul: 1.12,
   mathMinClearChance: .18,
   mathMaxClearChance: .96,
+  mathFirstWaveClearChance: .985,
   mathClearBand1: .95,
   mathClearBand2: .88,
   mathClearBand3: .80,
@@ -1173,6 +1174,7 @@ const DEFAULT_PARAMS = {
   minionHpMul: 1.05,
   minionAtkMul: .82,
   minionSpeedMul: .90,
+  wave1MinionAtkMul: .55,
   eliteHpMul: 1.05,
   eliteAtkMul: 1.05,
   bossFirstHpMul: 1.22,
@@ -1225,8 +1227,9 @@ const DEFAULT_PARAMS = {
   heroSameAttrBonusPct: 15,
   heroResonanceBonusPct: 10,
   heroAllTowerBonusPct: 8,
-  heroDamageUpgradePct: 8,
-  heroRateUpgradePct: 6,
+  heroDamageUpgradePct: 12,
+  heroRateUpgradePct: 8,
+  heroFirstUpgradeQuantity: 1,
   heroQuantityUpgrade: 1,
   heroQuantityEveryLevels: 3,
   bossRollDuration: 4.8,
@@ -1277,6 +1280,7 @@ function cleanParams(input={}) {
   next.mathLossSpeedMul = Math.max(1, Math.min(1.25, next.mathLossSpeedMul));
   next.mathMinClearChance = Math.max(.01, Math.min(.99, next.mathMinClearChance));
   next.mathMaxClearChance = Math.max(next.mathMinClearChance, Math.min(.999, next.mathMaxClearChance));
+  next.mathFirstWaveClearChance = Math.max(.01, Math.min(.999, next.mathFirstWaveClearChance));
   ["mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
     .forEach(key => { next[key] = Math.max(.01, Math.min(.999, next[key])); });
   next.heroDamageMul = Math.max(0, next.heroDamageMul);
@@ -1285,6 +1289,7 @@ function cleanParams(input={}) {
   next.heroAllTowerBonusPct = Math.max(0, Math.min(100, next.heroAllTowerBonusPct));
   next.heroDamageUpgradePct = Math.max(0, Math.min(200, next.heroDamageUpgradePct));
   next.heroRateUpgradePct = Math.max(0, Math.min(200, next.heroRateUpgradePct));
+  next.heroFirstUpgradeQuantity = Math.max(0, Math.round(next.heroFirstUpgradeQuantity));
   next.heroQuantityUpgrade = Math.max(1, Math.round(next.heroQuantityUpgrade));
   next.heroQuantityEveryLevels = Math.max(1, Math.round(next.heroQuantityEveryLevels));
   next.bossRollDuration = Math.max(2.5, Math.min(8, next.bossRollDuration));
@@ -1306,6 +1311,7 @@ function cleanParams(input={}) {
     next[tier.speedKey] = Math.max(.1, next[tier.speedKey]);
   });
   next.spawnInterval = Math.max(.08, Math.min(2, next.spawnInterval));
+  next.wave1MinionAtkMul = Math.max(0, Math.min(2, next.wave1MinionAtkMul));
   next.baseHp = Math.max(1, Math.round(next.baseHp));
   if (next.tower_gas_duration <= 0) next.tower_gas_duration = DEFAULT_PARAMS.tower_gas_duration;
   if (next.tower_trap_duration <= 0) next.tower_trap_duration = DEFAULT_PARAMS.tower_trap_duration;
@@ -1496,6 +1502,11 @@ function migrateBossParams(input={}) {
     ["mathLossSpeedMul", "waveAttrBiasEarly", "waveAttrBias"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 33;
   }
+  if ((Number(input.balanceRevision) || 0) < 34) {
+    ["heroDamageUpgradePct", "heroRateUpgradePct", "heroFirstUpgradeQuantity", "wave1MinionAtkMul", "mathFirstWaveClearChance"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 34;
+  }
   return next;
 }
 
@@ -1674,7 +1685,10 @@ function mathBaseClearChance(wave) {
 }
 
 function mathBuildPower(boss=false) {
-  if (!state.towers.length) return .5;
+  if (!state.towers.length) {
+    const heroRanks = state.hero?.triadRanks || 0;
+    return .72 + Math.min(.28, heroRanks * .22);
+  }
   const key = boss ? "boss" : "minion";
   const roleAverage = state.towers.reduce((sum, tower) => sum + (MATH_TOWER_POWER[tower.id]?.[key] || 1), 0) / state.towers.length;
   const slotFactor = .82 + Math.min(3, state.towers.length - 1) * .10;
@@ -1687,6 +1701,7 @@ function mathBuildPower(boss=false) {
 }
 
 function mathClearChance(wave, boss=false, difficulty=null) {
+  if (wave === 1 && !boss) return paramNumber("mathFirstWaveClearChance", .985);
   const base = mathBaseClearChance(wave);
   const buildShift = (mathBuildPower(boss) - 1) * paramNumber("mathBuildInfluence", .22);
   const difficultyShift = boss ? ({ easy:.08, normal:0, hard:-.08, brutal:-.16 }[difficulty?.id] || 0) : 0;
@@ -2033,7 +2048,7 @@ function showChoices(title, hint, choices, options={}) {
       : "";
     const impact = choice.impact || choice.effect || choice.desc || "";
     const compactImpact = cardType === "hero-upgrade"
-      ? "角色三維同步提升"
+      ? compactChoiceText(impact, 22)
       : compactChoiceText(impact, cardType === "tower-synergy" ? 18 : 22);
     const statVisual = statUpgradeVisual(dimension, impact);
     const statHtml = cardType === "tower-stat"
@@ -2475,7 +2490,8 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   const lossSpeedMul = lossPressure ? clamp(paramNumber("mathLossSpeedMul", 1.12), 1, 1.25) : 1;
   const hp = Math.round(tunedBase.hp * hpMul * classHpMul * difficultyHpMul * lossHpMul);
   const legacyAtkMul = base.enemyAttr ? 1 : ({ normal:.25, fast:.27, tank:.28, ranged:.30, special:.33 }[kind] || .3);
-  const atk = Math.max(1, Math.round(tunedBase.atk * legacyAtkMul * classAtkMul * difficultyAtkMul * lossAtkMul));
+  const openingAtkMul = !elite && !boss && state.wave === 1 ? paramNumber("wave1MinionAtkMul", .55) : 1;
+  const atk = Math.max(1, Math.round(tunedBase.atk * legacyAtkMul * classAtkMul * difficultyAtkMul * lossAtkMul * openingAtkMul));
   const legacySpeedMul = base.enemyAttr ? 1 : ({ normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 }[kind] || .72);
   const rawSpeed = tunedBase.speed * legacySpeedMul * classSpeedMul * difficultySpeedMul * lossSpeedMul;
   const speedCap = boss ? (primaryAttr === "electric" ? 34 : 30) : elite ? (primaryAttr === "electric" ? 48 : 40) : (primaryAttr === "electric" ? 54 : 46);
@@ -3381,7 +3397,7 @@ function projectileCollision(p, from, to) {
 }
 
 function enemyHitRadius(m) {
-  const size = m.boss ? 44 : m.elite ? 32 : (m.size || 14);
+  const size = Math.max(12, m.size || (m.boss ? 46 : m.elite ? 30 : 14));
   return Math.max(6, size * .5);
 }
 
@@ -3812,13 +3828,16 @@ function collectHeroUpgradeCandidates() {
   }
   const every = Math.max(1, params.heroQuantityEveryLevels || 3);
   const nextRank = (hero.triadRanks || 0) + 1;
-  const quantityText = nextRank % every === 0
-    ? `彈體+${params.heroQuantityUpgrade}`
+  const firstQuantity = nextRank === 1 ? Math.max(0, params.heroFirstUpgradeQuantity || 0) : 0;
+  const periodicQuantity = nextRank % every === 0 ? Math.max(0, params.heroQuantityUpgrade || 0) : 0;
+  const quantityGain = firstQuantity + periodicQuantity;
+  const quantityText = quantityGain > 0
+    ? `彈體+${quantityGain}`
     : `彈體進度 ${nextRank % every}/${every}`;
   const upgrade = {
     name:`角色升等 Lv.${nextLevel}`,
-    desc:"角色三維同步小幅提升",
-    effect:"角色三維同步提升",
+    desc:"角色三維同步提升",
+    effect:quantityGain > 0 ? `傷害 ▲　攻速 ▲　彈體 +${quantityGain}` : "傷害 ▲　攻速 ▲",
     detail:`傷害+${params.heroDamageUpgradePct}%｜攻速+${params.heroRateUpgradePct}%｜${quantityText}`,
     key:"triad",
     dimension:"hero",
@@ -4004,6 +4023,9 @@ function applyHeroUpgrade(hero, up) {
     hero.triadRanks = (hero.triadRanks || 0) + 1;
     hero.damageMul *= 1 + params.heroDamageUpgradePct / 100;
     hero.rateMul *= 1 + params.heroRateUpgradePct / 100;
+    if (hero.triadRanks === 1) {
+      hero.extraShots += Math.max(0, Math.round(params.heroFirstUpgradeQuantity || 0));
+    }
     if (hero.triadRanks % Math.max(1, params.heroQuantityEveryLevels || 3) === 0) {
       hero.extraShots += params.heroQuantityUpgrade;
     }
@@ -5194,14 +5216,14 @@ function renderAttributeCanvas(canvasEl, attr, boss=false) {
 }
 
 function drawEnemyAttributeMarker(m, size) {
-  const entries = Object.entries(m.attrMultipliers || {});
-  const weak = entries.reduce((best, entry) => !best || entry[1] > best[1] ? entry : best, null);
-  if (!weak || weak[0] === "neutral" || weak[1] <= 1.001) return;
-  const display = ATTRIBUTE_DISPLAY[weak[0]] || ATTRIBUTE_DISPLAY.neutral;
+  const attr = m.enemyAttr || m.primaryAttr || "neutral";
+  if (attr === "neutral") return;
+  const display = ATTRIBUTE_DISPLAY[attr] || ATTRIBUTE_DISPLAY.neutral;
   const baseSize = Math.max(12, m.size || (m.boss ? 46 : m.elite ? 30 : 14));
   const scale = clamp(size / Math.max(1, baseSize), .55, 1);
-  const radius = (m.boss ? 11 : m.elite ? 9.5 : 8) * scale;
-  const x = m.x - size / 2 - radius + 1;
+  const radius = (m.boss ? 12 : m.elite ? 10 : 8.5) * scale;
+  const visualFactor = m.boss ? 3.10 : m.elite ? 3.04 : 3.12;
+  const x = m.x - size * visualFactor * .42 - radius * .35;
   const y = m.y;
   ctx.save();
   ctx.fillStyle = "rgba(8, 12, 18, .88)";
@@ -5211,7 +5233,7 @@ function drawEnemyAttributeMarker(m, size) {
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  drawAttributeGlyph(ctx, weak[0], x, y, radius * .58, display.color);
+  drawAttributeGlyph(ctx, attr, x, y, radius * .58, display.color);
   ctx.restore();
 }
 
