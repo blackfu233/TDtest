@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "visual-art1";
+const BUILD_VERSION = "card-ui2";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1700,11 +1700,63 @@ const CHOICE_CARD_TYPES = {
   "hero-pick": { label:"角色", mark:"★" },
   "hero-upgrade": { label:"角色升級", mark:"↑" },
   "new-tower": { label:"新砲台", mark:"＋" },
-  "tower-stat": { label:"砲台強化", mark:"▲" },
-  "tower-core": { label:"核心進化", mark:"◆" },
-  "tower-synergy": { label:"組合連動", mark:"∞" },
+  "tower-stat": { label:"三維強化", mark:"▲" },
+  "tower-core": { label:"核心解鎖", mark:"◆" },
+  "tower-synergy": { label:"連動組合", mark:"∞" },
   "hero-skill": { label:"角色技能", mark:"✦" },
 };
+
+const UPGRADE_EFFECT_BADGES = [
+  [/燃燒/, "燃", "燃燒"], [/凍結|冰凍/, "冰", "凍結"], [/緩速/, "緩", "緩速"],
+  [/中毒|毒傷/, "毒", "中毒"], [/麻痺|感電/, "電", "麻痺"], [/爆炸|爆裂/, "爆", "爆炸"],
+  [/穿透/, "穿", "穿透"], [/彈跳|連鎖/, "鏈", "連鎖"], [/牽引/, "引", "牽引"],
+  [/額外|\+1/, "+", "額外"], [/範圍|區域/, "圈", "範圍"], [/持續|延長/, "時", "持續"],
+  [/攻速|Tick速度|裝填/, "速", "攻速"], [/傷害/, "傷", "傷害"],
+];
+
+function compactChoiceText(text, max=22) {
+  const clean = String(text || "")
+    .replace(/攻擊速度/g, "攻速")
+    .replace(/持續時間/g, "持續")
+    .replace(/額外投射物/g, "彈體")
+    .replace(/命中後/g, "命中")
+    .replace(/持續/g, "持續")
+    .replace(/[。；]/g, "｜")
+    .replace(/，/g, "·")
+    .replace(/\s+/g, " ")
+    .trim();
+  const parts = clean.split("｜").filter(Boolean).slice(0, 2).join(" · ");
+  return parts.length > max ? `${parts.slice(0, max - 1)}…` : parts;
+}
+
+function statUpgradeVisual(dimension, text) {
+  const source = String(text || "");
+  const value = source.match(/[+＋-]\d+(?:\.\d+)?%?/)?.[0]?.replace("＋", "+") || "UP";
+  const label = dimension === "damage" ? "傷害"
+    : dimension === "speed" ? (/Tick/.test(source) ? "Tick" : /裝填|冷卻/.test(source) ? "冷卻" : "攻速")
+    : /彈跳|連鎖/.test(source) ? "彈跳"
+    : /穿透/.test(source) ? "穿透"
+    : /陷阱/.test(source) ? "陷阱"
+    : "數量";
+  const icon = dimension === "damage" ? "✦" : dimension === "speed" ? "»" : "+";
+  return { value, label, icon };
+}
+
+function effectBadgeHtml(text, limit=2) {
+  const matches = [];
+  UPGRADE_EFFECT_BADGES.forEach(([pattern, icon, label]) => {
+    if (matches.length < limit && pattern.test(text) && !matches.some(item => item.label === label)) {
+      matches.push({ icon, label });
+    }
+  });
+  if (!matches.length) matches.push({ icon:"◆", label:"新機制" });
+  return matches.map(item => `<span class="effect-chip"><i>${item.icon}</i><b>${item.label}</b></span>`).join("");
+}
+
+function compactRequirement(text) {
+  const clean = String(text || "跨塔能力").replace(/^前置已解鎖：/, "").replace(/｜.*$/, "").trim();
+  return clean.length > 8 ? `${clean.slice(0, 7)}…` : clean;
+}
 
 function showChoices(title, hint, choices, options={}) {
   stopChannelAudio();
@@ -1745,7 +1797,23 @@ function showChoices(title, hint, choices, options={}) {
       ? `<span class="hero-buff-visual"><span class="hero-effect"><i class="hero-effect-icon attack"></i><span><small>攻擊</small><b>${choice.attackTrait}</b></span></span><span class="hero-effect"><i class="hero-effect-icon tower"></i><span><small>同屬塔</small><b>+${params.heroSameAttrBonusPct}%</b></span></span></span>`
       : "";
     const impact = choice.impact || choice.effect || choice.desc || "";
-    btn.innerHTML = `${iconHtml}<span class="choice-copy"><span class="choice-category"><i>${cardTypeInfo.mark}</i>${cardTypeInfo.label}</span><span class="choice-name">${choice.title}</span><span class="choice-impact">${impact}</span><span class="choice-sub">${choice.tag || choice.rarityLabel || rarityLabel(rarity)}</span>${heroBuffHtml}</span>`;
+    const compactImpact = cardType === "hero-upgrade"
+      ? "角色三維同步提升"
+      : compactChoiceText(impact, cardType === "tower-synergy" ? 18 : 22);
+    const statVisual = statUpgradeVisual(dimension, impact);
+    const statHtml = cardType === "tower-stat"
+      ? `<span class="choice-stat-readout" aria-hidden="true"><b>${statVisual.label}</b><i>▲</i></span>`
+      : "";
+    const coreHtml = cardType === "tower-core"
+      ? `<span class="choice-effect-chips" aria-hidden="true">${effectBadgeHtml(impact)}</span>`
+      : "";
+    const synergyHtml = cardType === "tower-synergy"
+      ? `<span class="synergy-route" aria-hidden="true"><span class="route-node tower-node">${(ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).label}</span><b>＋</b><span class="route-node skill-node">${compactRequirement(choice.requirementLabel)}</span><b>→</b><span class="route-result">∞</span></span>`
+      : "";
+    const categoryHtml = `<span class="choice-category"><i>${cardTypeInfo.mark}</i>${cardTypeInfo.label}</span>`;
+    btn.innerHTML = `${iconHtml}<span class="choice-copy">${categoryHtml}<span class="choice-name">${choice.title}</span><span class="choice-impact">${compactImpact}</span><span class="choice-sub">${choice.tag || choice.rarityLabel || rarityLabel(rarity)}</span>${coreHtml}${synergyHtml}${heroBuffHtml}</span>${statHtml}`;
+    btn.setAttribute("aria-label", `${cardTypeInfo.label} ${choice.title} ${impact} ${choice.tag || ""}`.trim());
+    btn.title = choice.desc || impact;
     btn.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
@@ -3364,7 +3432,7 @@ function openUpgradeChoices(choiceCount, rerollUsed) {
   const rerollFactory = () => openUpgradeChoices(4, true);
   showChoices(
     rerollUsed ? "四選一" : "三選一",
-    rerollUsed ? "已支付一個 BET，本次從四個新選項擇一。" : "角色升等、新砲台或砲台五維強化。",
+    rerollUsed ? "已支付一個 BET，從四張新卡擇一。" : "看圖示選擇這次強化。",
     choices,
     { kind:"upgrade", rerollUsed, rerollFactory }
   );
@@ -3407,6 +3475,7 @@ function buildUpgradeChoices(choiceCount) {
       attrKey: picked.tower ? towerAttr(picked.tower) : picked.hero.attrKey,
       rarity: picked.rarity,
       dimension: picked.dimension,
+      requirementLabel: required ? upgradeRequirementLabel(required) : "跨塔能力",
       visualStage: picked.hero && picked.up.milestoneLevel
         ? (picked.up.milestoneLevel >= HERO_SKILL_LEVELS[2] ? 3 : 2)
         : undefined,
@@ -3485,7 +3554,8 @@ function collectHeroUpgradeCandidates() {
   const upgrade = {
     name:`角色升等 Lv.${nextLevel}`,
     desc:"角色三維同步小幅提升",
-    effect:`傷害+${params.heroDamageUpgradePct}%｜攻速+${params.heroRateUpgradePct}%｜${quantityText}`,
+    effect:"角色三維同步提升",
+    detail:`傷害+${params.heroDamageUpgradePct}%｜攻速+${params.heroRateUpgradePct}%｜${quantityText}`,
     key:"triad",
     dimension:"hero",
     rowIndex:nextLevel,
