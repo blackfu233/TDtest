@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "card-ui2";
+const BUILD_VERSION = "five-dim1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -106,7 +106,7 @@ const ui = {
 const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
 const SPEED_STEPS = [1, 2, 3];
 const SOUND_STORAGE_KEY = "towerDefenseSoundMuted.v1";
-const FIELD = { w: 350, h: 760, pathX: 175, spawnY: -18, baseY: 720, attackLineY: 720 };
+const FIELD = { w: 350, h: 760, pathX: 175, spawnY: -18, baseY: 720, attackLineY: 596 };
 const TOWER_SLOTS = [{ x: 44, y: 700 }, { x: 131, y: 682 }, { x: 219, y: 682 }, { x: 306, y: 700 }];
 const EXP_TABLE = [95,125,155,190,225,290,330,370,415,460,510,565,625,690,760,835,915,1000,1090,1185,1285,1390,1500,1615,1735,1860,1990,2125,2265,2410,2560,2715,2875,3040,3210,3385,3565,3750,3940];
 
@@ -446,7 +446,7 @@ const TOWERS = [
 
 const POISON_SOURCE_UPGRADES = ["神經毒素", "腐蝕毒霧", "毒爆榴彈", "毒刃穿刺", "毒化陷阱"];
 
-const UPGRADE_REQUIREMENTS = {
+const LEGACY_UPGRADE_REQUIREMENTS = {
   "燃燒強化": "燃料附著",
   "延時燃燒": "燃料附著",
   "燃燒加劇": "凝固汽油彈",
@@ -493,7 +493,7 @@ const UPGRADE_REQUIREMENTS = {
   "毒化陷阱": "腐蝕毒霧",
 };
 
-const UPGRADE_ROWS = [
+const LEGACY_UPGRADE_ROWS = [
   [["燃壓提升","傷害+","傷害+35%"],["強力裝藥","傷害+","傷害+35%"],["冰核強化","傷害+","傷害+35%"],["冰晶加壓","傷害+","傷害+30%"],["聚焦增幅","傷害+","每段傷害+30%"],["高壓電芯","傷害+","傷害+35%"],["腐蝕升級","傷害+","每段傷害+35%"],["毒針強化","傷害+","傷害+30%"],["鋒刃加固","傷害+","傷害+40%"],["戰術強化","傷害+","傷害+30%"]],
   [["高效供油","時間+","持續時間+50%"],["巨型彈體","範圍+","範圍+25%"],["精準校正","攻速+","攻速+25%"],["擴散凍爆","範圍+","範圍+25%"],["超頻發射","攻速+","Tick速度+25%"],["額外鏈接","額外攻擊","額外閃電鏈+1"],["擴散氣囊","範圍+","範圍+25%"],["疾速連射","攻速+","攻速+25%"],["高速驅動","攻速+","攻速+25%"],["觸發增幅","範圍+","範圍+25%"]],
   [["擴散噴口","範圍+","範圍+25%"],["快速裝填","額外爆炸","爆點+1"],["多重槍管","子彈+1","額外子彈+1"],["急速投擲","攻速+","攻速+20%"],["延伸透鏡","持續時間+","持續時間+50%"],["彈跳目標","彈跳目標+","彈掉目標+3"],["快速裝填","攻速+","攻速+20%"],["擴散爆裂","範圍+","爆炸範圍+25%"],["巨大鋒刃","範圍+","攻擊範圍+25%"],["快速部署","攻速+","布置速度+20%"]],
@@ -506,16 +506,87 @@ const UPGRADE_ROWS = [
   [["毒焰","對中毒敵人造成額外傷害","若敵人中毒，噴火傷害+20%"],["毒爆榴彈","燃燒區域中的敵人中毒","燃燒區域中的敵人附加中毒效果，持續2S"],["碎晶穿透","擊中目標後分裂冰晶碎片","擊中第一個目標後分裂2枚冰晶碎片，造成40%傷害"],["寒爆壓制","凍結結束後減速","敵人凍結結束後，額外緩速20%，持續1S"],["導電標記","雷射命中增傷","被雷射命中的敵人受到閃電傷害+20%，持續2S"],["電毒擴散","中毒的敵人被擊中額外電流","中毒的敵人被電擊時，放出一條電流造成50%傷害"],null,["碎毒穿刺","凍結敵人命中增傷","凍結中的敵人被毒針命中時，爆裂傷害+30%"],["毒刃穿刺","造成命中中毒","被迴旋刃命中的敵人造成中毒，持續1S"],["毒化陷阱","陷阱觸發後留下毒霧區域","陷阱觸發後留下毒霧區域造成毒傷，持續2S"]],
 ];
 
-const CORE_UPGRADE_NAMES = new Set(
-  UPGRADE_ROWS[4].filter(Boolean).map(upgrade => upgrade[0])
-);
-const ADVANCED_UPGRADE_NAMES = new Set(
-  UPGRADE_ROWS.slice(4, 7).flat().filter(Boolean).map(upgrade => upgrade[0])
-);
-const SYNERGY_UPGRADE_NAMES = new Set([
-  ...UPGRADE_ROWS.slice(7).flat().filter(Boolean).map(upgrade => upgrade[0]),
-  ...Object.keys(UPGRADE_REQUIREMENTS),
-]);
+const UPGRADE_REQUIREMENTS = {
+  "霜火噴流":"寒霜領域",
+  "毒爆榴彈":"腐蝕毒霧",
+  "導電冰彈":"麻痺磁場",
+  "碎冰狙爆":"極寒標記",
+  "電磁折射":"麻痺磁場",
+  "聚焦導流":"聚焦鎖定",
+  "劇毒燃爆":"灼燒地帶",
+  "寒毒爆發":"寒霜領域",
+  "淬毒旋刃":"神經毒素",
+  "電磁陷阱":"麻痺磁場",
+};
+
+// Every tower exposes the same five readable dimensions while preserving its role.
+// [0] damage, [1] speed, [2] quantity, [3] core, [4] cross-tower synergy.
+const UPGRADE_ROWS = [
+  [
+    ["高壓燃料","傷害","傷害+25%","damage"],
+    ["高爆裝藥","傷害","傷害+25%","damage"],
+    ["精準校正","傷害","傷害+25%","damage"],
+    ["冰晶加壓","傷害","傷害+25%","damage"],
+    ["聚焦增幅","傷害","每段傷害+25%","damage"],
+    ["高壓電芯","傷害","傷害+25%","damage"],
+    ["腐蝕配方","傷害","每段傷害+25%","damage"],
+    ["毒針強化","傷害","傷害+25%","damage"],
+    ["鋒刃加固","傷害","傷害+25%","damage"],
+    ["戰術彈頭","傷害","傷害+25%","damage"],
+  ],
+  [
+    ["快速增壓","攻速","攻速+15%","speed"],
+    ["自動裝填","攻速","攻速+15%","speed"],
+    ["快速拉栓","攻速","攻速+15%","speed"],
+    ["急速投擲","攻速","攻速+15%","speed"],
+    ["超頻發射","攻速","攻速+15%","speed"],
+    ["快速充能","攻速","攻速+15%","speed"],
+    ["快速裝填","攻速","攻速+15%","speed"],
+    ["疾速連射","攻速","攻速+15%","speed"],
+    ["高速驅動","攻速","攻速+15%","speed"],
+    ["快速部署","攻速","攻速+15%","speed"],
+  ],
+  [
+    ["雙焰噴口","數量","額外火焰+1","quantity"],
+    ["雙發榴彈","數量","爆點+1","quantity"],
+    ["多重槍管","數量","額外子彈+1","quantity"],
+    ["多重冰爆","數量","額外冰晶彈+1","quantity"],
+    ["折射透鏡","數量","額外目標+1","quantity"],
+    ["額外電鏈","數量","額外閃電鏈+1","quantity"],
+    ["多重毒霧","數量","額外毒氣彈+1","quantity"],
+    ["追加毒針","數量","額外毒針+1","quantity"],
+    ["追加飛刃","數量","額外斬擊+1","quantity"],
+    ["追加模組","數量","額外陷阱+1","quantity"],
+  ],
+  [
+    ["灼燒地帶","核心","噴流命中留下燃燒區域","core"],
+    ["焦土彈","核心","爆炸留下燃燒區域","core"],
+    ["極寒標記","核心","命中緩速並凍結首要目標","core"],
+    ["寒霜領域","核心","冰爆留下緩速冰痕","core"],
+    ["聚焦鎖定","核心","持續鎖定提高傷害","core"],
+    ["麻痺磁場","核心","電鏈麻痺並傷害路徑敵人","core"],
+    ["腐蝕毒霧","核心","毒霧造成中毒與易傷","core"],
+    ["神經毒素","核心","命中疊加持續毒傷","core"],
+    ["迴旋飛刃","核心","命中後彈射額外飛刃","core"],
+    ["牽引核心","核心","陷阱定身並牽引敵人","core"],
+  ],
+  [
+    ["霜火噴流","連動","對凍結目標增傷","synergy"],
+    ["毒爆榴彈","連動","焦土區附加毒霧","synergy"],
+    ["導電冰彈","連動","冰彈附加導電標記","synergy"],
+    ["碎冰狙爆","連動","凍結目標碎裂冰晶","synergy"],
+    ["電磁折射","連動","雷射標記提高電屬傷害","synergy"],
+    ["聚焦導流","連動","電鏈追擊聚焦目標","synergy"],
+    ["劇毒燃爆","連動","對燃燒目標大幅增傷","synergy"],
+    ["寒毒爆發","連動","對凍結目標提高毒傷","synergy"],
+    ["淬毒旋刃","連動","飛刃命中附加中毒","synergy"],
+    ["電磁陷阱","連動","陷阱留下麻痺區域","synergy"],
+  ],
+];
+
+const CORE_UPGRADE_NAMES = new Set(UPGRADE_ROWS[3].map(upgrade => upgrade[0]));
+const ADVANCED_UPGRADE_NAMES = new Set(CORE_UPGRADE_NAMES);
+const SYNERGY_UPGRADE_NAMES = new Set(UPGRADE_ROWS[4].map(upgrade => upgrade[0]));
 
 const MONSTERS = {
   normal: { name:"普通怪", hp:300, speed:60, range:0, atk:20, interval:1.5, exp:10, money:[1,3], color:"#6d7a91", size:14, shape:"square" },
@@ -763,7 +834,7 @@ function upgradeDefaultParams() {
   };
 }
 
-const UPGRADE_VALUE_DEFS = {
+const LEGACY_UPGRADE_VALUE_DEFS = {
   flame: [
     [{ key:"damagePct", value:35 }],
     [{ key:"durationPct", value:50 }],
@@ -886,6 +957,79 @@ const UPGRADE_VALUE_DEFS = {
   ],
 };
 
+const UPGRADE_VALUE_DEFS = {
+  flame: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"burnDps", value:18 }, { key:"burnTime", value:2 }, { key:"burnAreaDps", value:24 }, { key:"burnAreaTime", value:2 }],
+    [{ key:"frozenTargetDamagePct", value:45 }],
+  ],
+  grenade: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraAreas", value:1 }],
+    [{ key:"burnAreaDps", value:30 }, { key:"burnAreaTime", value:2 }],
+    [{ key:"zonePoisonDps", value:25 }, { key:"zonePoisonTime", value:2 }],
+  ],
+  cryo: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraProjectiles", value:1 }],
+    [{ key:"slowPct", value:25 }, { key:"slowTime", value:2 }, { key:"freezeTime", value:.65 }],
+    [{ key:"electricVulnerablePct", value:18 }, { key:"electricVulnerableTime", value:2 }],
+  ],
+  frostbomb: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"iceTrailSlowPct", value:18 }, { key:"iceTrailTime", value:2 }],
+    [{ key:"shardCount", value:3 }, { key:"shardDamagePct", value:30 }],
+  ],
+  laser: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraLaserTargets", value:1 }],
+    [{ key:"focusDelay", value:1 }, { key:"focusDamagePct", value:25 }],
+    [{ key:"electricVulnerablePct", value:20 }, { key:"electricVulnerableTime", value:2 }],
+  ],
+  chain: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraChainCasts", value:1 }],
+    [{ key:"stunTime", value:.22 }, { key:"pathDamage", value:42 }],
+    [{ key:"focusConduit", value:1 }],
+  ],
+  gas: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"poisonTick", value:.5 }, { key:"poisonDps", value:22 }, { key:"poisonTime", value:2 }, { key:"vulnerablePct", value:12 }],
+    [{ key:"burningTargetDamagePct", value:60 }],
+  ],
+  needle: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"poisonTick", value:.5 }, { key:"poisonDps", value:25 }, { key:"poisonTime", value:2 }],
+    [{ key:"frozenTargetDamagePct", value:40 }],
+  ],
+  blade: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"ricochetChancePct", value:48 }, { key:"ricochetDamagePct", value:55 }],
+    [{ key:"poisonTick", value:.5 }, { key:"poisonDps", value:22 }, { key:"poisonTime", value:1.5 }],
+  ],
+  trap: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"rootTime", value:.35 }, { key:"pullStrengthPct", value:65 }],
+    [{ key:"zoneStunTime", value:.22 }, { key:"zoneTime", value:2 }],
+  ],
+};
+
 function upgradeValueDefaultParams() {
   const result = {};
   TOWER_PARAM_IDS.forEach(towerId => {
@@ -914,7 +1058,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 31,
+  balanceRevision: 32,
   mathModelEnabled: 1,
   mathTargetRtp: 1.0,
   mathTolerancePct: 1.0,
@@ -1263,6 +1407,11 @@ function migrateBossParams(input={}) {
     ["heroDamageUpgradePct", "heroRateUpgradePct", "heroQuantityUpgrade", "heroQuantityEveryLevels"]
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 31;
+  }
+  if ((Number(input.balanceRevision) || 0) < 32) {
+    Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("upgradeVal_"))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 32;
   }
   return next;
 }
@@ -1983,7 +2132,6 @@ const towerIconCache = new Map();
 const heroIconCache = new Map();
 function heroIconDataUrl(hero) {
   if (!hero) return "";
-  return heroSpritePath(hero);
   const key = hero.heroId || hero.id;
   if (heroIconCache.has(key)) return heroIconCache.get(key);
   const iconCanvas = document.createElement("canvas");
@@ -2060,7 +2208,6 @@ function heroIconDataUrl(hero) {
 }
 function towerIconDataUrl(tower) {
   if (!tower) return "";
-  return towerSpritePath(tower);
   if (towerIconCache.has(tower.id)) return towerIconCache.get(tower.id);
   const iconCanvas = document.createElement("canvas");
   iconCanvas.width = 96;
@@ -2436,7 +2583,7 @@ function channelDuration(t) {
 }
 function channelCooldown(t) {
   const fallback = t.mode === "flame" ? 2.0 : t.mode === "laser" ? 2.5 : attackCooldown(t);
-  return towerParam(t, "cooldown", fallback);
+  return towerParam(t, "cooldown", fallback) / Math.max(.25, towerUpgradeRatio(t, "rate"));
 }
 function zoneDuration(t, fallback) {
   return Math.max(0, towerParam(t, "duration", fallback)) * (t.zoneDurationMul || t.durationMul || 1);
@@ -2472,6 +2619,7 @@ function startChannel(t, primary) {
     aimAngle: Math.atan2(primary.y - origin.y, primary.x - origin.x),
     burstTargets: new Set(),
     refractTarget: null,
+    refractTargets: [],
     audioStop: startChannelAudio(t.mode)
   };
   t.cd = 0;
@@ -2489,6 +2637,7 @@ function updateChannel(t, dt) {
     if (target !== c.target) {
       c.lockElapsed = 0;
       c.refractTarget = null;
+      c.refractTargets = [];
     }
     c.target = target;
   }
@@ -2562,6 +2711,10 @@ function pierce(t, targets, type, from = fireOrigin(), showEffect = true) {
       o.m.slowPct = Math.max(o.m.slowPct || 0, t.slow || .25);
     }
     if (t.freeze && i === 0) applyHardControl(o.m, "freezeTime", towerFreezeTime(t));
+    if (t.conductiveHit && t.electricVulnerablePct) {
+      o.m.electricVulnerableAmount = Math.max(o.m.electricVulnerableAmount || 0, t.electricVulnerablePct / 100);
+      o.m.electricVulnerableTime = Math.max(o.m.electricVulnerableTime || 0, t.electricVulnerableTime || 2);
+    }
   });
   if (t.trailTime && targets[0]) addLineSlowZones(t, from, targets[0].m);
   if (t.shardCount && targets[0]) scatterShards(t, targets[0].m, targets.map(o => o.m));
@@ -2573,17 +2726,21 @@ function laser(t, primary, targets, channel=null) {
   const bonus = focused ? 1 + ((t.focusDamagePct || 20) / 100)*t.focusMul : 1;
   damageEnemy(primary, scaledDamage(t)*bonus, t);
   if (focused) primary.focusMarkTime = Math.max(primary.focusMarkTime || 0, 2);
-  if (channel) channel.refractTarget = null;
-  if (t.refract) {
-    const next = targets.find(o => o.m !== primary)?.m;
-    if (next) {
+  if (channel) { channel.refractTarget = null; channel.refractTargets = []; }
+  if (t.refract || (t.extraLaserTargets || 0) > 0) {
+    const secondaryTargets = targets
+      .filter(o => o.m !== primary && o.m.hp > 0)
+      .slice(0, Math.max(1, t.extraLaserTargets || 1))
+      .map(o => o.m);
+    secondaryTargets.forEach(next => {
       const refractFocus = focused && t.refractFocusPct
         ? 1 + ((t.focusDamagePct || 20) / 100) * t.focusMul * (t.refractFocusPct / 100)
         : 1;
       damageEnemy(next, scaledDamage(t)*((t.refractDamagePct || 55) / 100)*refractFocus, t);
       if (focused && t.refractFocusPct) next.focusMarkTime = Math.max(next.focusMarkTime || 0, 2);
-      if (channel) channel.refractTarget = next;
-    }
+      if (channel) channel.refractTargets.push(next);
+    });
+    if (channel) channel.refractTarget = channel.refractTargets[0] || null;
   }
   if (channel && t.focusedBurstDamagePct && channel.lockElapsed >= 1 && !channel.burstTargets.has(primary)) {
     channel.burstTargets.add(primary);
@@ -3162,14 +3319,14 @@ function updateEnemies(dt) {
     }
     else if (m.stunTime > 0) { m.stunTime -= dt; }
     else {
-      const inRange = (FIELD.baseY - m.y) <= m.range || m.y >= FIELD.baseY;
+      const inRange = (FIELD.attackLineY - m.y) <= m.range || m.y >= FIELD.attackLineY;
       if (inRange) {
         m.stopped = true;
         m.atkCd -= dt;
         if (m.atkCd <= 0) {
           state.hp -= m.atk;
           m.atkCd = m.interval;
-          effect("hitBase", {x:m.x,y:m.y,color:"#ff5d4f"}, {x:FIELD.pathX,y:FIELD.baseY});
+          effect("hitBase", {x:m.x,y:m.y,color:"#ff5d4f"}, {x:FIELD.pathX,y:FIELD.attackLineY});
           playSfx("baseHit");
         }
       } else {
@@ -3503,7 +3660,7 @@ function nextUpgrade(tower, offset = 0) {
   const row = UPGRADE_ROWS[taken % UPGRADE_ROWS.length];
   const data = row[idx];
   if (!data) return null;
-  const up = { name:data[0], desc:data[1], effect:data[2], rowIndex:taken };
+  const up = { name:data[0], desc:data[1], effect:data[2], dimension:data[3], rowIndex:taken };
   if (!upgradeAvailable(tower, up)) return null;
   return up;
 }
@@ -3515,7 +3672,7 @@ function collectUpgradeCandidates() {
     UPGRADE_ROWS.forEach((row, rowIndex) => {
       const data = row[idx];
       if (!data) return;
-      const up = { name:data[0], desc:data[1], effect:data[2], rowIndex };
+      const up = { name:data[0], desc:data[1], effect:data[2], dimension:data[3], rowIndex };
       const hasRequirement = !!UPGRADE_REQUIREMENTS[up.name];
       if (rowIndex > normalDepth && !hasRequirement) return;
       if (!upgradeAvailable(tower, up)) return;
@@ -3595,6 +3752,7 @@ function heroMilestoneSkill(hero, level) {
   return null;
 }
 function towerUpgradeDimension(up) {
+  if (up.dimension) return up.dimension;
   if (UPGRADE_REQUIREMENTS[up.name] || up.rowIndex >= 7) return "synergy";
   if (up.rowIndex >= 4) return "core";
   const text = upgradeText(up);
@@ -3604,7 +3762,9 @@ function towerUpgradeDimension(up) {
   return "core";
 }
 function upgradeRarity(up) {
-  if (CORE_UPGRADE_NAMES.has(up.name) || up.rowIndex === 4) return "core";
+  if (up.dimension === "synergy") return "synergy";
+  if (up.dimension === "core") return "core";
+  if (CORE_UPGRADE_NAMES.has(up.name)) return "core";
   if (up.rowIndex === 5 || up.rowIndex === 6) return "deepen";
   if (UPGRADE_REQUIREMENTS[up.name]) return "synergy";
   if (up.rowIndex >= 7) return "synergy";
@@ -3687,7 +3847,7 @@ const REPEATABLE_UPGRADE_KEYS = new Set([
   "damagePct", "ratePct", "rangePct", "durationPct",
   "burnDurationPct", "poisonDurationPct", "slowDurationPct", "zoneDurationPct", "iceTrailDurationPct", "stunDurationPct", "rootDurationPct",
   "dotDamagePct", "pathDamagePct", "focusDamageBonusPct", "focusDelayReducePct", "vulnerableBonusPct", "iceTrailSlowBonusPct", "ricochetDamageBonusPct",
-  "extraShots", "extraAreas", "extraProjectiles", "extraPierce", "extraChainCasts", "extraChains", "ricochetExtra"
+  "extraShots", "extraAreas", "extraProjectiles", "extraPierce", "extraChainCasts", "extraChains", "extraLaserTargets", "ricochetExtra"
 ]);
 const ONE_TIME_UPGRADE_KEYS = new Set([
   "burnDps", "burnTime", "burnAreaDps", "burnAreaTime",
@@ -3765,6 +3925,7 @@ function markUpgradeRepeatLock(tower, up) {
   state.upgradeRepeatLocks[upgradeChoiceKey(tower, up.name)] = 3;
 }
 function upgradeRepeatability(tower, up) {
+  if (up.dimension === "core" || up.dimension === "synergy") return { repeatable:false, limit:1, label:"一次性" };
   const specs = upgradeEffectSpecs(tower.id, up.rowIndex || 0);
   if (specs.some(spec => ONE_TIME_UPGRADE_KEYS.has(spec.key))) return { repeatable:false, limit:1, label:"一次性" };
   if (specs.length && specs.every(spec => REPEATABLE_UPGRADE_KEYS.has(spec.key))) return { repeatable:true, limit:99, label:"可重複" };
@@ -3846,6 +4007,28 @@ function applyUpgrade(t, up) {
   if (s.includes("冰痕持續時間+50")) t.iceTrailDurationMul *= 1.5;
   if (s.includes("緩速時間+50")) t.slowDurationMul *= 1.5;
   if (s.includes("凍結持續時間+50") || s.includes("麻痺時間+50") || s.includes("定身時間+50")) t.stunMul *= 1.5;
+  applyFiveDimensionUpgradeFlags(t, up);
+}
+
+function applyFiveDimensionUpgradeFlags(t, up) {
+  if (up.dimension === "quantity" && t.id === "laser") t.refract = true;
+  if (up.dimension === "core") {
+    if (t.id === "flame") { t.burn = true; t.burnArea = true; }
+    else if (t.id === "grenade") t.burnArea = true;
+    else if (t.id === "cryo") { t.slow = Math.max(t.slow || 0, .25); t.freeze = true; }
+    else if (t.id === "frostbomb") t.iceTrail = true;
+    else if (t.id === "laser") t.focus = true;
+    else if (t.id === "chain") t.stun = true;
+    else if (t.id === "gas") { t.poison = true; t.toxicZone = true; }
+    else if (t.id === "needle") t.poison = true;
+    else if (t.id === "blade") t.ricochet = true;
+    else if (t.id === "trap") { t.root = true; t.pull = true; }
+  }
+  if (up.dimension === "synergy") {
+    if (t.id === "grenade") t.poisonArea = true;
+    else if (t.id === "cryo") t.conductiveHit = true;
+    else if (t.id === "blade") t.poison = true;
+  }
 }
 
 const applyUpgradeBase = applyUpgrade;
@@ -3888,6 +4071,7 @@ function snapshotUpgradeStats(t) {
     extraPierce: t.extraPierce || 0,
     extraChainCasts: t.extraChainCasts || 0,
     extraChains: t.extraChains || 0,
+    extraLaserTargets: t.extraLaserTargets || 0,
     ricochetExtra: t.ricochetExtra || 0,
     pathDamage: t.pathDamage || 0,
     vulnerable: t.vulnerable || 0,
@@ -3916,11 +4100,11 @@ function tuneAppliedUpgrade(t, before) {
 function tuneSingleUpgradeOption(t, up, before) {
   const scale = upgradeOptionScale(t.id, up.rowIndex || 0);
   if (Math.abs(scale - 1) < 0.001) return;
-  const discrete = new Set(["extraProjectiles","extraShots","extraAreas","extraPierce","extraChainCasts","extraChains","ricochetExtra"]);
+  const discrete = new Set(["extraProjectiles","extraShots","extraAreas","extraPierce","extraChainCasts","extraChains","extraLaserTargets","ricochetExtra"]);
   [
     "damageMul","rate","rangeMul","splashMul","durationMul","burnDurationMul","poisonDurationMul","slowDurationMul",
     "zoneDurationMul","iceTrailDurationMul","stunMul","dotMul","focusMul","focusDelayMul","pathDamageMul","ricochetMul",
-    "pullMul","iceSlow","extraProjectiles","extraShots","extraAreas","extraPierce","extraChainCasts","extraChains",
+    "pullMul","iceSlow","extraProjectiles","extraShots","extraAreas","extraPierce","extraChainCasts","extraChains","extraLaserTargets",
     "ricochetExtra","pathDamage","vulnerable","slow"
   ].forEach(key => tuneDelta(t, key, before[key], scale, discrete.has(key)));
 
@@ -3988,6 +4172,7 @@ function tuneUpgradeEffectValues(t, up, before) {
   if (has("extraPierce")) t.extraPierce = before.extraPierce + Math.max(0, Math.round(val("extraPierce")));
   if (has("extraChainCasts")) t.extraChainCasts = before.extraChainCasts + Math.max(0, Math.round(val("extraChainCasts")));
   if (has("extraChains")) t.extraChains = before.extraChains + Math.max(0, Math.round(val("extraChains")));
+  if (has("extraLaserTargets")) t.extraLaserTargets = before.extraLaserTargets + Math.max(0, Math.round(val("extraLaserTargets")));
   if (has("ricochetExtra")) t.ricochetExtra = before.ricochetExtra + Math.max(0, Math.round(val("ricochetExtra")));
 
   if (has("pathDamage")) t.pathDamage = val("pathDamage");
@@ -4105,7 +4290,7 @@ function drawHero() {
   const visualStage = heroVisualStage(hero);
   const sprite = artImage(heroSpritePath(hero, visualStage));
   if (sprite?.complete && sprite.naturalWidth) {
-    const drawSize = visualStage === 3 ? 94 : visualStage === 2 ? 88 : 82;
+    const drawSize = visualStage === 3 ? 126 : visualStage === 2 ? 116 : 106;
     ctx.save();
     ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = "rgba(0,0,0,.44)";
@@ -4317,10 +4502,10 @@ function drawActiveChannels() {
     const focusDelay = (tower.focusDelay || 1) * (tower.focusDelayMul || 1);
     const focused = !!tower.focus && channel.lockElapsed >= focusDelay;
     drawPersistentLaser(origin, target, tower.color, focused, false);
-    const refractTarget = channel.refractTarget;
-    if (tower.refract && refractTarget && refractTarget.hp > 0) {
+    const refractTargets = channel.refractTargets?.length ? channel.refractTargets : channel.refractTarget ? [channel.refractTarget] : [];
+    refractTargets.filter(refractTarget => refractTarget?.hp > 0).forEach(refractTarget => {
       drawPersistentLaser(target, refractTarget, tower.color, focused && !!tower.refractFocusPct, true);
-    }
+    });
   });
 }
 
@@ -4399,7 +4584,7 @@ function drawField() {
 }
 
 function drawDefenseStage() {
-  const positions = [{x:66,y:699},{x:284,y:699},{x:112,y:718}];
+  const positions = [{x:55,y:704},{x:295,y:704},{x:103,y:658}];
   state.towers.forEach((tower, index) => {
     const position = positions[index];
     if (!position) return;
@@ -4411,7 +4596,7 @@ function drawDefenseStage() {
     ctx.translate(position.x, position.y);
     if (sprite?.complete && sprite.naturalWidth) {
       const bob = Math.sin(performance.now() / 420 + index * 1.7) * 1.2;
-      const drawSize = visualStage === 3 ? 64 : visualStage === 2 ? 59 : 55;
+      const drawSize = visualStage === 3 ? 84 : visualStage === 2 ? 77 : 70;
       ctx.fillStyle = "rgba(0,0,0,.42)";
       ctx.beginPath();
       ctx.ellipse(0, 11, drawSize * .36, 7, 0, 0, Math.PI * 2);
@@ -5642,20 +5827,23 @@ function renderSlots() {
   if (!slotViews.length) {
     for (let i=0; i<totalSlots; i++) {
       const root = document.createElement("div");
+      const iconShell = document.createElement("div");
       const icon = document.createElement("img");
       const name = document.createElement("div");
       const info = document.createElement("small");
       const cooldown = document.createElement("div");
       const fill = document.createElement("div");
+      iconShell.className = "slot-icon-shell";
       icon.className = "slot-icon";
       icon.alt = "";
       name.className = "slot-name";
       cooldown.className = "slot-cd";
       fill.className = "slot-cd-fill";
       cooldown.appendChild(fill);
-      root.append(icon, name, info, cooldown);
+      iconShell.appendChild(icon);
+      root.append(iconShell, name, info, cooldown);
       ui.slots.appendChild(root);
-      slotViews.push({ root, icon, name, info, cooldown, fill });
+      slotViews.push({ root, iconShell, icon, name, info, cooldown, fill });
     }
   }
 
@@ -5671,7 +5859,7 @@ function renderSlots() {
       const visualStage = isHeroSlot ? heroVisualStage(t) : towerVisualStage(t);
       const iconKey = isHeroSlot ? `hero:${t.heroId}:${visualStage}` : `${t.id}:${visualStage}`;
       if (view.icon.dataset.tower !== iconKey) {
-        view.icon.src = isHeroSlot ? heroSpritePath(t, visualStage) : towerSpritePath(t, visualStage);
+        view.icon.src = isHeroSlot ? heroIconDataUrl(t) : towerIconDataUrl(t);
         view.icon.dataset.tower = iconKey;
       }
       view.root.title = `${t.name} Lv.${t.level}`;
