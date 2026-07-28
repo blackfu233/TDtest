@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "boss-hazard1";
+const BUILD_VERSION = "direct-params10";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -691,6 +691,13 @@ const HEROES = [
   { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", attackMode:"cloud", damage:58, rate:.68, range:820, color:"#66d86f", status:22, statusTime:2.6, splash:54, secondaryMul:.50, targets:1, projectileSpeed:520, zoneDuration:2.0, attackTrait:"腐蝕毒囊", desc:"拋射毒囊｜持續毒區" },
   { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", attackMode:"burst", damage:46, rate:.92, range:940, color:"#d5dde8", status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0, attackTrait:"三連實彈", desc:"高速三連｜純傷害" },
 ];
+[
+  ["fire", { damage:145 }],
+  ["ice", { damage:164, secondaryMul:.68 }],
+  ["electric", { damage:82 }],
+  ["poison", { damage:72, rate:.72, status:25, splash:58 }],
+  ["neutral", { damage:50 }],
+].forEach(([id, values]) => Object.assign(HEROES.find(hero => hero.id === id), values));
 const UPGRADE_DIMENSIONS = {
   damage:{ label:"傷害", mark:"DMG" },
   speed:{ label:"攻速", mark:"SPD" },
@@ -800,16 +807,16 @@ const PARAM_CHANNEL = "tower-defense-param-sync";
 const INITIAL_WALLET = 10000;
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
-  flame: { damage:104, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.45, eliteMul:.88, bossMul:1.20 },
-  grenade: { damage:250, rate:.55, range:700, splash:50, duration:0, cooldown:0, tick:.5, minionMul:1.34, eliteMul:.82, bossMul:1.12 },
-  cryo: { damage:371, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.50, eliteMul:1.25, bossMul:1.55 },
-  frostbomb: { damage:236, rate:.45, range:720, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.32, eliteMul:.78, bossMul:1.00 },
-  laser: { damage:114, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.62, eliteMul:1.28, bossMul:1.62 },
-  chain: { damage:139, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.42, eliteMul:.82, bossMul:1.18 },
-  gas: { damage:104, rate:.42, range:740, splash:43, duration:2.6, cooldown:0, tick:.5, minionMul:1.30, eliteMul:.86, bossMul:1.02 },
-  needle: { damage:256, rate:.75, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.86, eliteMul:1.15, bossMul:1.42 },
-  blade: { damage:265, rate:.80, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:.94, eliteMul:1.02, bossMul:.78 },
-  trap: { damage:140, rate:.48, range:700, splash:50, duration:1.4, cooldown:0, tick:.5, minionMul:1.18, eliteMul:.80, bossMul:.98 },
+  flame: { damage:104, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.45, eliteMul:.88, bossMul:1.22 },
+  grenade: { damage:250, rate:.55, range:700, splash:50, duration:0, cooldown:0, tick:.5, minionMul:1.34, eliteMul:.82, bossMul:1.13 },
+  cryo: { damage:371, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.50, eliteMul:1.25, bossMul:1.50 },
+  frostbomb: { damage:236, rate:.45, range:720, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.32, eliteMul:.78, bossMul:1.06 },
+  laser: { damage:114, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.62, eliteMul:1.28, bossMul:1.55 },
+  chain: { damage:139, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.42, eliteMul:.82, bossMul:1.17 },
+  gas: { damage:104, rate:.42, range:740, splash:43, duration:2.6, cooldown:0, tick:.5, minionMul:1.30, eliteMul:.86, bossMul:1.04 },
+  needle: { damage:256, rate:.75, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.86, eliteMul:1.15, bossMul:1.35 },
+  blade: { damage:295, rate:.84, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:1.00, eliteMul:1.05, bossMul:.84 },
+  trap: { damage:140, rate:.48, range:700, splash:50, duration:1.4, cooldown:0, tick:.5, minionMul:1.18, eliteMul:.80, bossMul:1.03 },
 };
 
 function towerDefaultParams() {
@@ -1149,7 +1156,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 87,
+  balanceRevision: 115,
   mathModelEnabled: 1,
   mathTargetRtp: .96,
   mathTolerancePct: 1.0,
@@ -1158,22 +1165,22 @@ const DEFAULT_PARAMS = {
   mathBossLaterBuildInfluence: .20,
   mathMinionBuildInfluence: 0,
   mathAreaBossRiskDiscount: .08,
-  mathSingleTowerChanceShift: .06,
-  mathAreaTowerChanceShift: -.020,
-  mathControlTowerChanceShift: -.13,
+  mathSingleTowerChanceShift: .119,
+  mathAreaTowerChanceShift: -.055,
+  mathControlTowerChanceShift: -.145,
   mathSingleTowerPayoutShift: 0,
   mathAreaTowerPayoutShift: 0,
   mathControlTowerPayoutShift: 0,
-  mathSingleSharePayoutSlope: -.40,
-  mathAreaSharePayoutSlope: .16,
-  mathControlSharePayoutSlope: .22,
+  mathSingleSharePayoutSlope: 0,
+  mathAreaSharePayoutSlope: 0,
+  mathControlSharePayoutSlope: 0,
   mathHpInfluence: 1.50,
   mathMinionHpInfluence: 0,
   mathBossHpInfluence: 1.10,
   mathBossLaterHpInfluence: .18,
-  mathBossOrdinalPenalty: .08,
-  mathBossFirstBaseChance: .820,
-  mathBossLaterBaseChance: .740,
+  mathBossOrdinalPenalty: .29,
+  mathBossFirstBaseChance: .779,
+  mathBossLaterBaseChance: .680,
   mathFirstBossDelayPenalty: 0,
   mathFirstBossGuaranteePenalty: 0,
   mathHpReference: .91,
@@ -1182,7 +1189,7 @@ const DEFAULT_PARAMS = {
   mathHeroPower_electric: .90,
   mathHeroPower_poison: .84,
   mathHeroPower_neutral: .90,
-  mathCoreRiskBonus: .005,
+  mathCoreRiskBonus: .050,
   mathTowerBossPower_flame: .60,
   mathTowerBossPower_grenade: .80,
   mathTowerBossPower_cryo: 2.00,
@@ -1194,7 +1201,7 @@ const DEFAULT_PARAMS = {
   mathTowerBossPower_blade: .90,
   mathTowerBossPower_trap: .25,
   mathBossPenalty: .35,
-  mathPayoutCalibration: .965,
+  mathPayoutCalibration: 1.035,
   mathPayoutBand1: .962,
   mathPayoutBand2: .962,
   mathPayoutBand3: .962,
@@ -1226,7 +1233,7 @@ const DEFAULT_PARAMS = {
   bossFirstChanceCap: 68,
   bossFirstGuaranteeWave: 30,
   bossFirstRewardMul: .35,
-  bossLaterRewardMul: .45,
+  bossLaterRewardMul: .65,
   bossChanceMul: .45,
   bossChanceCap: 55,
   minionHpMul: 1.05,
@@ -1236,8 +1243,8 @@ const DEFAULT_PARAMS = {
   eliteHpMul: 1.05,
   eliteAtkMul: 1.05,
   bossFirstHpMul: 2.15,
-  bossHpMul: 1.58,
-  bossHpPerOrdinalMul: 1.20,
+  bossHpMul: 1.90,
+  bossHpPerOrdinalMul: 1.25,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
   moneyMul: 1.085,
@@ -1943,6 +1950,97 @@ function migrateBossParams(input={}) {
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 87;
   }
+  if ((Number(input.balanceRevision) || 0) < 88) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+      "mathBossLaterBaseChance", "mathBossOrdinalPenalty",
+      "bossLaterRewardMul", "bossHpMul", "bossHpPerOrdinalMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 88;
+  }
+  if ((Number(input.balanceRevision) || 0) < 89) {
+    ["mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 89;
+  }
+  if ((Number(input.balanceRevision) || 0) < 108) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance", "mathBossOrdinalPenalty",
+      "mathCoreRiskBonus", "bossLaterRewardMul", "bossHpMul", "bossHpPerOrdinalMul",
+      "hero_fire_damage", "hero_ice_damage", "hero_ice_secondaryMul",
+      "hero_electric_damage", "hero_poison_damage", "hero_poison_rate",
+      "hero_poison_status", "hero_poison_splash", "hero_neutral_damage",
+      "tower_blade_damage", "tower_blade_rate", "tower_blade_minionMul",
+      "tower_blade_eliteMul", "tower_blade_bossMul",
+      "tower_flame_bossMul", "tower_grenade_bossMul",
+      "tower_chain_bossMul", "tower_gas_bossMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 108;
+  }
+  if ((Number(input.balanceRevision) || 0) < 109) {
+    [
+      "mathSingleSharePayoutSlope",
+      "mathAreaSharePayoutSlope",
+      "mathControlSharePayoutSlope",
+    ].forEach(key => { next[key] = 0; });
+    next.balanceRevision = 109;
+  }
+  if ((Number(input.balanceRevision) || 0) < 110) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleTowerChanceShift",
+      "mathAreaTowerChanceShift",
+      "mathControlTowerChanceShift",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 110;
+  }
+  if ((Number(input.balanceRevision) || 0) < 111) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleTowerChanceShift",
+      "mathAreaTowerChanceShift",
+      "mathControlTowerChanceShift",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 111;
+  }
+  if ((Number(input.balanceRevision) || 0) < 112) {
+    [
+      "mathSingleTowerChanceShift",
+      "mathAreaTowerChanceShift",
+      "mathControlTowerChanceShift",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 112;
+  }
+  if ((Number(input.balanceRevision) || 0) < 113) {
+    [
+      "mathPayoutCalibration",
+      "tower_flame_bossMul", "tower_grenade_bossMul",
+      "tower_cryo_bossMul", "tower_frostbomb_bossMul",
+      "tower_laser_bossMul", "tower_chain_bossMul",
+      "tower_gas_bossMul", "tower_needle_bossMul",
+      "tower_blade_bossMul", "tower_trap_bossMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 113;
+  }
+  if ((Number(input.balanceRevision) || 0) < 114) {
+    [
+      "tower_cryo_bossMul",
+      "tower_laser_bossMul",
+      "tower_needle_bossMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 114;
+  }
+  if ((Number(input.balanceRevision) || 0) < 115) {
+    [
+      "tower_cryo_bossMul",
+      "tower_laser_bossMul",
+      "tower_needle_bossMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 115;
+  }
   return next;
 }
 
@@ -2248,7 +2346,8 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
     + (singleShare - 1 / 3) * paramNumber("mathSingleSharePayoutSlope", 0)
     + (areaShare - 1 / 3) * paramNumber("mathAreaSharePayoutSlope", 0)
     + (controlShare - 1 / 3) * paramNumber("mathControlSharePayoutSlope", 0));
-  const payoutScale = paramNumber("mathPayoutCalibration", 1) * mathPayoutBandScale(wave) * payoutRoleScale;
+  const payoutScale = paramNumber("mathPayoutCalibration", 1) * mathPayoutBandScale(wave)
+    * payoutRoleScale;
   const expectedAfter = before + bet * targetRtp * payoutScale * rewardFactor;
   const conditionalPayoutExact = expectedAfter / clearChance;
   const payoutUniform = mathUniform(wave, 1);
