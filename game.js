@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "boss-wave-neutral11";
+const BUILD_VERSION = "boss-strategy-calibration18";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1163,39 +1163,39 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 128,
+  balanceRevision: 135,
   mathModelEnabled: 1,
   mathTargetRtp: .96,
   mathTolerancePct: 1.0,
   mathBuildInfluence: .80,
-  mathBossBuildInfluence: 1.50,
-  mathBossLaterBuildInfluence: .20,
+  mathBossBuildInfluence: 1.80,
+  mathBossLaterBuildInfluence: .40,
   mathMinionBuildInfluence: 0,
   mathAreaBossRiskDiscount: .08,
-  mathSingleTowerChanceShift: .160,
-  mathAreaTowerChanceShift: -.055,
-  mathControlTowerChanceShift: -.145,
+  mathSingleTowerChanceShift: .205,
+  mathAreaTowerChanceShift: -.105,
+  mathControlTowerChanceShift: -.165,
   mathSingleTowerPayoutShift: 0,
   mathAreaTowerPayoutShift: 0,
   mathControlTowerPayoutShift: 0,
-  mathSingleSharePayoutSlope: 0,
-  mathAreaSharePayoutSlope: 0,
-  mathControlSharePayoutSlope: 0,
+  mathSingleSharePayoutSlope: -.16,
+  mathAreaSharePayoutSlope: .08,
+  mathControlSharePayoutSlope: .03,
   mathHpInfluence: 1.50,
   mathMinionHpInfluence: 0,
   mathBossHpInfluence: 1.10,
   mathBossLaterHpInfluence: .18,
-  mathBossOrdinalPenalty: .35,
-  mathBossFirstBaseChance: .820,
-  mathBossLaterBaseChance: .580,
+  mathBossOrdinalPenalty: .55,
+  mathBossFirstBaseChance: .809,
+  mathBossLaterBaseChance: .310,
   mathFirstBossDelayPenalty: .012,
   mathFirstBossGuaranteePenalty: 0,
   mathHpReference: .91,
-  mathHeroPower_fire: 1.06,
-  mathHeroPower_ice: 1.10,
-  mathHeroPower_electric: .90,
-  mathHeroPower_poison: .84,
-  mathHeroPower_neutral: .90,
+  mathHeroPower_fire: 1.04,
+  mathHeroPower_ice: 1.135,
+  mathHeroPower_electric: .93,
+  mathHeroPower_poison: .815,
+  mathHeroPower_neutral: .865,
   mathCoreRiskBonus: .050,
   mathTowerBossPower_flame: .60,
   mathTowerBossPower_grenade: .80,
@@ -1208,7 +1208,7 @@ const DEFAULT_PARAMS = {
   mathTowerBossPower_blade: .90,
   mathTowerBossPower_trap: .25,
   mathBossPenalty: .35,
-  mathPayoutCalibration: 1.085,
+  mathPayoutCalibration: .905,
   mathPayoutBand1: .962,
   mathPayoutBand2: .962,
   mathPayoutBand3: .962,
@@ -1251,7 +1251,7 @@ const DEFAULT_PARAMS = {
   eliteAtkMul: 1.05,
   bossFirstHpMul: 2.35,
   bossHpMul: 2.30,
-  bossHpPerOrdinalMul: 1.34,
+  bossHpPerOrdinalMul: 1.20,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
   moneyMul: 1.085,
@@ -1362,7 +1362,7 @@ function cleanParams(input={}) {
   next.mathMinionHpInfluence = Math.max(0, Math.min(2, next.mathMinionHpInfluence));
   next.mathBossHpInfluence = Math.max(0, Math.min(2, next.mathBossHpInfluence));
   next.mathBossLaterHpInfluence = Math.max(0, Math.min(2, next.mathBossLaterHpInfluence));
-  next.mathBossOrdinalPenalty = Math.max(0, Math.min(.5, next.mathBossOrdinalPenalty));
+  next.mathBossOrdinalPenalty = Math.max(0, Math.min(.8, next.mathBossOrdinalPenalty));
   next.mathBossFirstBaseChance = Math.max(.05, Math.min(.999, next.mathBossFirstBaseChance));
   next.mathBossLaterBaseChance = Math.max(.05, Math.min(.999, next.mathBossLaterBaseChance));
   next.mathFirstBossDelayPenalty = Math.max(0, Math.min(.2, next.mathFirstBossDelayPenalty));
@@ -2086,6 +2086,58 @@ function migrateBossParams(input={}) {
   if ((Number(input.balanceRevision) || 0) < 121) {
     next.mathPayoutCalibration = DEFAULT_PARAMS.mathPayoutCalibration;
     next.balanceRevision = 128;
+  }
+  if ((Number(input.balanceRevision) || 0) < 129) {
+    [
+      "mathBossLaterBaseChance", "mathBossOrdinalPenalty",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "bossHpPerOrdinalMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 129;
+  }
+  if ((Number(input.balanceRevision) || 0) < 130) {
+    [
+      "mathPayoutCalibration", "mathBossOrdinalPenalty",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+      "mathHeroPower_electric",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 130;
+  }
+  if ((Number(input.balanceRevision) || 0) < 131) {
+    [
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_poison", "mathHeroPower_neutral",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 131;
+  }
+  if ((Number(input.balanceRevision) || 0) < 132) {
+    [
+      "mathBossFirstBaseChance",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 132;
+  }
+  if ((Number(input.balanceRevision) || 0) < 133) {
+    [
+      "mathBossBuildInfluence", "mathBossLaterBuildInfluence",
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 133;
+  }
+  if ((Number(input.balanceRevision) || 0) < 134) {
+    [
+      "mathBossLaterBuildInfluence",
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 134;
+  }
+  if ((Number(input.balanceRevision) || 0) < 135) {
+    [
+      "mathBossLaterBuildInfluence", "mathBossLaterBaseChance",
+      "mathBossOrdinalPenalty", "mathPayoutCalibration",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 135;
   }
   return next;
 }
