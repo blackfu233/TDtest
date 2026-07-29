@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "boss-strategy-calibration18";
+const BUILD_VERSION = "boss-strategy-calibration19";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1163,7 +1163,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 135,
+  balanceRevision: 136,
   mathModelEnabled: 1,
   mathTargetRtp: .96,
   mathTolerancePct: 1.0,
@@ -1178,9 +1178,9 @@ const DEFAULT_PARAMS = {
   mathSingleTowerPayoutShift: 0,
   mathAreaTowerPayoutShift: 0,
   mathControlTowerPayoutShift: 0,
-  mathSingleSharePayoutSlope: -.16,
-  mathAreaSharePayoutSlope: .08,
-  mathControlSharePayoutSlope: .03,
+  mathSingleSharePayoutSlope: -.25,
+  mathAreaSharePayoutSlope: .20,
+  mathControlSharePayoutSlope: .08,
   mathHpInfluence: 1.50,
   mathMinionHpInfluence: 0,
   mathBossHpInfluence: 1.10,
@@ -1208,7 +1208,7 @@ const DEFAULT_PARAMS = {
   mathTowerBossPower_blade: .90,
   mathTowerBossPower_trap: .25,
   mathBossPenalty: .35,
-  mathPayoutCalibration: .905,
+  mathPayoutCalibration: .935,
   mathPayoutBand1: .962,
   mathPayoutBand2: .962,
   mathPayoutBand3: .962,
@@ -2138,6 +2138,13 @@ function migrateBossParams(input={}) {
       "mathBossOrdinalPenalty", "mathPayoutCalibration",
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 135;
+  }
+  if ((Number(input.balanceRevision) || 0) < 136) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 136;
   }
   return next;
 }
