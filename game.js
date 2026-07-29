@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "direct-params10";
+const BUILD_VERSION = "boss-wave-neutral11";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -641,6 +641,12 @@ const MATH_WAVE_CLEAR_DEFAULTS = [
   .990,.990,.990,.990,.990,.990,.990,.990,.990,.990,
 ];
 
+const MATH_WAVE_PAYOUT_DEFAULTS = [
+  .70,.56,1.04,.94,1.46,1.52,.83,.98,1.13,1.52,
+  1.47,.96,1.10,1.15,1.25,1.25,.95,1.00,1.00,1.00,
+  .85,.70,.70,.68,.66,.64,.62,.58,.55,.52,
+];
+
 const BANDS = [
   { from:1, to:2, count:[16,24], drop:{normal:.63,fast:.36,tank:.9,ranged:.45,special:.45}, templates:{standard:700,fast:300} },
   { from:3, to:5, count:[20,30], drop:{normal:.585,fast:.315,tank:.9,ranged:.405,special:.405}, templates:{standard:400,tank:250,ranged:200,disrupt:150} },
@@ -905,6 +911,7 @@ function waveDefaultParams() {
     result[`wave_${row.wave}_bossInc`] = row.bossInc;
     result[`wave_${row.wave}_bossCd`] = row.bossCd;
     result[`wave_${row.wave}_mathClear`] = MATH_WAVE_CLEAR_DEFAULTS[row.wave - 1];
+    result[`wave_${row.wave}_mathPayout`] = MATH_WAVE_PAYOUT_DEFAULTS[row.wave - 1];
   });
   return result;
 }
@@ -1156,7 +1163,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 115,
+  balanceRevision: 128,
   mathModelEnabled: 1,
   mathTargetRtp: .96,
   mathTolerancePct: 1.0,
@@ -1165,7 +1172,7 @@ const DEFAULT_PARAMS = {
   mathBossLaterBuildInfluence: .20,
   mathMinionBuildInfluence: 0,
   mathAreaBossRiskDiscount: .08,
-  mathSingleTowerChanceShift: .119,
+  mathSingleTowerChanceShift: .160,
   mathAreaTowerChanceShift: -.055,
   mathControlTowerChanceShift: -.145,
   mathSingleTowerPayoutShift: 0,
@@ -1178,10 +1185,10 @@ const DEFAULT_PARAMS = {
   mathMinionHpInfluence: 0,
   mathBossHpInfluence: 1.10,
   mathBossLaterHpInfluence: .18,
-  mathBossOrdinalPenalty: .29,
-  mathBossFirstBaseChance: .779,
-  mathBossLaterBaseChance: .680,
-  mathFirstBossDelayPenalty: 0,
+  mathBossOrdinalPenalty: .35,
+  mathBossFirstBaseChance: .820,
+  mathBossLaterBaseChance: .580,
+  mathFirstBossDelayPenalty: .012,
   mathFirstBossGuaranteePenalty: 0,
   mathHpReference: .91,
   mathHeroPower_fire: 1.06,
@@ -1201,16 +1208,16 @@ const DEFAULT_PARAMS = {
   mathTowerBossPower_blade: .90,
   mathTowerBossPower_trap: .25,
   mathBossPenalty: .35,
-  mathPayoutCalibration: 1.035,
+  mathPayoutCalibration: 1.085,
   mathPayoutBand1: .962,
   mathPayoutBand2: .962,
   mathPayoutBand3: .962,
   mathPayoutBand4: .962,
-  mathPayoutBand5: .962,
+  mathPayoutBand5: .800,
   mathLossHpMul: 5.00,
   mathLossAtkMul: 5.00,
   mathLossSpeedMul: 1.12,
-  mathMinClearChance: .25,
+  mathMinClearChance: .15,
   mathMaxClearChance: .999,
   mathFirstWaveClearChance: .999,
   mathClearBand1: .999,
@@ -1233,7 +1240,7 @@ const DEFAULT_PARAMS = {
   bossFirstChanceCap: 68,
   bossFirstGuaranteeWave: 30,
   bossFirstRewardMul: .35,
-  bossLaterRewardMul: .65,
+  bossLaterRewardMul: .50,
   bossChanceMul: .45,
   bossChanceCap: 55,
   minionHpMul: 1.05,
@@ -1242,9 +1249,9 @@ const DEFAULT_PARAMS = {
   wave1MinionAtkMul: .55,
   eliteHpMul: 1.05,
   eliteAtkMul: 1.05,
-  bossFirstHpMul: 2.15,
-  bossHpMul: 1.90,
-  bossHpPerOrdinalMul: 1.25,
+  bossFirstHpMul: 2.35,
+  bossHpMul: 2.30,
+  bossHpPerOrdinalMul: 1.34,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
   moneyMul: 1.085,
@@ -1301,11 +1308,11 @@ const DEFAULT_PARAMS = {
   bossRollDuration: 4.8,
   bossRollHighThreshold: 2.5,
   bossRollJackpotThreshold: 3.8,
-  bossBetStepMul: 1.5,
+  bossBetStepMul: 1.75,
   preBossRewardMul: 1.15,
   postBossRewardFunding: .45,
-  betMidMul: 1.35,
-  betDeepMul: 1.85,
+  betMidMul: 1.50,
+  betDeepMul: 2.50,
   baseHp: 1000,
   ...heroDefaultParams(),
   ...towerDefaultParams(),
@@ -1362,6 +1369,8 @@ function cleanParams(input={}) {
   next.mathFirstBossGuaranteePenalty = Math.max(0, Math.min(.6, next.mathFirstBossGuaranteePenalty));
   Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathClear$/.test(key))
     .forEach(key => { next[key] = Math.max(.01, Math.min(.999, next[key])); });
+  Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathPayout$/.test(key))
+    .forEach(key => { next[key] = Math.max(.25, Math.min(2, next[key])); });
   next.mathHpReference = Math.max(0, Math.min(1, next.mathHpReference));
   next.mathCoreRiskBonus = Math.max(0, Math.min(.25, next.mathCoreRiskBonus));
   Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("mathHeroPower_") || key.startsWith("mathTowerBossPower_"))
@@ -2041,6 +2050,43 @@ function migrateBossParams(input={}) {
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 115;
   }
+  if ((Number(input.balanceRevision) || 0) < 116) {
+    [
+      "mathBossOrdinalPenalty", "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+      "mathPayoutBand5", "mathMinClearChance", "bossLaterRewardMul",
+      "bossFirstHpMul", "bossHpMul", "bossHpPerOrdinalMul",
+      "bossBetStepMul", "betMidMul", "betDeepMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 116;
+  }
+  if ((Number(input.balanceRevision) || 0) < 117) {
+    ["mathPayoutCalibration", "bossFirstHpMul"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 117;
+  }
+  if ((Number(input.balanceRevision) || 0) < 118) {
+    [
+      "mathBossOrdinalPenalty", "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+      "mathFirstBossDelayPenalty", "mathPayoutCalibration",
+      "bossFirstHpMul", "bossHpMul", "bossHpPerOrdinalMul",
+      ...Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathPayout$/.test(key)),
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 118;
+  }
+  if ((Number(input.balanceRevision) || 0) < 119) {
+    [
+      "mathPayoutCalibration",
+      ...Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathPayout$/.test(key)),
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 119;
+  }
+  if ((Number(input.balanceRevision) || 0) < 120) {
+    next.mathSingleTowerChanceShift = DEFAULT_PARAMS.mathSingleTowerChanceShift;
+    next.balanceRevision = 120;
+  }
+  if ((Number(input.balanceRevision) || 0) < 121) {
+    next.mathPayoutCalibration = DEFAULT_PARAMS.mathPayoutCalibration;
+    next.balanceRevision = 128;
+  }
   return next;
 }
 
@@ -2222,7 +2268,7 @@ function mathBaseClearChance(wave) {
 
 function mathPayoutBandScale(wave) {
   const key = wave <= 2 ? "mathPayoutBand1" : wave <= 5 ? "mathPayoutBand2" : wave <= 10 ? "mathPayoutBand3" : wave <= 20 ? "mathPayoutBand4" : "mathPayoutBand5";
-  return paramNumber(key, 1);
+  return paramNumber(key, 1) * paramNumber(`wave_${wave}_mathPayout`, 1);
 }
 
 function mathBuildPower(boss=false) {
