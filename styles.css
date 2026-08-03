@@ -952,6 +952,279 @@ canvas {
   .choice-type-new-tower .choice-sub { padding:3px 7px;font-size:10px; }
 }
 
+/* Activation layer for the generated card sheet. Keep this after legacy card rules. */
+.choice-list:not([data-layout="heroes"]) .choice-card {
+  min-height: 112px !important;
+  aspect-ratio: 3 / 1;
+  grid-template-columns: 104px minmax(0, 1fr) !important;
+  padding: 9px 15px 9px 10px !important;
+  border: 0 !important;
+  clip-path: none !important;
+  background-image: url("assets/ui/upgrade-card-ingame-sheet.png") !important;
+  background-repeat: no-repeat !important;
+  background-size: 224% 378% !important;
+}
+.choice-list:not([data-layout="heroes"]) .choice-card::after { display: none !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-hero-upgrade { background-position: 6.5% 10.1% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-new-tower { background-position: 91.9% 10.1% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-stat { background-position: 6.5% 52.2% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-core { background-position: 91.9% 52.2% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-synergy { background-position: 6.5% 92.8% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-hero-skill { background-position: 91.9% 92.8% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-stat {
+  grid-template-columns: 104px minmax(0, 1fr) 50px !important;
+}
+.choice-list:not([data-layout="heroes"]) .choice-effect-chips,
+.choice-list:not([data-layout="heroes"]) .synergy-route { display: none !important; }
+.choice-list[data-layout="heroes"] {
+  gap: 9px !important;
+  padding-right: 0 !important;
+  scrollbar-width: none;
+}
+.choice-list[data-layout="heroes"]::-webkit-scrollbar { display: none; }
+.choice-list[data-layout="heroes"] .choice-card {
+  min-height: 140px !important;
+  grid-template-rows: 74px auto !important;
+  padding: 7px !important;
+}
+.choice-list[data-layout="heroes"] .choice-emblem,
+.choice-list[data-layout="heroes"] .choice-emblem img { width: 78px !important; height: 76px !important; }
+
+@media (max-height: 700px) {
+  .choice-list:not([data-layout="heroes"]) .choice-card {
+    min-height: 98px !important;
+    aspect-ratio: auto;
+    grid-template-columns: 86px minmax(0, 1fr) !important;
+    padding: 6px 12px 6px 8px !important;
+  }
+  .choice-list:not([data-layout="heroes"]) .choice-type-tower-stat {
+    grid-template-columns: 86px minmax(0, 1fr) 44px !important;
+  }
+  .choice-list[data-layout="heroes"] .choice-card {
+    min-height: 136px !important;
+    grid-template-rows: 78px auto !important;
+  }
+  .choice-list[data-layout="heroes"] .choice-emblem,
+  .choice-list[data-layout="heroes"] .choice-emblem img { width: 82px !important; height: 80px !important; }
+}
+
+/* Final mobile upgrade cards: one visual language from hero pick to build choice. */
+.choice-list:not([data-layout="heroes"]) .choice-card {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  min-height: 112px;
+  aspect-ratio: 3 / 1;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 15px 9px 10px;
+  border: 0 !important;
+  border-radius: 0;
+  clip-path: none !important;
+  background-color: #05080c;
+  background-image: url("assets/ui/upgrade-card-ingame-sheet.png");
+  background-repeat: no-repeat;
+  background-size: 224% 378%;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .46);
+  isolation: isolate;
+}
+.choice-list:not([data-layout="heroes"]) .choice-card::after { display: none; }
+.choice-list:not([data-layout="heroes"]) .choice-card:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.choice-list:not([data-layout="heroes"]) .choice-card:active { transform: scale(.985); }
+
+.choice-list:not([data-layout="heroes"]) .choice-type-hero-upgrade { background-position: 6.5% 10.1%; }
+.choice-list:not([data-layout="heroes"]) .choice-type-new-tower { background-position: 91.9% 10.1%; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-stat { background-position: 6.5% 52.2%; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-core { background-position: 91.9% 52.2%; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-synergy { background-position: 6.5% 92.8%; }
+.choice-list:not([data-layout="heroes"]) .choice-type-hero-skill { background-position: 91.9% 92.8%; }
+
+.choice-list:not([data-layout="heroes"]) .choice-emblem {
+  display: grid;
+  width: 100px !important;
+  height: 94px !important;
+  align-self: center;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--card-accent) 62%, #cfefff) !important;
+  border-radius: 8px !important;
+  clip-path: none !important;
+  background: radial-gradient(circle at 50% 44%, color-mix(in srgb, var(--choice-color) 25%, #17212d), #070b11 72%) !important;
+  box-shadow: inset 0 0 16px rgba(0, 0, 0, .66), 0 0 12px color-mix(in srgb, var(--card-accent) 22%, transparent) !important;
+}
+.choice-list:not([data-layout="heroes"]) .choice-emblem img {
+  width: 96px !important;
+  height: 92px !important;
+  border-radius: 0 !important;
+  object-fit: contain;
+  transform: scale(1.08);
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .72));
+}
+.choice-list:not([data-layout="heroes"]) .choice-copy {
+  position: relative;
+  z-index: 2;
+  display: grid !important;
+  min-width: 0;
+  align-content: center;
+  justify-items: start;
+  gap: 3px;
+  padding: 3px 0;
+  text-align: left;
+}
+.choice-list:not([data-layout="heroes"]) .choice-category {
+  display: inline-flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: color-mix(in srgb, var(--card-accent) 78%, #fff);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+.choice-list:not([data-layout="heroes"]) .choice-category i {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .36);
+  font-size: 11px;
+  font-style: normal;
+}
+.choice-list:not([data-layout="heroes"]) .choice-name {
+  width: 100%;
+  overflow: hidden;
+  color: #fff;
+  font-size: 20px !important;
+  font-weight: 950;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.choice-list:not([data-layout="heroes"]) .choice-impact {
+  display: -webkit-box;
+  width: 100%;
+  overflow: hidden;
+  color: #dce7f1;
+  font-size: 13px !important;
+  font-weight: 800;
+  line-height: 1.2;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+.choice-list:not([data-layout="heroes"]) .choice-sub {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  min-height: 22px;
+  align-items: center;
+  margin: 2px 0 0;
+  padding: 3px 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--card-accent) 52%, transparent);
+  border-radius: 4px;
+  color: #f4f7fa;
+  background: color-mix(in srgb, var(--card-accent) 16%, rgba(2, 5, 8, .82));
+  font-size: 10px !important;
+  font-weight: 900;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.choice-list:not([data-layout="heroes"]) .choice-type-new-tower .choice-impact { display: none; }
+.choice-list:not([data-layout="heroes"]) .choice-type-new-tower .choice-sub {
+  min-height: 26px;
+  padding: 4px 10px;
+  color: #fff5df;
+  font-size: 12px !important;
+}
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-stat {
+  grid-template-columns: 104px minmax(0, 1fr) 50px;
+}
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-stat .choice-copy { padding-right: 2px; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-stat .choice-impact { display: none; }
+.choice-list:not([data-layout="heroes"]) .choice-stat-readout {
+  display: grid;
+  width: 48px;
+  align-self: center;
+  justify-items: center;
+  color: #92c9ff;
+  text-align: center;
+}
+.choice-list:not([data-layout="heroes"]) .choice-stat-readout b { font-size: 11px; line-height: 1.1; }
+.choice-list:not([data-layout="heroes"]) .choice-stat-readout i {
+  width: 0;
+  height: 0;
+  margin-top: 5px;
+  border-right: 13px solid transparent;
+  border-bottom: 22px solid #75baff;
+  border-left: 13px solid transparent;
+  color: transparent;
+  font-size: 0;
+  filter: drop-shadow(0 0 6px rgba(91, 174, 255, .66));
+}
+.choice-list:not([data-layout="heroes"]) .choice-effect-chips,
+.choice-list:not([data-layout="heroes"]) .synergy-route { display: none; }
+
+/* Hero selection stays distinct, but uses the same readable mobile proportions. */
+.choice-list[data-layout="heroes"] {
+  gap: 9px;
+  padding-right: 0;
+  scrollbar-width: none;
+}
+.choice-list[data-layout="heroes"]::-webkit-scrollbar { display: none; }
+.choice-list[data-layout="heroes"] .choice-card {
+  min-height: 148px;
+  grid-template-rows: 86px auto;
+  padding: 7px;
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--choice-color) 68%, #d7efff);
+  background: linear-gradient(155deg, color-mix(in srgb, var(--choice-color) 22%, #17212c), #080d13 64%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07), 0 6px 14px rgba(0, 0, 0, .38);
+}
+.choice-list[data-layout="heroes"] .choice-emblem,
+.choice-list[data-layout="heroes"] .choice-emblem img {
+  width: 90px;
+  height: 88px;
+}
+.choice-list[data-layout="heroes"] .choice-name { font-size: 17px; line-height: 1.05; }
+.choice-list[data-layout="heroes"] .choice-impact {
+  color: #dbe8f0;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.18;
+}
+
+@media (max-height: 700px) {
+  .choice-list:not([data-layout="heroes"]) .choice-card {
+    min-height: 98px;
+    aspect-ratio: auto;
+    grid-template-columns: 86px minmax(0, 1fr);
+    padding: 6px 12px 6px 8px;
+  }
+  .choice-list:not([data-layout="heroes"]) .choice-emblem {
+    width: 82px !important;
+    height: 80px !important;
+  }
+  .choice-list:not([data-layout="heroes"]) .choice-emblem img {
+    width: 80px !important;
+    height: 78px !important;
+  }
+  .choice-list:not([data-layout="heroes"]) .choice-type-tower-stat {
+    grid-template-columns: 86px minmax(0, 1fr) 44px;
+  }
+  .choice-list:not([data-layout="heroes"]) .choice-name { font-size: 18px !important; }
+  .choice-list[data-layout="heroes"] .choice-card { min-height: 136px; grid-template-rows: 78px auto; }
+  .choice-list[data-layout="heroes"] .choice-emblem,
+  .choice-list[data-layout="heroes"] .choice-emblem img { width: 82px; height: 80px; }
+}
+
 /* Visual art pass */
 .top-hud {
   grid-template-columns: 70px minmax(0, 1fr) 34px 34px;
@@ -2904,4 +3177,210 @@ body {
   .choice-type-new-tower .choice-emblem img { width:74px;height:74px; }
   .choice-type-new-tower .choice-name { font-size:18px; }
   .choice-type-new-tower .choice-sub { padding:3px 7px;font-size:10px; }
+}
+
+/* Generated upgrade-card skin, intentionally last in the cascade. */
+.choice-list:not([data-layout="heroes"]) .choice-card {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  min-height: 112px;
+  aspect-ratio: 3 / 1;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 15px 9px 10px;
+  border: 0 !important;
+  border-radius: 0;
+  clip-path: none !important;
+  background-color: #05080c;
+  background-image: url("assets/ui/upgrade-card-ingame-sheet.png") !important;
+  background-repeat: no-repeat !important;
+  background-size: 224% 378% !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .46);
+  isolation: isolate;
+}
+.choice-list:not([data-layout="heroes"]) .choice-card::after { display: none !important; }
+.choice-list:not([data-layout="heroes"]) .choice-card:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.choice-list:not([data-layout="heroes"]) .choice-card:active { transform: scale(.985); }
+.choice-list:not([data-layout="heroes"]) .choice-type-hero-upgrade { background-position: 6.5% 10.1% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-new-tower { background-position: 91.9% 10.1% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-stat { background-position: 6.5% 52.2% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-core { background-position: 91.9% 52.2% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-synergy { background-position: 6.5% 92.8% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-type-hero-skill { background-position: 91.9% 92.8% !important; }
+.choice-list:not([data-layout="heroes"]) .choice-emblem {
+  display: grid;
+  width: 100px !important;
+  height: 94px !important;
+  align-self: center;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--card-accent) 62%, #cfefff) !important;
+  border-radius: 8px !important;
+  clip-path: none !important;
+  background: radial-gradient(circle at 50% 44%, color-mix(in srgb, var(--choice-color) 25%, #17212d), #070b11 72%) !important;
+  box-shadow: inset 0 0 16px rgba(0, 0, 0, .66), 0 0 12px color-mix(in srgb, var(--card-accent) 22%, transparent) !important;
+}
+.choice-list:not([data-layout="heroes"]) .choice-emblem img {
+  width: 96px !important;
+  height: 92px !important;
+  border-radius: 0 !important;
+  object-fit: contain;
+  transform: scale(1.08);
+  filter: drop-shadow(0 4px 4px rgba(0, 0, 0, .72));
+}
+.choice-list:not([data-layout="heroes"]) .choice-copy {
+  position: relative;
+  z-index: 2;
+  display: grid !important;
+  min-width: 0;
+  align-content: center;
+  justify-items: start;
+  gap: 3px;
+  padding: 3px 0;
+  text-align: left;
+}
+.choice-list:not([data-layout="heroes"]) .choice-category {
+  display: inline-flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  color: color-mix(in srgb, var(--card-accent) 78%, #fff);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+.choice-list:not([data-layout="heroes"]) .choice-category i {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .36);
+  font-size: 11px;
+  font-style: normal;
+}
+.choice-list:not([data-layout="heroes"]) .choice-name {
+  width: 100%;
+  overflow: hidden;
+  color: #fff;
+  font-size: 20px !important;
+  font-weight: 950;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.choice-list:not([data-layout="heroes"]) .choice-impact {
+  display: -webkit-box;
+  width: 100%;
+  overflow: hidden;
+  color: #dce7f1;
+  font-size: 13px !important;
+  font-weight: 800;
+  line-height: 1.2;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+.choice-list:not([data-layout="heroes"]) .choice-sub {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  min-height: 22px;
+  align-items: center;
+  margin: 2px 0 0;
+  padding: 3px 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--card-accent) 52%, transparent);
+  border-radius: 4px;
+  color: #f4f7fa;
+  background: color-mix(in srgb, var(--card-accent) 16%, rgba(2, 5, 8, .82));
+  font-size: 10px !important;
+  font-weight: 900;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.choice-list:not([data-layout="heroes"]) .choice-type-new-tower .choice-impact { display: none; }
+.choice-list:not([data-layout="heroes"]) .choice-type-new-tower .choice-sub {
+  min-height: 26px;
+  padding: 4px 10px;
+  color: #fff5df;
+  font-size: 12px !important;
+}
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-stat {
+  grid-template-columns: 104px minmax(0, 1fr) 50px;
+}
+.choice-list:not([data-layout="heroes"]) .choice-type-tower-stat .choice-impact { display: none; }
+.choice-list:not([data-layout="heroes"]) .choice-stat-readout {
+  display: grid;
+  width: 48px;
+  align-self: center;
+  justify-items: center;
+  color: #92c9ff;
+  text-align: center;
+}
+.choice-list:not([data-layout="heroes"]) .choice-stat-readout b { font-size: 11px; line-height: 1.1; }
+.choice-list:not([data-layout="heroes"]) .choice-stat-readout i {
+  width: 0;
+  height: 0;
+  margin-top: 5px;
+  border-right: 13px solid transparent;
+  border-bottom: 22px solid #75baff;
+  border-left: 13px solid transparent;
+  color: transparent;
+  font-size: 0;
+  filter: drop-shadow(0 0 6px rgba(91, 174, 255, .66));
+}
+.choice-list:not([data-layout="heroes"]) .choice-effect-chips,
+.choice-list:not([data-layout="heroes"]) .synergy-route { display: none !important; }
+
+.choice-list[data-layout="heroes"] {
+  gap: 9px;
+  padding-right: 0;
+  scrollbar-width: none;
+}
+.choice-list[data-layout="heroes"]::-webkit-scrollbar { display: none; }
+.choice-list[data-layout="heroes"] .choice-card {
+  min-height: 148px;
+  grid-template-rows: 86px auto;
+  padding: 7px;
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--choice-color) 68%, #d7efff);
+  background: linear-gradient(155deg, color-mix(in srgb, var(--choice-color) 22%, #17212c), #080d13 64%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07), 0 6px 14px rgba(0, 0, 0, .38);
+}
+.choice-list[data-layout="heroes"] .choice-emblem,
+.choice-list[data-layout="heroes"] .choice-emblem img { width: 90px; height: 88px; }
+.choice-list[data-layout="heroes"] .choice-name { font-size: 17px; line-height: 1.05; }
+.choice-list[data-layout="heroes"] .choice-impact {
+  color: #dbe8f0;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.18;
+}
+
+@media (max-height: 700px) {
+  .choice-list:not([data-layout="heroes"]) .choice-card {
+    min-height: 98px;
+    aspect-ratio: auto;
+    grid-template-columns: 86px minmax(0, 1fr);
+    padding: 6px 12px 6px 8px;
+  }
+  .choice-list:not([data-layout="heroes"]) .choice-emblem {
+    width: 82px !important;
+    height: 80px !important;
+  }
+  .choice-list:not([data-layout="heroes"]) .choice-emblem img {
+    width: 80px !important;
+    height: 78px !important;
+  }
+  .choice-list:not([data-layout="heroes"]) .choice-type-tower-stat {
+    grid-template-columns: 86px minmax(0, 1fr) 44px;
+  }
+  .choice-list:not([data-layout="heroes"]) .choice-name { font-size: 18px !important; }
+  .choice-list[data-layout="heroes"] .choice-card { min-height: 136px; grid-template-rows: 78px auto; }
+  .choice-list[data-layout="heroes"] .choice-emblem,
+  .choice-list[data-layout="heroes"] .choice-emblem img { width: 82px; height: 80px; }
 }

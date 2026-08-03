@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "boss-strategy-calibration19";
+const BUILD_VERSION = "direct-tuning20";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -627,12 +627,12 @@ const BOSS_DIFFICULTY_TIERS = [
 ];
 
 const WAVE = [
-  [1,.42,0,0,0,0,2,6,0],[2,.60,0,0,0,0,2,6,0],[3,.95,2,1,0,0,2,6,0],[4,1.08,4,1,0,0,2,6,0],[5,1.22,6,1,0,0,2,6,0],
-  [6,1.38,8,.9,.1,0,2,6,0],[7,1.55,10,.85,.15,0,2,6,0],[8,1.73,11,.8,.2,0,2,6,0],[9,1.93,12,.75,.25,0,2,6,0],[10,2.15,13,.7,.3,0,2,6,0],
-  [11,2.30,14,.65,.3,.05,2,6,0],[12,2.47,15,.65,.3,.05,2,6,0],[13,2.64,16,.6,.35,.05,2,6,0],[14,2.82,17,.6,.35,.05,2,6,0],[15,3.00,18,.55,.4,.05,2,6,0],
-  [16,3.08,19,.5,.4,.1,2,6,0],[17,3.16,20,.5,.4,.1,2,6,0],[18,3.24,21,.45,.45,.1,2,6,0],[19,3.32,22,.45,.45,.1,2,6,0],[20,3.40,24,.45,.45,.1,2,6,0],
-  [21,3.40,25,.4,.45,.15,2,6,0],[22,3.42,26,.4,.44,.16,2,6,0],[23,3.44,27,.4,.43,.17,2,6,0],[24,3.46,28,.4,.42,.18,2,6,0],[25,3.48,29,.4,.41,.19,2,6,0],
-  [26,3.50,30,.3,.45,.25,2,6,0],[27,3.52,31,.3,.44,.26,2,6,0],[28,3.54,32,.3,.43,.27,2,6,0],[29,3.56,33,.3,.42,.28,2,6,0],[30,3.58,35,.3,.41,.29,2,6,0],
+  [1,.42,0,0,0,0,2,2.7,0],[2,.60,0,0,0,0,2,2.7,0],[3,.95,2,1,0,0,2,2.7,0],[4,1.08,4,1,0,0,2,2.7,0],[5,1.22,6,1,0,0,2,2.7,0],
+  [6,1.38,8,.9,.1,0,2,2.7,0],[7,1.55,10,.85,.15,0,2,2.7,0],[8,1.73,11,.8,.2,0,2,2.7,0],[9,1.93,12,.75,.25,0,2,2.7,0],[10,2.15,13,.7,.3,0,2,2.7,0],
+  [11,2.30,14,.65,.3,.05,2,2.7,0],[12,2.47,15,.65,.3,.05,2,2.7,0],[13,2.64,16,.6,.35,.05,2,2.7,0],[14,2.82,17,.6,.35,.05,2,2.7,0],[15,3.00,18,.55,.4,.05,2,2.7,0],
+  [16,3.08,19,.5,.4,.1,2,2.7,0],[17,3.16,20,.5,.4,.1,2,2.7,0],[18,3.24,21,.45,.45,.1,2,2.7,0],[19,3.32,22,.45,.45,.1,2,2.7,0],[20,3.40,24,.45,.45,.1,2,2.7,0],
+  [21,3.40,25,.4,.45,.15,2,2.7,0],[22,3.42,26,.4,.44,.16,2,2.7,0],[23,3.44,27,.4,.43,.17,2,2.7,0],[24,3.46,28,.4,.42,.18,2,2.7,0],[25,3.48,29,.4,.41,.19,2,2.7,0],
+  [26,3.50,30,.3,.45,.25,2,2.7,0],[27,3.52,31,.3,.44,.26,2,2.7,0],[28,3.54,32,.3,.43,.27,2,2.7,0],[29,3.56,33,.3,.42,.28,2,2.7,0],[30,3.58,35,.3,.41,.29,2,2.7,0],
 ].map(r => ({ wave:r[0], hpMul:r[1], eliteWeight:r[2], e1:r[3], e2:r[4], e3:r[5], bossBase:r[6], bossInc:r[7], bossCd:r[8] }));
 
 const MATH_WAVE_CLEAR_DEFAULTS = [
@@ -748,61 +748,61 @@ function enemyAttributeProfile(enemyAttr) {
 
 const MINION_VARIANTS = {
   neutral: [
-    { id:"neutral_scout", name:"偵察蛛機", sprite:"neutral-scout.webp", enemyAttr:"neutral", hp:300, speed:38, range:0, atk:5, interval:1.5, exp:10, money:[1,3], color:"#d5dde8", size:15 },
-    { id:"neutral_gunner", name:"浮游砲機", sprite:"neutral-gunner.webp", enemyAttr:"neutral", hp:260, speed:35, range:110, atk:5, interval:1.7, exp:12, money:[1,3], color:"#d5dde8", size:16, special:true },
-    { id:"neutral_guard", name:"重盾履帶", sprite:"neutral-guard.webp", enemyAttr:"neutral", hp:650, speed:29, range:0, atk:9, interval:1.8, exp:18, money:[4,8], color:"#d5dde8", size:22 },
+    { id:"neutral_scout", name:"偵察蛛機", sprite:"neutral-scout.webp", enemyAttr:"neutral", hp:315, speed:34.2, range:0, atk:4.1, interval:1.5, exp:10, money:[1,3], color:"#d5dde8", size:15 },
+    { id:"neutral_gunner", name:"浮游砲機", sprite:"neutral-gunner.webp", enemyAttr:"neutral", hp:273, speed:31.5, range:110, atk:4.1, interval:1.7, exp:12, money:[1,3], color:"#d5dde8", size:16, special:true },
+    { id:"neutral_guard", name:"重盾履帶", sprite:"neutral-guard.webp", enemyAttr:"neutral", hp:682.5, speed:26.1, range:0, atk:7.38, interval:1.8, exp:18, money:[4,8], color:"#d5dde8", size:22 },
   ],
   fire: [
-    { id:"fire_charger", name:"燼火輪獸", sprite:"fire-charger.webp", enemyAttr:"fire", hp:230, speed:45, range:0, atk:11, interval:1.15, exp:10, money:[1,3], color:"#ff6b3d", size:15 },
-    { id:"fire_ray", name:"熔火飛魟", sprite:"fire-ray.webp", enemyAttr:"fire", hp:250, speed:39, range:115, atk:10, interval:1.25, exp:12, money:[1,3], color:"#ff6b3d", size:17, special:true },
-    { id:"fire_tortoise", name:"岩漿甲龜", sprite:"fire-tortoise.webp", enemyAttr:"fire", hp:500, speed:31, range:0, atk:15, interval:1.55, exp:18, money:[4,8], color:"#ff6b3d", size:22 },
+    { id:"fire_charger", name:"燼火輪獸", sprite:"fire-charger.webp", enemyAttr:"fire", hp:241.5, speed:40.5, range:0, atk:9.02, interval:1.15, exp:10, money:[1,3], color:"#ff6b3d", size:15 },
+    { id:"fire_ray", name:"熔火飛魟", sprite:"fire-ray.webp", enemyAttr:"fire", hp:262.5, speed:35.1, range:115, atk:8.2, interval:1.25, exp:12, money:[1,3], color:"#ff6b3d", size:17, special:true },
+    { id:"fire_tortoise", name:"岩漿甲龜", sprite:"fire-tortoise.webp", enemyAttr:"fire", hp:525, speed:27.9, range:0, atk:12.3, interval:1.55, exp:18, money:[4,8], color:"#ff6b3d", size:22 },
   ],
   ice: [
-    { id:"ice_crab", name:"冰盾蟹", sprite:"ice-crab.webp", enemyAttr:"ice", hp:430, speed:31, range:0, atk:5, interval:1.6, exp:10, money:[1,3], color:"#72d4ff", size:16 },
-    { id:"ice_jelly", name:"冰晶水母", sprite:"ice-jelly.webp", enemyAttr:"ice", hp:360, speed:30, range:125, atk:5, interval:1.8, exp:12, money:[1,3], color:"#72d4ff", size:17, special:true },
-    { id:"ice_rhino", name:"冰河巨犀", sprite:"ice-rhino.webp", enemyAttr:"ice", hp:820, speed:26, range:0, atk:9, interval:1.9, exp:20, money:[4,8], color:"#72d4ff", size:24 },
+    { id:"ice_crab", name:"冰盾蟹", sprite:"ice-crab.webp", enemyAttr:"ice", hp:451.5, speed:27.9, range:0, atk:4.1, interval:1.6, exp:10, money:[1,3], color:"#72d4ff", size:16 },
+    { id:"ice_jelly", name:"冰晶水母", sprite:"ice-jelly.webp", enemyAttr:"ice", hp:378, speed:27, range:125, atk:4.1, interval:1.8, exp:12, money:[1,3], color:"#72d4ff", size:17, special:true },
+    { id:"ice_rhino", name:"冰河巨犀", sprite:"ice-rhino.webp", enemyAttr:"ice", hp:861, speed:23.4, range:0, atk:7.38, interval:1.9, exp:20, money:[4,8], color:"#72d4ff", size:24 },
   ],
   electric: [
-    { id:"electric_runner", name:"電弧疾蜥", sprite:"electric-runner.webp", enemyAttr:"electric", hp:170, speed:57, range:0, atk:7, interval:.95, exp:8, money:[1,2], color:"#d89cff", size:13 },
-    { id:"electric_pulse", name:"脈衝飛梭", sprite:"electric-pulse.webp", enemyAttr:"electric", hp:190, speed:52, range:105, atk:6, interval:.9, exp:10, money:[1,3], color:"#d89cff", size:14, special:true },
-    { id:"electric_beetle", name:"電容甲蟲", sprite:"electric-beetle.webp", enemyAttr:"electric", hp:330, speed:45, range:0, atk:9, interval:1.0, exp:14, money:[2,5], color:"#d89cff", size:18 },
+    { id:"electric_runner", name:"電弧疾蜥", sprite:"electric-runner.webp", enemyAttr:"electric", hp:178.5, speed:51.3, range:0, atk:5.74, interval:.95, exp:8, money:[1,2], color:"#d89cff", size:13 },
+    { id:"electric_pulse", name:"脈衝飛梭", sprite:"electric-pulse.webp", enemyAttr:"electric", hp:199.5, speed:46.8, range:105, atk:4.92, interval:.9, exp:10, money:[1,3], color:"#d89cff", size:14, special:true },
+    { id:"electric_beetle", name:"電容甲蟲", sprite:"electric-beetle.webp", enemyAttr:"electric", hp:346.5, speed:40.5, range:0, atk:7.38, interval:1.0, exp:14, money:[2,5], color:"#d89cff", size:18 },
   ],
   poison: [
-    { id:"poison_slug", name:"孢囊菌蛞", sprite:"poison-slug.webp", enemyAttr:"poison", hp:320, speed:31, range:75, atk:6, interval:1.05, exp:10, money:[1,3], color:"#66d86f", size:16 },
-    { id:"poison_squid", name:"毒針浮魷", sprite:"poison-squid.webp", enemyAttr:"poison", hp:280, speed:35, range:135, atk:7, interval:1.0, exp:12, money:[1,3], color:"#66d86f", size:17, special:true },
-    { id:"poison_snail", name:"腐蝕罐蝸", sprite:"poison-snail.webp", enemyAttr:"poison", hp:610, speed:27, range:90, atk:9, interval:1.15, exp:18, money:[4,8], color:"#66d86f", size:22 },
+    { id:"poison_slug", name:"孢囊菌蛞", sprite:"poison-slug.webp", enemyAttr:"poison", hp:336, speed:27.9, range:75, atk:4.92, interval:1.05, exp:10, money:[1,3], color:"#66d86f", size:16 },
+    { id:"poison_squid", name:"毒針浮魷", sprite:"poison-squid.webp", enemyAttr:"poison", hp:294, speed:31.5, range:135, atk:5.74, interval:1.0, exp:12, money:[1,3], color:"#66d86f", size:17, special:true },
+    { id:"poison_snail", name:"腐蝕罐蝸", sprite:"poison-snail.webp", enemyAttr:"poison", hp:640.5, speed:24.3, range:90, atk:7.38, interval:1.15, exp:18, money:[4,8], color:"#66d86f", size:22 },
   ],
 };
 
 const ELITE_VARIANTS = {
   neutral: [
-    { id:"neutral_elite_shield", name:"戰術盾衛", sprite:"neutral-elite-shield.webp", enemyAttr:"neutral", hp:1850, speed:27, range:0, atk:42, interval:1.8, exp:50, money:[15,25], color:"#d5dde8", size:29 },
-    { id:"neutral_elite_siege", name:"六足攻城砲", sprite:"neutral-elite-siege.webp", enemyAttr:"neutral", hp:1550, speed:23, range:150, atk:38, interval:1.9, exp:55, money:[14,24], color:"#d5dde8", size:29 },
+    { id:"neutral_elite_shield", name:"戰術盾衛", sprite:"neutral-elite-shield.webp", enemyAttr:"neutral", hp:1942.5, speed:27, range:0, atk:44.1, interval:1.8, exp:50, money:[15,25], color:"#d5dde8", size:29 },
+    { id:"neutral_elite_siege", name:"六足攻城砲", sprite:"neutral-elite-siege.webp", enemyAttr:"neutral", hp:1627.5, speed:23, range:150, atk:39.9, interval:1.9, exp:55, money:[14,24], color:"#d5dde8", size:29 },
   ],
   fire: [
-    { id:"fire_elite_blade", name:"炎刃統領", sprite:"fire-elite-blade.webp", enemyAttr:"fire", hp:1450, speed:36, range:0, atk:57, interval:1.25, exp:48, money:[14,24], color:"#ff6b3d", size:28 },
-    { id:"fire_elite_furnace", name:"熔爐巨兵", sprite:"fire-elite-furnace.webp", enemyAttr:"fire", hp:2200, speed:22, range:0, atk:68, interval:1.75, exp:58, money:[16,27], color:"#ff6b3d", size:31 },
+    { id:"fire_elite_blade", name:"炎刃統領", sprite:"fire-elite-blade.webp", enemyAttr:"fire", hp:1522.5, speed:36, range:0, atk:59.85, interval:1.25, exp:48, money:[14,24], color:"#ff6b3d", size:28 },
+    { id:"fire_elite_furnace", name:"熔爐巨兵", sprite:"fire-elite-furnace.webp", enemyAttr:"fire", hp:2310, speed:22, range:0, atk:71.4, interval:1.75, exp:58, money:[16,27], color:"#ff6b3d", size:31 },
   ],
   ice: [
-    { id:"ice_elite_executioner", name:"凍原處刑者", sprite:"ice-elite-executioner.webp", enemyAttr:"ice", hp:2650, speed:20, range:0, atk:48, interval:1.8, exp:58, money:[16,27], color:"#72d4ff", size:31 },
-    { id:"ice_elite_wall", name:"行進冰壁", sprite:"ice-elite-wall.webp", enemyAttr:"ice", hp:3350, speed:16, range:0, atk:42, interval:2.0, exp:62, money:[18,30], color:"#72d4ff", size:33 },
+    { id:"ice_elite_executioner", name:"凍原處刑者", sprite:"ice-elite-executioner.webp", enemyAttr:"ice", hp:2782.5, speed:20, range:0, atk:50.4, interval:1.8, exp:58, money:[16,27], color:"#72d4ff", size:31 },
+    { id:"ice_elite_wall", name:"行進冰壁", sprite:"ice-elite-wall.webp", enemyAttr:"ice", hp:3517.5, speed:16, range:0, atk:44.1, interval:2.0, exp:62, money:[18,30], color:"#72d4ff", size:33 },
   ],
   electric: [
-    { id:"electric_elite_panther", name:"雷襲獵豹", sprite:"electric-elite-panther.webp", enemyAttr:"electric", hp:1200, speed:48, range:0, atk:43, interval:.9, exp:46, money:[13,23], color:"#d89cff", size:27 },
-    { id:"electric_elite_overload", name:"過載球體", sprite:"electric-elite-overload.webp", enemyAttr:"electric", hp:1700, speed:35, range:115, atk:38, interval:1.0, exp:52, money:[14,25], color:"#d89cff", size:29 },
+    { id:"electric_elite_panther", name:"雷襲獵豹", sprite:"electric-elite-panther.webp", enemyAttr:"electric", hp:1260, speed:48, range:0, atk:45.15, interval:.9, exp:46, money:[13,23], color:"#d89cff", size:27 },
+    { id:"electric_elite_overload", name:"過載球體", sprite:"electric-elite-overload.webp", enemyAttr:"electric", hp:1785, speed:35, range:115, atk:39.9, interval:1.0, exp:52, money:[14,25], color:"#d89cff", size:29 },
   ],
   poison: [
-    { id:"poison_elite_witch", name:"瘴氣巫株", sprite:"poison-elite-witch.webp", enemyAttr:"poison", hp:1650, speed:25, range:155, atk:36, interval:1.05, exp:52, money:[14,25], color:"#66d86f", size:29 },
-    { id:"poison_elite_centipede", name:"毒甲蜈蚣", sprite:"poison-elite-centipede.webp", enemyAttr:"poison", hp:2250, speed:28, range:85, atk:42, interval:1.0, exp:58, money:[16,27], color:"#66d86f", size:31 },
+    { id:"poison_elite_witch", name:"瘴氣巫株", sprite:"poison-elite-witch.webp", enemyAttr:"poison", hp:1732.5, speed:25, range:155, atk:37.8, interval:1.05, exp:52, money:[14,25], color:"#66d86f", size:29 },
+    { id:"poison_elite_centipede", name:"毒甲蜈蚣", sprite:"poison-elite-centipede.webp", enemyAttr:"poison", hp:2362.5, speed:28, range:85, atk:44.1, interval:1.0, exp:58, money:[16,27], color:"#66d86f", size:31 },
   ],
 };
 
 const BOSS_VARIANTS = {
-  neutral:{ id:"neutral_boss_fortress", name:"鋼鐵堡壘", sprite:"neutral-boss-fortress.webp", enemyAttr:"neutral", hp:9500, speed:19, range:0, atk:130, interval:2.1, exp:120, color:"#d5dde8", size:46 },
-  fire:{ id:"fire_boss_tyrant", name:"煉獄暴君", sprite:"fire-boss-tyrant.webp", enemyAttr:"fire", hp:8200, speed:24, range:0, atk:170, interval:1.65, exp:120, color:"#ff6b3d", size:46 },
-  ice:{ id:"ice_boss_frostbeast", name:"永凍巨獸", sprite:"ice-boss-frostbeast.webp", enemyAttr:"ice", hp:14000, speed:15, range:0, atk:120, interval:2.25, exp:120, color:"#72d4ff", size:48 },
-  electric:{ id:"electric_boss_stormcore", name:"風暴核心", sprite:"electric-boss-stormcore.webp", enemyAttr:"electric", hp:7200, speed:30, range:80, atk:145, interval:1.35, exp:120, color:"#d89cff", size:45 },
-  poison:{ id:"poison_boss_plaguemother", name:"疫病母體", sprite:"poison-boss-plaguemother.webp", enemyAttr:"poison", hp:10600, speed:17, range:165, atk:92, interval:1.15, exp:120, color:"#66d86f", size:48 },
+  neutral:{ id:"neutral_boss_fortress", name:"鋼鐵堡壘", sprite:"neutral-boss-fortress.webp", enemyAttr:"neutral", hp:22325, speed:19, range:0, atk:130, interval:2.1, exp:120, color:"#d5dde8", size:46 },
+  fire:{ id:"fire_boss_tyrant", name:"煉獄暴君", sprite:"fire-boss-tyrant.webp", enemyAttr:"fire", hp:19270, speed:24, range:0, atk:170, interval:1.65, exp:120, color:"#ff6b3d", size:46 },
+  ice:{ id:"ice_boss_frostbeast", name:"永凍巨獸", sprite:"ice-boss-frostbeast.webp", enemyAttr:"ice", hp:32900, speed:15, range:0, atk:120, interval:2.25, exp:120, color:"#72d4ff", size:48 },
+  electric:{ id:"electric_boss_stormcore", name:"風暴核心", sprite:"electric-boss-stormcore.webp", enemyAttr:"electric", hp:16920, speed:30, range:80, atk:145, interval:1.35, exp:120, color:"#d89cff", size:45 },
+  poison:{ id:"poison_boss_plaguemother", name:"疫病母體", sprite:"poison-boss-plaguemother.webp", enemyAttr:"poison", hp:24910, speed:17, range:165, atk:92, interval:1.15, exp:120, color:"#66d86f", size:48 },
 };
 
 const ALL_MINION_VARIANTS = Object.values(MINION_VARIANTS).flat();
@@ -912,6 +912,7 @@ function waveDefaultParams() {
     result[`wave_${row.wave}_bossCd`] = row.bossCd;
     result[`wave_${row.wave}_mathClear`] = MATH_WAVE_CLEAR_DEFAULTS[row.wave - 1];
     result[`wave_${row.wave}_mathPayout`] = MATH_WAVE_PAYOUT_DEFAULTS[row.wave - 1];
+    result[`wave_${row.wave}_mathBossCorrection`] = 0;
   });
   return result;
 }
@@ -1163,9 +1164,9 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 136,
+  balanceRevision: 140,
   mathModelEnabled: 1,
-  mathTargetRtp: .96,
+  mathTargetRtp: .95,
   mathTolerancePct: 1.0,
   mathBuildInfluence: .80,
   mathBossBuildInfluence: 1.80,
@@ -1209,6 +1210,11 @@ const DEFAULT_PARAMS = {
   mathTowerBossPower_trap: .25,
   mathBossPenalty: .35,
   mathPayoutCalibration: .935,
+  mathMinionPayoutChanceScale: 1.00,
+  mathBossPayoutChanceScale: 1.00,
+  mathBossPayoutChanceMidScale: 1.00,
+  mathBossPayoutChanceDeepScale: 1.00,
+  mathBossPayoutChanceUltraScale: 1.00,
   mathPayoutBand1: .962,
   mathPayoutBand2: .962,
   mathPayoutBand3: .962,
@@ -1218,6 +1224,8 @@ const DEFAULT_PARAMS = {
   mathLossAtkMul: 5.00,
   mathLossSpeedMul: 1.12,
   mathMinClearChance: .15,
+  mathBossFirstMinClearChance: .15,
+  mathBossLaterMinClearChance: .08,
   mathMaxClearChance: .999,
   mathFirstWaveClearChance: .999,
   mathClearBand1: .999,
@@ -1241,33 +1249,33 @@ const DEFAULT_PARAMS = {
   bossFirstGuaranteeWave: 30,
   bossFirstRewardMul: .35,
   bossLaterRewardMul: .50,
-  bossChanceMul: .45,
+  bossChanceMul: 1.0,
   bossChanceCap: 55,
-  minionHpMul: 1.05,
-  minionAtkMul: .82,
-  minionSpeedMul: .90,
+  minionHpMul: 1.0,
+  minionAtkMul: 1.0,
+  minionSpeedMul: 1.0,
   wave1MinionAtkMul: .55,
-  eliteHpMul: 1.05,
-  eliteAtkMul: 1.05,
-  bossFirstHpMul: 2.35,
-  bossHpMul: 2.30,
+  eliteHpMul: 1.0,
+  eliteAtkMul: 1.0,
+  bossFirstHpMul: 1.0,
+  bossHpMul: .9787234042553191,
   bossHpPerOrdinalMul: 1.20,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
-  moneyMul: 1.085,
+  moneyMul: 1.0,
   deepMoneyBase: 1.35,
   deepMoneyRamp: .04,
   deepMoneyCap: 1.80,
   waveRewardDryWeight: 30,
-  waveRewardDryMul: .105,
+  waveRewardDryMul: .113925,
   waveRewardLowWeight: 32,
-  waveRewardLowMul: .24,
+  waveRewardLowMul: .2604,
   waveRewardNormalWeight: 25,
-  waveRewardNormalMul: .48,
+  waveRewardNormalMul: .5208,
   waveRewardProfitWeight: 10,
-  waveRewardProfitMul: 1.35,
+  waveRewardProfitMul: 1.46475,
   waveRewardHotWeight: 3,
-  waveRewardHotMul: 2.45,
+  waveRewardHotMul: 2.65825,
   bossDiffEasyWeight: 30,
   bossDiffEasyHpMul: .80,
   bossDiffEasyAtkMul: .90,
@@ -1344,6 +1352,7 @@ function cleanParams(input={}) {
   ["bossFirstDiffEasyWeight", "bossFirstDiffNormalWeight", "bossFirstDiffHardWeight", "bossFirstDiffBrutalWeight"]
     .forEach(key => { next[key] = Math.max(0, next[key]); });
   next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
+  next.bossHpMul = Math.round(Math.max(.1, Math.min(3, next.bossHpMul)) * 100) / 100;
   next.mathModelEnabled = next.mathModelEnabled >= .5 ? 1 : 0;
   next.mathTargetRtp = Math.max(0, Math.min(2, next.mathTargetRtp));
   next.mathTolerancePct = Math.max(0, Math.min(20, next.mathTolerancePct));
@@ -1370,13 +1379,20 @@ function cleanParams(input={}) {
   Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathClear$/.test(key))
     .forEach(key => { next[key] = Math.max(.01, Math.min(.999, next[key])); });
   Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathPayout$/.test(key))
-    .forEach(key => { next[key] = Math.max(.25, Math.min(2, next[key])); });
+    .forEach(key => { next[key] = Math.max(.01, Math.min(2, next[key])); });
+  Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathBossCorrection$/.test(key))
+    .forEach(key => { next[key] = Math.max(-.8, Math.min(.8, next[key])); });
   next.mathHpReference = Math.max(0, Math.min(1, next.mathHpReference));
   next.mathCoreRiskBonus = Math.max(0, Math.min(.25, next.mathCoreRiskBonus));
   Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("mathHeroPower_") || key.startsWith("mathTowerBossPower_"))
     .forEach(key => { next[key] = Math.max(.25, Math.min(2.5, next[key])); });
   next.mathBossPenalty = Math.max(0, Math.min(.8, next.mathBossPenalty));
   next.mathPayoutCalibration = Math.max(.5, Math.min(1.5, next.mathPayoutCalibration));
+  next.mathMinionPayoutChanceScale = Math.max(.5, Math.min(2, next.mathMinionPayoutChanceScale));
+  next.mathBossPayoutChanceScale = Math.max(.5, Math.min(2, next.mathBossPayoutChanceScale));
+  next.mathBossPayoutChanceMidScale = Math.max(.5, Math.min(2, next.mathBossPayoutChanceMidScale));
+  next.mathBossPayoutChanceDeepScale = Math.max(.5, Math.min(2, next.mathBossPayoutChanceDeepScale));
+  next.mathBossPayoutChanceUltraScale = Math.max(.5, Math.min(2, next.mathBossPayoutChanceUltraScale));
   next.bossHpPerOrdinalMul = Math.max(1, Math.min(2, next.bossHpPerOrdinalMul));
   ["mathPayoutBand1", "mathPayoutBand2", "mathPayoutBand3", "mathPayoutBand4", "mathPayoutBand5"]
     .forEach(key => { next[key] = Math.max(.5, Math.min(1.5, next[key])); });
@@ -1384,6 +1400,8 @@ function cleanParams(input={}) {
   next.mathLossAtkMul = Math.max(1, Math.min(5, next.mathLossAtkMul));
   next.mathLossSpeedMul = Math.max(1, Math.min(1.25, next.mathLossSpeedMul));
   next.mathMinClearChance = Math.max(.01, Math.min(.99, next.mathMinClearChance));
+  next.mathBossFirstMinClearChance = Math.max(.01, Math.min(.99, next.mathBossFirstMinClearChance));
+  next.mathBossLaterMinClearChance = Math.max(.01, Math.min(.99, next.mathBossLaterMinClearChance));
   next.mathMaxClearChance = Math.max(next.mathMinClearChance, Math.min(.999, next.mathMaxClearChance));
   next.mathFirstWaveClearChance = Math.max(.01, Math.min(.999, next.mathFirstWaveClearChance));
   ["mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
@@ -1420,7 +1438,7 @@ function cleanParams(input={}) {
   next.deepMoneyCap = Math.max(next.deepMoneyBase, next.deepMoneyCap);
   WAVE_REWARD_TIERS.forEach(tier => {
     next[tier.weightKey] = Math.max(0, next[tier.weightKey]);
-    next[tier.mulKey] = Math.max(0, next[tier.mulKey]);
+    next[tier.mulKey] = Math.round(Math.max(0, next[tier.mulKey]) * 1e6) / 1e6;
   });
   BOSS_DIFFICULTY_TIERS.forEach(tier => {
     next[tier.weightKey] = Math.max(0, next[tier.weightKey]);
@@ -2146,6 +2164,66 @@ function migrateBossParams(input={}) {
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 136;
   }
+  if ((Number(input.balanceRevision) || 0) < 137) {
+    ["mathBossFirstMinClearChance", "mathBossLaterMinClearChance"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 137;
+  }
+  if ((Number(input.balanceRevision) || 0) < 138) {
+    Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathBossCorrection$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 138;
+  }
+  if ((Number(input.balanceRevision) || 0) < 139) {
+    const multiplyMonsterField = (variants, field, multiplier) => {
+      variants.forEach(monster => {
+        const key = `monster_${monster.id}_${field}`;
+        if (Number.isFinite(Number(next[key]))) next[key] = Number(next[key]) * multiplier;
+      });
+    };
+    const minionHp = Number.isFinite(Number(next.minionHpMul)) ? Number(next.minionHpMul) : 1.05;
+    const minionAtk = Number.isFinite(Number(next.minionAtkMul)) ? Number(next.minionAtkMul) : .82;
+    const minionSpeed = Number.isFinite(Number(next.minionSpeedMul)) ? Number(next.minionSpeedMul) : .90;
+    const eliteHp = Number.isFinite(Number(next.eliteHpMul)) ? Number(next.eliteHpMul) : 1.05;
+    const eliteAtk = Number.isFinite(Number(next.eliteAtkMul)) ? Number(next.eliteAtkMul) : 1.05;
+    const bossFirstHp = Number.isFinite(Number(next.bossFirstHpMul)) ? Number(next.bossFirstHpMul) : 2.35;
+    const bossLaterHp = Number.isFinite(Number(next.bossHpMul)) ? Number(next.bossHpMul) : 2.30;
+    const bossAtk = Number.isFinite(Number(next.bossAtkMul)) ? Number(next.bossAtkMul) : 1;
+    const bossSpeed = Number.isFinite(Number(next.bossSpeedMul)) ? Number(next.bossSpeedMul) : 1;
+    const rewardMul = Number.isFinite(Number(next.moneyMul)) ? Number(next.moneyMul) : 1.085;
+    const bossChanceMul = Number.isFinite(Number(next.bossChanceMul)) ? Number(next.bossChanceMul) : .45;
+    multiplyMonsterField(ALL_MINION_VARIANTS, "hp", minionHp);
+    multiplyMonsterField(ALL_MINION_VARIANTS, "atk", minionAtk);
+    multiplyMonsterField(ALL_MINION_VARIANTS, "speed", minionSpeed);
+    multiplyMonsterField(ALL_ELITE_VARIANTS, "hp", eliteHp);
+    multiplyMonsterField(ALL_ELITE_VARIANTS, "atk", eliteAtk);
+    multiplyMonsterField(ALL_BOSS_VARIANTS, "hp", bossFirstHp);
+    multiplyMonsterField(ALL_BOSS_VARIANTS, "atk", bossAtk);
+    multiplyMonsterField(ALL_BOSS_VARIANTS, "speed", bossSpeed);
+    next.minionHpMul = 1;
+    next.minionAtkMul = 1;
+    next.minionSpeedMul = 1;
+    next.eliteHpMul = 1;
+    next.eliteAtkMul = 1;
+    next.bossFirstHpMul = 1;
+    next.bossHpMul = bossFirstHp > 0 ? bossLaterHp / bossFirstHp : 1;
+    next.bossAtkMul = 1;
+    next.bossSpeedMul = 1;
+    WAVE_REWARD_TIERS.forEach(tier => {
+      if (Number.isFinite(Number(next[tier.mulKey]))) next[tier.mulKey] = Number(next[tier.mulKey]) * rewardMul;
+    });
+    next.moneyMul = 1;
+    WAVE.forEach(row => {
+      const key = `wave_${row.wave}_bossInc`;
+      if (Number.isFinite(Number(next[key]))) next[key] = Number(next[key]) * bossChanceMul;
+    });
+    next.bossChanceMul = 1;
+    next.balanceRevision = 139;
+  }
+  if ((Number(input.balanceRevision) || 0) < 140) {
+    next.mathTargetRtp = .95;
+    next.balanceRevision = 140;
+  }
   return next;
 }
 
@@ -2388,8 +2466,13 @@ function mathClearChance(wave, boss=false, difficulty=null) {
     ? Math.max(0, wave - paramNumber("bossFirstMinWave", 3))
     : 0;
   const firstBossDelayShift = -firstBossDelay * firstBossDelay * paramNumber("mathFirstBossDelayPenalty", .06);
-  const raw = base + buildShift + hpShift + areaRiskShift + roleRiskShift + difficultyShift + ordinalShift + firstBossDelayShift - (boss ? paramNumber("mathBossPenalty", .28) : 0);
-  const min = paramNumber("mathMinClearChance", .18);
+  const waveBossCorrection = boss ? paramNumber(`wave_${wave}_mathBossCorrection`, 0) : 0;
+  const raw = base + buildShift + hpShift + areaRiskShift + roleRiskShift + difficultyShift + ordinalShift + firstBossDelayShift + waveBossCorrection - (boss ? paramNumber("mathBossPenalty", .28) : 0);
+  const min = boss
+    ? (state.bossSeen === 0
+      ? paramNumber("mathBossFirstMinClearChance", paramNumber("mathMinClearChance", .18))
+      : paramNumber("mathBossLaterMinClearChance", paramNumber("mathMinClearChance", .18)))
+    : paramNumber("mathMinClearChance", .18);
   const max = Math.max(min, paramNumber("mathMaxClearChance", .96));
   return Math.round(clamp(raw, min, max) * 10000) / 10000;
 }
@@ -2454,7 +2537,13 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const payoutScale = paramNumber("mathPayoutCalibration", 1) * mathPayoutBandScale(wave)
     * payoutRoleScale;
   const expectedAfter = before + bet * targetRtp * payoutScale * rewardFactor;
-  const conditionalPayoutExact = expectedAfter / clearChance;
+  const bossPayoutChanceKey = wave >= 28
+    ? "mathBossPayoutChanceUltraScale"
+    : wave >= 21 ? "mathBossPayoutChanceDeepScale"
+    : wave >= 11 ? "mathBossPayoutChanceMidScale" : "mathBossPayoutChanceScale";
+  const payoutChanceScale = paramNumber(boss ? bossPayoutChanceKey : "mathMinionPayoutChanceScale", 1);
+  const pricingClearChance = clamp(clearChance * payoutChanceScale, .0001, 1);
+  const conditionalPayoutExact = expectedAfter / pricingClearChance;
   const payoutUniform = mathUniform(wave, 1);
   const targetPayout = stochasticRound(conditionalPayoutExact, payoutUniform);
   let bossAdd = 0;
@@ -2467,12 +2556,13 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const targetPot = Math.max(state.pot, stochasticRound(targetPayout / targetMultiplier, mathUniform(wave, 3)));
   const ticket = {
     id:state.mathLedger.length + 1, wave, bet, boss, bossDifficulty:difficulty?.id || null,
-    buildPower:mathBuildPower(boss), hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, before, targetRtp, payoutScale, payoutRoleScale,
+    buildPower:mathBuildPower(boss), hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, pricingClearChance, payoutChanceScale, before, targetRtp, payoutScale, payoutRoleScale,
+    singleShare,areaShare,controlShare,
     expectedAfter, conditionalPayoutExact, targetPayout, targetPot, payoutUniform,
     waveRewardTier:waveReward.id,waveRewardMultiplier:waveReward.multiplier,waveRewardFactor:waveReward.factor,
     bossRewardFactor,rewardFactor,rolledBossAdd:rolledAdd,
     rewardBudget:Math.max(0, targetPot - state.pot), bossAdd,
-    identityError:Math.abs(clearChance * conditionalPayoutExact - expectedAfter),
+    identityError:Math.abs(pricingClearChance * conditionalPayoutExact - expectedAfter),
     settled:false, result:"pending",
   };
   state.mathTicket = ticket;
@@ -2752,7 +2842,7 @@ function showChoices(title, hint, choices, options={}) {
       : "";
     const impact = choice.impact || choice.effect || choice.desc || "";
     const compactImpact = cardType === "hero-upgrade"
-      ? compactChoiceText(impact, 22)
+      ? "三維同步提升 ▲"
       : compactChoiceText(impact, cardType === "tower-synergy" ? 18 : 22);
     const statVisual = statUpgradeVisual(dimension, impact);
     const statHtml = cardType === "tower-stat"
@@ -7029,7 +7119,16 @@ if (HEADLESS_SIM) {
       currentBet:currentBet(), payout:payout(),
     };
     if (includeBuild) {
-      value.mathTicket = state.mathTicket ? { wave:state.mathTicket.wave, clearChance:state.mathTicket.clearChance, buildPower:state.mathTicket.buildPower, result:state.mathTicket.result } : null;
+      value.mathTicket = state.mathTicket ? {
+        wave:state.mathTicket.wave,
+        clearChance:state.mathTicket.clearChance,
+        pricingClearChance:state.mathTicket.pricingClearChance,
+        buildPower:state.mathTicket.buildPower,
+        singleShare:state.mathTicket.singleShare,
+        areaShare:state.mathTicket.areaShare,
+        controlShare:state.mathTicket.controlShare,
+        result:state.mathTicket.result,
+      } : null;
       value.hero = state.hero ? { id:state.hero.heroId, name:state.hero.name, attrKey:state.hero.attrKey, level:state.hero.level, upgrades:state.hero.upgrades.slice() } : null;
       value.towers = state.towers.map(tower => ({ id:tower.id, name:tower.name, level:tower.level, upgrades:tower.upgrades.slice() }));
     }
