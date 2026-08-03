@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "direct-tuning20";
+const BUILD_VERSION = "wave-variance1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1164,7 +1164,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 140,
+  balanceRevision: 141,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathTolerancePct: 1.0,
@@ -1266,16 +1266,16 @@ const DEFAULT_PARAMS = {
   deepMoneyBase: 1.35,
   deepMoneyRamp: .04,
   deepMoneyCap: 1.80,
-  waveRewardDryWeight: 30,
-  waveRewardDryMul: .113925,
-  waveRewardLowWeight: 32,
-  waveRewardLowMul: .2604,
-  waveRewardNormalWeight: 25,
-  waveRewardNormalMul: .5208,
-  waveRewardProfitWeight: 10,
-  waveRewardProfitMul: 1.46475,
-  waveRewardHotWeight: 3,
-  waveRewardHotMul: 2.65825,
+  waveRewardDryWeight: 10,
+  waveRewardDryMul: .20,
+  waveRewardLowWeight: 20,
+  waveRewardLowMul: .35,
+  waveRewardNormalWeight: 60,
+  waveRewardNormalMul: .46,
+  waveRewardProfitWeight: 8,
+  waveRewardProfitMul: 1.05,
+  waveRewardHotWeight: 2,
+  waveRewardHotMul: 1.20,
   bossDiffEasyWeight: 30,
   bossDiffEasyHpMul: .80,
   bossDiffEasyAtkMul: .90,
@@ -2223,6 +2223,13 @@ function migrateBossParams(input={}) {
   if ((Number(input.balanceRevision) || 0) < 140) {
     next.mathTargetRtp = .95;
     next.balanceRevision = 140;
+  }
+  if ((Number(input.balanceRevision) || 0) < 141) {
+    WAVE_REWARD_TIERS.forEach(tier => {
+      next[tier.weightKey] = DEFAULT_PARAMS[tier.weightKey];
+      next[tier.mulKey] = DEFAULT_PARAMS[tier.mulKey];
+    });
+    next.balanceRevision = 141;
   }
   return next;
 }
