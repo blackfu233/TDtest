@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "profit-shape2";
+const BUILD_VERSION = "profit-shape5";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -698,11 +698,11 @@ const HEROES = [
   { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", attackMode:"burst", damage:46, rate:.92, range:940, color:"#d5dde8", status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0, attackTrait:"三連實彈", desc:"高速三連｜純傷害" },
 ];
 [
-  ["fire", { damage:145 }],
-  ["ice", { damage:164, secondaryMul:.68 }],
-  ["electric", { damage:82 }],
-  ["poison", { damage:72, rate:.72, status:25, splash:58 }],
-  ["neutral", { damage:50 }],
+  ["fire", { damage:140 }],
+  ["ice", { damage:160, secondaryMul:.68 }],
+  ["electric", { damage:88 }],
+  ["poison", { damage:84, rate:.76, status:25, splash:58 }],
+  ["neutral", { damage:60 }],
 ].forEach(([id, values]) => Object.assign(HEROES.find(hero => hero.id === id), values));
 const UPGRADE_DIMENSIONS = {
   damage:{ label:"傷害", mark:"DMG" },
@@ -1164,14 +1164,18 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 147,
+  balanceRevision: 151,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
   mathPoolSeedBetUnits: 0,
   mathPoolMaxPayoutMul: 500,
+  mathPoolBaseOutcomeCapMul: 1.65,
+  mathPoolBossAddCapScale: 12,
   mathPoolReleaseRate: .20,
   mathPoolReleaseCapMul: 3.0,
+  mathPoolMeaningfulWinTriggerMul: .75,
+  mathPoolMeaningfulWinFloorMul: 1.5,
   mathTolerancePct: 1.0,
   mathBuildInfluence: .80,
   mathBossBuildInfluence: 1.80,
@@ -1191,17 +1195,17 @@ const DEFAULT_PARAMS = {
   mathMinionHpInfluence: 0,
   mathBossHpInfluence: 1.10,
   mathBossLaterHpInfluence: .18,
-  mathBossOrdinalPenalty: .30,
+  mathBossOrdinalPenalty: .24,
   mathBossFirstBaseChance: .809,
-  mathBossLaterBaseChance: .44,
+  mathBossLaterBaseChance: .50,
   mathFirstBossDelayPenalty: .012,
   mathFirstBossGuaranteePenalty: 0,
   mathHpReference: .91,
-  mathHeroPower_fire: 1.04,
-  mathHeroPower_ice: 1.135,
-  mathHeroPower_electric: .93,
-  mathHeroPower_poison: .815,
-  mathHeroPower_neutral: .865,
+  mathHeroPower_fire: 1,
+  mathHeroPower_ice: 1,
+  mathHeroPower_electric: 1,
+  mathHeroPower_poison: 1,
+  mathHeroPower_neutral: 1,
   mathCoreRiskBonus: .050,
   mathTowerBossPower_flame: .60,
   mathTowerBossPower_grenade: .80,
@@ -1230,7 +1234,7 @@ const DEFAULT_PARAMS = {
   mathLossSpeedMul: 1.12,
   mathMinClearChance: .15,
   mathBossFirstMinClearChance: .15,
-  mathBossLaterMinClearChance: .12,
+  mathBossLaterMinClearChance: .14,
   mathMaxClearChance: .999,
   mathFirstWaveClearChance: .999,
   mathClearBand1: .999,
@@ -1264,36 +1268,36 @@ const DEFAULT_PARAMS = {
   eliteAtkMul: 1.0,
   bossFirstHpMul: 1.0,
   bossHpMul: .90,
-  bossHpPerOrdinalMul: 1.14,
+  bossHpPerOrdinalMul: 1.08,
   bossAtkMul: 1.0,
   bossSpeedMul: 1.0,
   moneyMul: 1.0,
   deepMoneyBase: 1.35,
   deepMoneyRamp: .04,
   deepMoneyCap: 1.80,
-  waveRewardDryWeight: 8,
-  waveRewardDryMul: .32,
-  waveRewardLowWeight: 20,
-  waveRewardLowMul: .50,
-  waveRewardNormalWeight: 55,
-  waveRewardNormalMul: .80,
-  waveRewardProfitWeight: 13,
-  waveRewardProfitMul: 1.35,
-  waveRewardHotWeight: 4,
-  waveRewardHotMul: 2.20,
-  bossDiffEasyWeight: 40,
+  waveRewardDryWeight: 20,
+  waveRewardDryMul: .10,
+  waveRewardLowWeight: 15,
+  waveRewardLowMul: .30,
+  waveRewardNormalWeight: 20,
+  waveRewardNormalMul: .50,
+  waveRewardProfitWeight: 35,
+  waveRewardProfitMul: 1.50,
+  waveRewardHotWeight: 10,
+  waveRewardHotMul: 3.00,
+  bossDiffEasyWeight: 50,
   bossDiffEasyHpMul: .80,
   bossDiffEasyAtkMul: .90,
   bossDiffEasySpeedMul: .97,
-  bossDiffNormalWeight: 43,
+  bossDiffNormalWeight: 40,
   bossDiffNormalHpMul: 1.25,
   bossDiffNormalAtkMul: 1.05,
   bossDiffNormalSpeedMul: 1.0,
-  bossDiffHardWeight: 14,
+  bossDiffHardWeight: 8,
   bossDiffHardHpMul: 1.75,
   bossDiffHardAtkMul: 1.25,
   bossDiffHardSpeedMul: 1.04,
-  bossDiffBrutalWeight: 3,
+  bossDiffBrutalWeight: 2,
   bossDiffBrutalHpMul: 2.40,
   bossDiffBrutalAtkMul: 1.45,
   bossDiffBrutalSpeedMul: 1.08,
@@ -1363,8 +1367,12 @@ function cleanParams(input={}) {
   next.mathPoolEnabled = next.mathPoolEnabled >= .5 ? 1 : 0;
   next.mathPoolSeedBetUnits = Math.max(0, Math.min(10000, next.mathPoolSeedBetUnits));
   next.mathPoolMaxPayoutMul = Math.max(1, Math.min(500, next.mathPoolMaxPayoutMul));
+  next.mathPoolBaseOutcomeCapMul = Math.max(0, Math.min(500, next.mathPoolBaseOutcomeCapMul));
+  next.mathPoolBossAddCapScale = Math.max(0, Math.min(100, next.mathPoolBossAddCapScale));
   next.mathPoolReleaseRate = Math.max(0, Math.min(1, next.mathPoolReleaseRate));
   next.mathPoolReleaseCapMul = Math.max(0, Math.min(500, next.mathPoolReleaseCapMul));
+  next.mathPoolMeaningfulWinTriggerMul = Math.max(0, Math.min(500, next.mathPoolMeaningfulWinTriggerMul));
+  next.mathPoolMeaningfulWinFloorMul = Math.max(1, Math.min(500, next.mathPoolMeaningfulWinFloorMul));
   next.mathTolerancePct = Math.max(0, Math.min(20, next.mathTolerancePct));
   next.mathBuildInfluence = Math.max(0, Math.min(1, next.mathBuildInfluence));
   next.mathBossBuildInfluence = Math.max(0, Math.min(2, next.mathBossBuildInfluence));
@@ -2301,6 +2309,34 @@ function migrateBossParams(input={}) {
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 147;
   }
+  if ((Number(input.balanceRevision) || 0) < 148) {
+    [
+      "mathPoolBaseOutcomeCapMul", "mathPoolBossAddCapScale", "mathPoolReleaseRate", "mathPoolReleaseCapMul",
+      "mathBossLaterBaseChance", "mathBossOrdinalPenalty", "mathBossLaterMinClearChance",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "bossHpPerOrdinalMul", "bossDiffEasyWeight", "bossDiffNormalWeight", "bossDiffHardWeight", "bossDiffBrutalWeight",
+      "waveRewardDryWeight", "waveRewardDryMul", "waveRewardLowWeight", "waveRewardLowMul",
+      "waveRewardNormalWeight", "waveRewardNormalMul", "waveRewardProfitWeight", "waveRewardProfitMul",
+      "waveRewardHotWeight", "waveRewardHotMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 148;
+  }
+  if ((Number(input.balanceRevision) || 0) < 149) {
+    [
+      "hero_fire_damage", "hero_ice_damage", "hero_electric_damage",
+      "hero_poison_damage", "hero_poison_rate", "hero_neutral_damage",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 149;
+  }
+  if ((Number(input.balanceRevision) || 0) < 150) {
+    next.mathPoolBossAddCapScale = DEFAULT_PARAMS.mathPoolBossAddCapScale;
+    next.balanceRevision = 150;
+  }
+  if ((Number(input.balanceRevision) || 0) < 151) {
+    ["mathPoolBaseOutcomeCapMul", "mathPoolMeaningfulWinTriggerMul", "mathPoolMeaningfulWinFloorMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 151;
+  }
   return next;
 }
 
@@ -2514,17 +2550,31 @@ function releaseMathReservation() {
   state.mathReservedPayout = 0;
   state.mathPoolRecycled = 0;
 }
-function personalPoolPayoutAmount(targetPayout) {
+function personalPoolPayoutAmount(targetPayout, stakeOverride=null) {
   const pool = ensureMathPool();
   const desired = Math.max(0, Math.round(Number(targetPayout) || 0));
-  const exposureCap = Math.max(0, state.mathTotalStake * paramNumber("mathPoolMaxPayoutMul", 500));
-  const available = Math.max(0, Math.min(exposureCap, pool.available));
+  const payoutStake = Number.isFinite(Number(stakeOverride)) && Number(stakeOverride) > 0
+    ? Number(stakeOverride)
+    : state.mathTotalStake;
+  const exposureCap = Math.max(0, payoutStake * paramNumber("mathPoolMaxPayoutMul", 500));
+  const outcomeCapMul = paramNumber("mathPoolBaseOutcomeCapMul", 500)
+    + Math.max(0, Number(state.bossAdd) || 0) * paramNumber("mathPoolBossAddCapScale", 0);
+  const outcomeCap = Math.max(0, payoutStake * outcomeCapMul);
+  const available = Math.max(0, Math.min(exposureCap, outcomeCap, pool.available));
   const fundedTarget = Math.min(desired, available);
   const surplus = Math.max(0, available - fundedTarget);
-  const releaseRate = clamp(paramNumber("mathPoolReleaseRate", .18), 0, 1);
-  const releaseCap = Math.max(0, state.mathTotalStake * paramNumber("mathPoolReleaseCapMul", 2.5));
+  const releaseRate = clamp(paramNumber("mathPoolReleaseRate", .20), 0, 1);
+  const releaseCap = Math.max(0, payoutStake * paramNumber("mathPoolReleaseCapMul", 3));
   const backlogRelease = Math.min(surplus * releaseRate, releaseCap);
-  return Math.max(0, Math.floor(Math.min(available, fundedTarget + backlogRelease)));
+  let payoutAmount = Math.max(0, Math.min(available, fundedTarget + backlogRelease));
+  const meaningfulWinTrigger = Math.max(0, payoutStake * paramNumber("mathPoolMeaningfulWinTriggerMul", .75));
+  const meaningfulWinFloor = Math.max(payoutStake, payoutStake * paramNumber("mathPoolMeaningfulWinFloorMul", 1.5));
+  if (desired >= meaningfulWinTrigger && payoutAmount < meaningfulWinFloor && available >= meaningfulWinFloor) {
+    payoutAmount = meaningfulWinFloor;
+  } else if (payoutAmount > payoutStake && payoutAmount < meaningfulWinFloor) {
+    payoutAmount = payoutStake;
+  }
+  return Math.max(0, Math.floor(Math.min(available, payoutAmount)));
 }
 function reserveMathPayout(targetPayout, pricedStake=0) {
   if (!mathPoolEnabled()) return Math.max(0, Math.round(targetPayout || 0));
@@ -2551,7 +2601,7 @@ function payMathReservation() {
   pool.paid += amount;
   state.mathReservedPayout = 0;
 }
-function settleSimulatedPoolPayout(requestedPayout) {
+function settleSimulatedPoolPayout(requestedPayout, stakeOverride=null) {
   const requested = Math.max(0, Math.round(Number(requestedPayout) || 0));
   if (!mathPoolEnabled()) return requested;
   if (!requested) {
@@ -2560,7 +2610,7 @@ function settleSimulatedPoolPayout(requestedPayout) {
   }
   releaseMathReservation();
   const pool = ensureMathPool();
-  const paid = personalPoolPayoutAmount(requested);
+  const paid = personalPoolPayoutAmount(requested, stakeOverride);
   if (paid + .0001 < requested || paid + .0001 < pool.available) {
     pool.capHits += 1;
     state.mathPoolCapHits += 1;
@@ -7359,7 +7409,7 @@ if (HEADLESS_SIM) {
     resetMathPool: referenceBet => resetMathPool(referenceBet),
     mathPool: () => mathPoolSnapshot(),
     restoreMathPool: (snapshot,reservation) => restoreMathPool(snapshot,reservation),
-    settleSimulatedPayout: value => settleSimulatedPoolPayout(value),
+    settleSimulatedPayout: (value, stake) => settleSimulatedPoolPayout(value, stake),
     resetRun: (wallet=INITIAL_WALLET, baseBetIndex=3) => {
       if (state) state.wallet = Number(wallet) || INITIAL_WALLET;
       reset();
