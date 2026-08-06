@@ -1164,18 +1164,20 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 151,
+  balanceRevision: 153,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
   mathPoolSeedBetUnits: 0,
   mathPoolMaxPayoutMul: 500,
-  mathPoolBaseOutcomeCapMul: 1.65,
-  mathPoolBossAddCapScale: 12,
-  mathPoolReleaseRate: .20,
-  mathPoolReleaseCapMul: 3.0,
+  mathPoolBaseOutcomeCapMul: 500,
+  mathPoolBossAddCapScale: 0,
+  mathPoolReleaseRate: 1,
+  mathPoolReleaseCapMul: 500,
   mathPoolMeaningfulWinTriggerMul: .75,
   mathPoolMeaningfulWinFloorMul: 1.5,
+  mathPoolStrongWinChance: .25,
+  mathPoolStrongWinFloorMul: 2,
   mathTolerancePct: 1.0,
   mathBuildInfluence: .80,
   mathBossBuildInfluence: 1.80,
@@ -1373,6 +1375,8 @@ function cleanParams(input={}) {
   next.mathPoolReleaseCapMul = Math.max(0, Math.min(500, next.mathPoolReleaseCapMul));
   next.mathPoolMeaningfulWinTriggerMul = Math.max(0, Math.min(500, next.mathPoolMeaningfulWinTriggerMul));
   next.mathPoolMeaningfulWinFloorMul = Math.max(1, Math.min(500, next.mathPoolMeaningfulWinFloorMul));
+  next.mathPoolStrongWinChance = Math.max(0, Math.min(1, next.mathPoolStrongWinChance));
+  next.mathPoolStrongWinFloorMul = Math.max(next.mathPoolMeaningfulWinFloorMul, Math.min(500, next.mathPoolStrongWinFloorMul));
   next.mathTolerancePct = Math.max(0, Math.min(20, next.mathTolerancePct));
   next.mathBuildInfluence = Math.max(0, Math.min(1, next.mathBuildInfluence));
   next.mathBossBuildInfluence = Math.max(0, Math.min(2, next.mathBossBuildInfluence));
@@ -2337,6 +2341,16 @@ function migrateBossParams(input={}) {
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 151;
   }
+  if ((Number(input.balanceRevision) || 0) < 152) {
+    ["mathPoolStrongWinChance", "mathPoolStrongWinFloorMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 152;
+  }
+  if ((Number(input.balanceRevision) || 0) < 153) {
+    ["mathPoolBaseOutcomeCapMul", "mathPoolBossAddCapScale", "mathPoolReleaseRate", "mathPoolReleaseCapMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 153;
+  }
   return next;
 }
 
@@ -2383,7 +2397,7 @@ function reset() {
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
     hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, choiceKind:"", choiceRerollUsed:false, rerollSpent:0, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
-    spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", simBossSpawned:0,
+    spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, bossDanger: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", simBossSpawned:0,
     certifiedPayout:0, mathTicket:null, mathLedger:[], mathTotalStake:0, mathPendingStake:0,
     mathReservedPayout:0, mathPoolContribution:0, mathPoolCapHits:0, mathPoolRecycled:0,
   };
@@ -2568,7 +2582,10 @@ function personalPoolPayoutAmount(targetPayout, stakeOverride=null) {
   const backlogRelease = Math.min(surplus * releaseRate, releaseCap);
   let payoutAmount = Math.max(0, Math.min(available, fundedTarget + backlogRelease));
   const meaningfulWinTrigger = Math.max(0, payoutStake * paramNumber("mathPoolMeaningfulWinTriggerMul", .75));
-  const meaningfulWinFloor = Math.max(payoutStake, payoutStake * paramNumber("mathPoolMeaningfulWinFloorMul", 1.5));
+  const baseWinFloor = Math.max(payoutStake, payoutStake * paramNumber("mathPoolMeaningfulWinFloorMul", 1.5));
+  const strongWinFloor = Math.max(baseWinFloor, payoutStake * paramNumber("mathPoolStrongWinFloorMul", 2));
+  const strongWinSelected = mathUniform(state.wave, 91) < clamp(paramNumber("mathPoolStrongWinChance", .25), 0, 1);
+  const meaningfulWinFloor = strongWinSelected && available >= strongWinFloor ? strongWinFloor : baseWinFloor;
   if (desired >= meaningfulWinTrigger && payoutAmount < meaningfulWinFloor && available >= meaningfulWinFloor) {
     payoutAmount = meaningfulWinFloor;
   } else if (payoutAmount > payoutStake && payoutAmount < meaningfulWinFloor) {
@@ -2925,7 +2942,9 @@ function eliteRewardWeight(index) {
 function prepareNextBossPreview() {
   const nextWave = state.wave + 1;
   if (nextWave > 30 || state.nextBossWave === nextWave) return;
-  state.nextBoss = rollBossForWave(nextWave, waveInfoFor(nextWave));
+  const info = waveInfoFor(nextWave);
+  state.bossDanger = rollBossDangerLevel(nextWave, info);
+  state.nextBoss = rollBossForWave(nextWave, info);
   state.nextBossWave = nextWave;
 }
 
@@ -2934,9 +2953,35 @@ function consumeBossPreview(wave, info) {
     const planned = state.nextBoss;
     state.nextBoss = false;
     state.nextBossWave = 0;
+    state.bossDanger = 0;
     return planned;
   }
   return rollBossForWave(wave, info);
+}
+
+function bossChanceForWave(wave, info) {
+  if (state.bossRolled <= 0) {
+    const firstWave = params.bossFirstMinWave;
+    if (wave < firstWave) return 0;
+    return Math.min(
+      paramNumber("bossFirstChanceCap", 68),
+      params.bossFirstChance + Math.max(0, wave - firstWave) * params.bossFirstChanceInc,
+    );
+  }
+  if (state.bossCd > 0) return 0;
+  return Math.min(
+    params.bossChanceCap,
+    Math.max(0, info.bossBase) + (state.bossWeight + Math.max(0, info.bossInc)) * params.bossChanceMul,
+  );
+}
+
+function rollBossDangerLevel(wave, info) {
+  const chance = bossChanceForWave(wave, info) / 100;
+  const noisyRisk = chance + (Math.random() - .5) * .22;
+  if (noisyRisk >= .62) return 3;
+  if (noisyRisk >= .43) return 2;
+  if (noisyRisk >= .22) return 1;
+  return 0;
 }
 
 function rollBossForWave(wave, info) {
@@ -7100,18 +7145,18 @@ function jag(a,b,phase=0) {
   ctx.lineTo(b.x,b.y); ctx.stroke();
 }
 
-function updateAttributeIndicators(bossWarning) {
+function updateAttributeIndicators(bossDanger) {
   const previewWave = state.wave + 1;
   const nextAttr = wavePrimaryAttribute(previewWave);
   const showNext = previewWave <= 30 && nextAttr !== "neutral" && !state.waveActive && !state.choicesOpen && !state.over;
   if (ui.nextAttrHint) {
     ui.nextAttrHint.hidden = !showNext;
-    ui.nextAttrHint.classList.toggle("boss", !!bossWarning);
+    ui.nextAttrHint.classList.toggle("boss", bossDanger > 0);
     ui.nextAttrHint.style.borderColor = (ATTRIBUTE_DISPLAY[nextAttr] || ATTRIBUTE_DISPLAY.neutral).color;
-    ui.nextAttrHint.style.color = bossWarning ? "#ff5b52" : (ATTRIBUTE_DISPLAY[nextAttr] || ATTRIBUTE_DISPLAY.neutral).color;
+    ui.nextAttrHint.style.color = bossDanger > 0 ? "#ff5b52" : (ATTRIBUTE_DISPLAY[nextAttr] || ATTRIBUTE_DISPLAY.neutral).color;
     ui.nextAttrHint.setAttribute?.("aria-label", `下一波主要為${ATTRIBUTE_DISPLAY[nextAttr]?.label || "無"}屬性弱點`);
   }
-  if (showNext) renderAttributeCanvas(ui.nextAttrCanvas, nextAttr, !!bossWarning);
+  if (showNext) renderAttributeCanvas(ui.nextAttrCanvas, nextAttr, bossDanger > 0);
 
   const showCurrent = state.wave > 0 && state.currentWaveAttr !== "neutral" && (state.waveActive || state.monsters.length > 0);
   if (ui.waveAttrCanvas) {
@@ -7144,9 +7189,11 @@ function updateUi() {
   ui.waveBet.textContent = currentBet();
   ui.speed.classList.toggle("fast", speedMultiplier() > 1);
   SPEED_STEPS.forEach(step => ui.speed.classList.toggle(`speed-${step}`, speedMultiplier() === step));
-  const bossWarning = !!state.nextBoss && state.started && !state.waveActive && !state.choicesOpen && !state.over;
-  ui.waveChip.classList.toggle("boss-next", bossWarning);
-  updateAttributeIndicators(bossWarning);
+  const bossDanger = state.started && !state.waveActive && !state.choicesOpen && !state.over
+    ? Math.max(0, Math.min(3, Number(state.bossDanger) || 0)) : 0;
+  ui.waveChip.classList.toggle("boss-risk", bossDanger > 0);
+  [1,2,3].forEach(level => ui.waveChip.classList.toggle(`danger-${level}`, bossDanger === level));
+  updateAttributeIndicators(bossDanger);
   const rollingMult = state.bossRoll ? state.bossRoll.value : null;
   ui.bossMult.textContent = rollingMult
     ? `x${rollingMult.toFixed(1)}`
@@ -7164,16 +7211,19 @@ function updateUi() {
       : state.waveActive
         ? (state.message || "戰鬥中。")
         : waveCleared
-          ? (bossWarning ? "下一波為 BOSS。" : "波次完成。")
+          ? "波次完成。"
           : state.started ? "準備下一波。" : "選擇 BET 與角色後開始戰鬥。";
   ui.entryOverlay.classList.toggle("hidden", state.started || state.choicesOpen || state.over);
   ui.bet.disabled = state.started || state.over || state.choicesOpen || state.wallet < BET_STEPS[state.baseBetIndex];
   ui.bet.setAttribute?.("aria-label", `以 BET ${BET_STEPS[state.baseBetIndex]} 進入戰局`);
   ui.waveDecision.classList.toggle("hidden", !waveCleared);
-  ui.waveDecision.classList.toggle("boss-next", waveCleared && bossWarning);
+  ui.waveDecision.classList.toggle("boss-risk", waveCleared && bossDanger > 0);
+  [1,2,3].forEach(level => ui.waveDecision.classList.toggle(`danger-${level}`, waveCleared && bossDanger === level));
   ui.decisionWave.textContent = `第 ${state.wave} 波完成`;
   ui.decisionPayout.textContent = payout();
-  ui.decisionDanger.classList.toggle("hidden", !bossWarning);
+  ui.decisionDanger.classList.toggle("hidden", bossDanger <= 0);
+  ui.decisionDanger.textContent = "!".repeat(Math.max(1, bossDanger));
+  ui.decisionDanger.setAttribute?.("aria-label", `危險程度 ${bossDanger}`);
   ui.continue.disabled = !waveCleared || state.wallet < currentBet();
   ui.continue.setAttribute?.("aria-label", `繼續第 ${state.wave + 1} 波，BET ${currentBet()}`);
   ui.collect.disabled = !canCollect();
@@ -7375,7 +7425,7 @@ if (HEADLESS_SIM) {
       choiceRerollUsed:state.choiceRerollUsed, rerollSpent:state.rerollSpent,
       spawning:!!state.spawn, spawnBoss:!!state.spawn?.boss, monsters:state.monsters.length,
       bossAlive:state.monsters.some(monster => monster.boss), bossSpawned:state.simBossSpawned || 0, bossSeen:state.bossSeen, bossRolled:state.bossRolled,
-      bossAdd:state.bossAdd, bossRolling:!!state.bossRoll, nextBoss:!!state.nextBoss,
+      bossAdd:state.bossAdd, bossRolling:!!state.bossRoll, bossDanger:Number(state.bossDanger) || 0,
       selectedTemplate:state.selectedTemplate, currentWaveAttr:state.currentWaveAttr,
       currentBet:currentBet(), payout:payout(),
       mathPoolContribution:state.mathPoolContribution, mathPoolCapHits:state.mathPoolCapHits,

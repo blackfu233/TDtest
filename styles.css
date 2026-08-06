@@ -130,17 +130,21 @@ button:disabled {
   flex: 0 0 18px;
 }
 
-.hud-chip.boss-next {
+.hud-chip.boss-risk {
   border-color: rgba(255, 85, 77, .95);
   background: linear-gradient(rgba(91, 23, 27, .92), rgba(26, 10, 14, .92));
   box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 0 16px rgba(255,85,77,.42);
   animation: bossNextPulse .72s ease-in-out infinite alternate;
 }
 
-.hud-chip.boss-next span,
-.hud-chip.boss-next strong {
+.hud-chip.boss-risk span,
+.hud-chip.boss-risk strong {
   color: #ffe3df;
 }
+
+.hud-chip.boss-risk.danger-1 { opacity: .86; animation-duration: 1.05s; }
+.hud-chip.boss-risk.danger-2 { box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 0 20px rgba(255,85,77,.55); }
+.hud-chip.boss-risk.danger-3 { border-color: #ffcc58; box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 26px rgba(255,70,50,.72); animation-duration: .48s; }
 
 .pot-chip {
   grid-column: 2;
@@ -2647,7 +2651,7 @@ body {
 }
 
 .decision-danger {
-  width: 22px;
+  min-width: 22px;
   height: 22px;
   display: grid;
   place-items: center;
@@ -2657,6 +2661,7 @@ body {
   font: 1000 14px/1 Arial,sans-serif;
   box-shadow: 0 0 12px rgba(255,82,73,.68);
   animation: attrBossPulse .58s ease-in-out infinite alternate;
+  padding: 0 4px;
 }
 
 .decision-score {
@@ -2711,10 +2716,14 @@ body {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 4px 0 #063719;
 }
 
-.wave-decision.boss-next .decision-panel {
+.wave-decision.boss-risk .decision-panel {
   border-color: rgba(255,98,87,.75);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 12px 34px rgba(0,0,0,.5), 0 0 22px rgba(255,82,73,.2);
 }
+
+.wave-decision.boss-risk.danger-1 .decision-panel { border-color: rgba(255,152,87,.56); }
+.wave-decision.boss-risk.danger-2 .decision-panel { border-color: rgba(255,98,87,.76); }
+.wave-decision.boss-risk.danger-3 .decision-panel { border-color: rgba(255,210,92,.88); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 12px 34px rgba(0,0,0,.5), 0 0 28px rgba(255,82,73,.32); }
 
 .wave-decision.bet-increased .continue-button {
   animation: betCostPulse .72s ease-out 2, decisionContinuePulse .8s ease-in-out 1.5s infinite alternate;
