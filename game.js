@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "profit-shape5";
+const BUILD_VERSION = "checkpoint-rtp1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1164,10 +1164,22 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 153,
+  balanceRevision: 154,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
+  mathPoolEntryTier1Mul: .20,
+  mathPoolEntryTier1Weight: 20,
+  mathPoolEntryTier2Mul: .50,
+  mathPoolEntryTier2Weight: 25,
+  mathPoolEntryTier3Mul: 1.00,
+  mathPoolEntryTier3Weight: 30,
+  mathPoolEntryTier4Mul: 1.50,
+  mathPoolEntryTier4Weight: 19,
+  mathPoolEntryTier5Mul: 3.00,
+  mathPoolEntryTier5Weight: 5,
+  mathPoolEntryTier6Mul: 5.00,
+  mathPoolEntryTier6Weight: 1,
   mathPoolSeedBetUnits: 0,
   mathPoolMaxPayoutMul: 500,
   mathPoolBaseOutcomeCapMul: 500,
@@ -1178,6 +1190,9 @@ const DEFAULT_PARAMS = {
   mathPoolMeaningfulWinFloorMul: 1.5,
   mathPoolStrongWinChance: .25,
   mathPoolStrongWinFloorMul: 2,
+  mathCheckpointRepriceEnabled: 1,
+  mathCheckpointMinChance: .05,
+  mathRerollEntryEnabled: 1,
   mathTolerancePct: 1.0,
   mathBuildInfluence: .80,
   mathBossBuildInfluence: 1.80,
@@ -1367,6 +1382,10 @@ function cleanParams(input={}) {
   next.mathModelEnabled = next.mathModelEnabled >= .5 ? 1 : 0;
   next.mathTargetRtp = Math.max(.5, Math.min(.99, next.mathTargetRtp));
   next.mathPoolEnabled = next.mathPoolEnabled >= .5 ? 1 : 0;
+  for (let tier=1; tier<=6; tier+=1) {
+    next[`mathPoolEntryTier${tier}Mul`] = Math.max(0, Math.min(100, next[`mathPoolEntryTier${tier}Mul`]));
+    next[`mathPoolEntryTier${tier}Weight`] = Math.max(0, Math.min(100000, next[`mathPoolEntryTier${tier}Weight`]));
+  }
   next.mathPoolSeedBetUnits = Math.max(0, Math.min(10000, next.mathPoolSeedBetUnits));
   next.mathPoolMaxPayoutMul = Math.max(1, Math.min(500, next.mathPoolMaxPayoutMul));
   next.mathPoolBaseOutcomeCapMul = Math.max(0, Math.min(500, next.mathPoolBaseOutcomeCapMul));
@@ -1377,6 +1396,9 @@ function cleanParams(input={}) {
   next.mathPoolMeaningfulWinFloorMul = Math.max(1, Math.min(500, next.mathPoolMeaningfulWinFloorMul));
   next.mathPoolStrongWinChance = Math.max(0, Math.min(1, next.mathPoolStrongWinChance));
   next.mathPoolStrongWinFloorMul = Math.max(next.mathPoolMeaningfulWinFloorMul, Math.min(500, next.mathPoolStrongWinFloorMul));
+  next.mathCheckpointRepriceEnabled = next.mathCheckpointRepriceEnabled >= .5 ? 1 : 0;
+  next.mathCheckpointMinChance = Math.max(.01, Math.min(.99, next.mathCheckpointMinChance));
+  next.mathRerollEntryEnabled = next.mathRerollEntryEnabled >= .5 ? 1 : 0;
   next.mathTolerancePct = Math.max(0, Math.min(20, next.mathTolerancePct));
   next.mathBuildInfluence = Math.max(0, Math.min(1, next.mathBuildInfluence));
   next.mathBossBuildInfluence = Math.max(0, Math.min(2, next.mathBossBuildInfluence));
@@ -2351,6 +2373,13 @@ function migrateBossParams(input={}) {
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 153;
   }
+  if ((Number(input.balanceRevision) || 0) < 154) {
+    for (let tier=1; tier<=6; tier+=1) {
+      next[`mathPoolEntryTier${tier}Mul`] = DEFAULT_PARAMS[`mathPoolEntryTier${tier}Mul`];
+      next[`mathPoolEntryTier${tier}Weight`] = DEFAULT_PARAMS[`mathPoolEntryTier${tier}Weight`];
+    }
+    next.balanceRevision = 154;
+  }
   return next;
 }
 
@@ -2398,8 +2427,9 @@ function reset() {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, pot: 0, exp: 0, level: 1,
     hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, choiceKind:"", choiceRerollUsed:false, rerollSpent:0, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
     spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, bossDanger: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", simBossSpawned:0,
-    certifiedPayout:0, mathTicket:null, mathLedger:[], mathTotalStake:0, mathPendingStake:0,
-    mathReservedPayout:0, mathPoolContribution:0, mathPoolCapHits:0, mathPoolRecycled:0,
+    certifiedPayout:0, mathTicket:null, mathLedger:[], mathTotalStake:0, mathPendingStake:0, mathPendingCredit:0,
+    mathReservedPayout:0, mathPoolContribution:0, mathPoolCapHits:0, mathPoolRecycled:0, mathPoolLastEntryMultiplier:0,
+    pendingWaveStart:false,
   };
   ui.betRaise?.classList.add("hidden");
   ui.phone?.classList.remove("boss-roll-active", "boss-roll-high", "boss-roll-jackpot", "boss-result-high", "boss-result-jackpot");
@@ -2507,11 +2537,37 @@ function certifiedMathEnabled() { return paramNumber("mathModelEnabled", 1) >= .
 function mathPoolEnabled() {
   return certifiedMathEnabled() && paramNumber("mathPoolEnabled", 1) >= .5;
 }
+function mathPoolEntryTiers() {
+  return Array.from({ length:6 }, (_, index) => {
+    const tier = index + 1;
+    return {
+      multiplier:Math.max(0, paramNumber(`mathPoolEntryTier${tier}Mul`, DEFAULT_PARAMS[`mathPoolEntryTier${tier}Mul`])),
+      weight:Math.max(0, paramNumber(`mathPoolEntryTier${tier}Weight`, DEFAULT_PARAMS[`mathPoolEntryTier${tier}Weight`])),
+    };
+  });
+}
+function mathPoolEntryExpectedRtp() {
+  const tiers = mathPoolEntryTiers();
+  const totalWeight = tiers.reduce((sum, tier) => sum + tier.weight, 0);
+  if (totalWeight <= 0) return Math.max(0, paramNumber("mathTargetRtp", .95));
+  return tiers.reduce((sum, tier) => sum + tier.multiplier * tier.weight, 0) / totalWeight;
+}
+function drawMathPoolEntryMultiplier() {
+  const tiers = mathPoolEntryTiers();
+  const totalWeight = tiers.reduce((sum, tier) => sum + tier.weight, 0);
+  if (totalWeight <= 0) return Math.max(0, paramNumber("mathTargetRtp", .95));
+  let cursor = Math.random() * totalWeight;
+  for (const tier of tiers) {
+    cursor -= tier.weight;
+    if (cursor <= 0) return tier.multiplier;
+  }
+  return tiers[tiers.length - 1].multiplier;
+}
 function resetMathPool(referenceBet=0) {
   const bet = Math.max(0, Number(referenceBet) || 0);
   const seed = bet * paramNumber("mathPoolSeedBetUnits", 0);
   mathPoolLedger = {
-    seed, available:seed, reserved:0, contributed:0, paid:0, house:0,
+    seed, available:seed, reserved:0, contributed:0, paid:0, house:0, operatorAdvance:0,
     stake:0, capHits:0,
   };
   return mathPoolLedger;
@@ -2523,30 +2579,44 @@ function ensureMathPool(referenceBet=0) {
 function mathPoolSnapshot() {
   if (!mathPoolLedger) return null;
   const pool = mathPoolLedger;
-  const invariantError = pool.seed + pool.contributed - pool.available - pool.reserved - pool.paid;
+  const invariantError = pool.seed + pool.contributed + (pool.operatorAdvance || 0) - pool.available - pool.reserved - pool.paid;
   return { ...pool, invariantError };
 }
 function restoreMathPool(snapshot, reservation=0) {
   if (!snapshot || typeof snapshot !== "object") return mathPoolLedger;
-  const fields = ["seed", "available", "reserved", "contributed", "paid", "house", "stake", "capHits"];
-  mathPoolLedger = Object.fromEntries(fields.map(key => [key, Math.max(0, Number(snapshot[key]) || 0)]));
+  const fields = ["seed", "available", "reserved", "contributed", "paid", "house", "operatorAdvance", "stake", "capHits"];
+  mathPoolLedger = Object.fromEntries(fields.map(key => [key, key === "house" ? Number(snapshot[key]) || 0 : Math.max(0, Number(snapshot[key]) || 0)]));
   if (state) state.mathReservedPayout = Math.max(0, Number(reservation) || 0);
   return mathPoolLedger;
 }
-function registerMathStake(amount) {
+function registerMathStake(amount, source="wave") {
   if (!certifiedMathEnabled() || !state) return;
   const stake = Math.max(0, Number(amount) || 0);
   if (!stake) return;
   state.mathTotalStake += stake;
-  state.mathPendingStake += stake;
-  if (!mathPoolEnabled()) return;
-  const pool = ensureMathPool(stake);
-  const contribution = stake * paramNumber("mathTargetRtp", .95);
-  pool.stake += stake;
-  pool.contributed += contribution;
-  pool.house += stake - contribution;
-  pool.available += contribution;
-  state.mathPoolContribution += contribution;
+  const entryMultiplier = mathPoolEnabled() ? drawMathPoolEntryMultiplier() : paramNumber("mathTargetRtp", .95);
+  const contribution = stake * entryMultiplier;
+  if (mathPoolEnabled()) {
+    const pool = ensureMathPool(stake);
+    pool.stake += stake;
+    pool.contributed += contribution;
+    pool.house += stake - contribution;
+    pool.available += contribution;
+    state.mathPoolContribution += contribution;
+    state.mathPoolLastEntryMultiplier = entryMultiplier;
+  }
+  const activeReroll = source === "reroll" && state.waveActive && state.mathTicket && !state.mathTicket.settled
+    && paramNumber("mathRerollEntryEnabled", 1) >= .5;
+  if (activeReroll) {
+    state.mathTicket.pricedStake += stake;
+    state.mathTicket.rerollStake = (state.mathTicket.rerollStake || 0) + stake;
+    state.mathTicket.unpricedCredit = (state.mathTicket.unpricedCredit || 0) + contribution;
+    state.mathTicket.rerollCredits = [...(state.mathTicket.rerollCredits || []), { stake, multiplier:entryMultiplier, contribution }];
+  } else {
+    state.mathPendingStake += stake;
+    state.mathPendingCredit += contribution;
+  }
+  return { stake, multiplier:entryMultiplier, contribution, activeReroll };
 }
 function releaseMathReservation() {
   const amount = Math.max(0, Number(state?.mathReservedPayout) || 0);
@@ -2598,12 +2668,13 @@ function reserveMathPayout(targetPayout, pricedStake=0) {
   const pool = ensureMathPool();
   releaseMathReservation();
   const desired = Math.max(0, Math.round(targetPayout || 0));
-  const reserved = personalPoolPayoutAmount(desired);
-  if (reserved + .0001 < desired || reserved + .0001 < pool.available) {
-    pool.capHits += 1;
-    state.mathPoolCapHits += 1;
+  const advance = Math.max(0, desired - pool.available);
+  if (advance > 0) {
+    pool.operatorAdvance = (pool.operatorAdvance || 0) + advance;
+    pool.available += advance;
   }
-  state.mathPoolRecycled = Math.max(0, reserved - Math.min(desired, reserved));
+  const reserved = desired;
+  state.mathPoolRecycled = 0;
   pool.available -= reserved;
   pool.reserved += reserved;
   state.mathReservedPayout = reserved;
@@ -2627,11 +2698,12 @@ function settleSimulatedPoolPayout(requestedPayout, stakeOverride=null) {
   }
   releaseMathReservation();
   const pool = ensureMathPool();
-  const paid = personalPoolPayoutAmount(requested, stakeOverride);
-  if (paid + .0001 < requested || paid + .0001 < pool.available) {
-    pool.capHits += 1;
-    state.mathPoolCapHits += 1;
+  const advance = Math.max(0, requested - pool.available);
+  if (advance > 0) {
+    pool.operatorAdvance = (pool.operatorAdvance || 0) + advance;
+    pool.available += advance;
   }
+  const paid = requested;
   pool.available -= paid;
   pool.paid += paid;
   return paid;
@@ -2768,9 +2840,11 @@ function expectedBossAdd(rewardMul) {
 
 function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const before = Math.max(0, Number(state.certifiedPayout) || 0);
-  const targetRtp = paramNumber("mathTargetRtp", 1);
+  const targetRtp = mathPoolEnabled() ? mathPoolEntryExpectedRtp() : paramNumber("mathTargetRtp", 1);
   const pricedStake = Math.max(0, Number(state.mathPendingStake) || Number(bet) || 0);
+  const entryCredit = Math.max(0, Number(state.mathPendingCredit) || pricedStake * targetRtp);
   state.mathPendingStake = 0;
+  state.mathPendingCredit = 0;
   const clearChance = mathClearChance(wave, boss, difficulty);
   const waveReward = mathWaveRewardRoll(wave);
   let rolledAdd = 0;
@@ -2801,7 +2875,7 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const payoutScale = mathPoolEnabled()
     ? 1
     : paramNumber("mathPayoutCalibration", 1) * mathPayoutBandScale(wave) * payoutRoleScale;
-  const expectedAfter = before + pricedStake * targetRtp * payoutScale * rewardFactor;
+  const expectedAfter = before + entryCredit * payoutScale * rewardFactor;
   const bossPayoutChanceKey = wave >= 28
     ? "mathBossPayoutChanceUltraScale"
     : wave >= 21 ? "mathBossPayoutChanceDeepScale"
@@ -2822,15 +2896,15 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const targetMultiplier = Math.max(.1, 1 + state.bossAdd + bossAdd);
   const targetPot = Math.max(state.pot, stochasticRound(targetPayout / targetMultiplier, mathUniform(wave, 3)));
   const ticket = {
-    id:state.mathLedger.length + 1, wave, bet, pricedStake, boss, bossDifficulty:difficulty?.id || null,
+    id:state.mathLedger.length + 1, wave, bet, pricedStake, entryCredit, unpricedCredit:0, rerollStake:0, rerollCredits:[], boss, bossDifficulty:difficulty?.id || null,
     buildPower:mathBuildPower(boss), hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, pricingClearChance, payoutChanceScale, before, targetRtp, payoutScale, payoutRoleScale,
     singleShare,areaShare,controlShare,
-    expectedAfter, conditionalPayoutExact, targetPayout, targetPot, targetMultiplier, payoutUniform,
+    expectedAfter, fairValue:expectedAfter, conditionalPayoutExact, targetPayout, targetPot, targetMultiplier, payoutUniform,
     waveRewardTier:waveReward.id,waveRewardMultiplier:waveReward.multiplier,waveRewardFactor:waveReward.factor,
     bossRewardFactor,rewardFactor,rolledBossAdd:rolledAdd,
     rewardBudget:Math.max(0, targetPot - state.pot), bossAdd,
     identityError:Math.abs(pricingClearChance * conditionalPayoutExact - expectedAfter),
-    settled:false, result:"pending",
+    settled:false, result:"pending", reprices:[], displayFloorLift:0,
   };
   state.mathTicket = ticket;
   state.mathLedger.push(ticket);
@@ -2843,13 +2917,56 @@ function settleMathTicket() {
   const reservedPayout = reserveMathPayout(ticket.targetPayout, ticket.pricedStake);
   state.certifiedPayout = reservedPayout;
   const targetMultiplier = Math.max(.1, Number(ticket.targetMultiplier) || 1 + state.bossAdd + (ticket.bossAdd || 0));
-  state.pot = Math.max(0, stochasticRound(reservedPayout / targetMultiplier, mathUniform(ticket.wave, 6)));
+  state.pot = Math.max(state.pot, stochasticRound(reservedPayout / targetMultiplier, mathUniform(ticket.wave, 6)));
   ticket.settled = true;
   ticket.result = "clear";
   ticket.poolCapped = reservedPayout < ticket.targetPayout;
   ticket.poolRecycled = Math.max(0, reservedPayout - Math.min(ticket.targetPayout, reservedPayout));
   ticket.reservedPayout = reservedPayout;
   ticket.actualPayout = payout();
+}
+
+function repriceActiveMathTicket(reason="upgrade") {
+  const ticket = state.mathTicket;
+  if (!certifiedMathEnabled() || !ticket || ticket.settled || !state.waveActive) return;
+  if (paramNumber("mathCheckpointRepriceEnabled", 1) < .5) return;
+  const oldChance = clamp(Number(ticket.pricingClearChance) || Number(ticket.clearChance) || 1, .0001, 1);
+  const fullWaveChance = mathClearChance(ticket.wave, ticket.boss, ticket.bossDifficulty ? { id:ticket.bossDifficulty } : null);
+  const remainingUnits = state.monsters.filter(monster => monster.hp > 0).length
+    + Math.max(0, Number(state.spawn?.remain) || 0)
+    + Math.max(0, Number(state.spawn?.elites) || 0)
+    + (state.spawn?.boss ? 1 : 0);
+  const initialUnits = Math.max(1, Number(ticket.initialUnits) || remainingUnits || 1);
+  const remainingFraction = clamp(remainingUnits / initialUnits, .05, 1);
+  const rawNewChance = Math.pow(clamp(fullWaveChance, .0001, 1), remainingFraction);
+  const minChance = clamp(paramNumber("mathCheckpointMinChance", .05), .01, .99);
+  const newChance = clamp(rawNewChance, minChance, 1);
+  const newCredit = Math.max(0, Number(ticket.unpricedCredit) || 0);
+  const fairValueBefore = Math.max(0, Number(ticket.targetPayout) || 0) * oldChance;
+  const fairValue = fairValueBefore + newCredit * (Number(ticket.payoutScale) || 1) * (Number(ticket.rewardFactor) || 1);
+  const exactTarget = fairValue / newChance;
+  const targetMultiplier = Math.max(.1, Number(ticket.targetMultiplier) || 1);
+  const currentDisplayFloor = Math.max(0, state.pot * targetMultiplier);
+  const roundedTarget = stochasticRound(exactTarget, mathUniform(ticket.wave, 20 + ticket.reprices.length));
+  const targetPayout = Math.max(currentDisplayFloor, roundedTarget);
+  const targetPot = Math.max(state.pot, stochasticRound(targetPayout / targetMultiplier, mathUniform(ticket.wave, 40 + ticket.reprices.length)));
+  const displayTarget = Math.max(0, Math.round(targetPot * targetMultiplier));
+  ticket.displayFloorLift += Math.max(0, displayTarget - roundedTarget);
+  ticket.entryCredit += newCredit;
+  ticket.unpricedCredit = 0;
+  ticket.clearChance = newChance;
+  ticket.pricingClearChance = newChance;
+  ticket.expectedAfter = fairValue;
+  ticket.fairValue = fairValue;
+  ticket.conditionalPayoutExact = exactTarget;
+  ticket.targetPayout = displayTarget;
+  ticket.targetPot = targetPot;
+  ticket.rewardBudget = Math.max(0, targetPot - state.pot);
+  ticket.reprices.push({ reason, oldChance, newChance, fullWaveChance, remainingFraction, addedCredit:newCredit, fairValue, targetPayout:displayTarget, potAtCheckpoint:state.pot });
+  if (state.waveReward) {
+    state.waveReward.budget = Math.max(state.waveReward.budget || 0, state.pot + ticket.rewardBudget);
+    state.waveReward.remaining = ticket.rewardBudget;
+  }
 }
 
 function failMathTicket() {
@@ -3207,7 +3324,7 @@ function rerollUpgradeChoices() {
   if (typeof factory !== "function" || state.wallet < cost) return;
   state.wallet -= cost;
   state.rerollSpent += cost;
-  registerMathStake(cost);
+  registerMathStake(cost, "reroll");
   state.choiceRerollUsed = true;
   playSfx("bet");
   factory();
@@ -3239,7 +3356,12 @@ function startBet() {
     return;
   }
   state.wallet -= bet;
-  startWave();
+  if (canLevelUp()) {
+    state.pendingWaveStart = true;
+    showUpgradeChoices();
+  } else {
+    startWave();
+  }
 }
 
 function showHeroDraft() {
@@ -3519,6 +3641,7 @@ function startWave() {
     template, hpMul:info.hpMul, band, elites:eliteQueue.length, boss,
     bossDifficulty, primaryAttr, wave:state.wave
   };
+  if (mathTicket) mathTicket.initialUnits = count + elites + (boss ? 1 : 0);
   state.waveActive = true;
   state.message = `戰鬥開始：${count} 隻怪${elites ? `，菁英 ${elites}` : ""}${boss ? "，Boss 接近" : ""}`;
   updateUi();
@@ -4952,9 +5075,8 @@ function checkWaveClear() {
     effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, { text:"波次完成", life:.9 });
     prepareNextBossPreview();
     if (state.wave >= 30) completeRun();
-    else if (canLevelUp()) showUpgradeChoices();
     else state.message = "場上無怪，可以 Collect 或繼續 BET。";
-  } else if (canLevelUp() && !state.choicesOpen) {
+  } else if (state.waveActive && canLevelUp() && !state.choicesOpen) {
     showUpgradeChoices();
   }
 }
@@ -4966,6 +5088,19 @@ function showUpgradeChoices() {
   state.exp -= expRequired(state.level);
   state.level += 1;
   openUpgradeChoices(3, false);
+}
+
+function finishUpgradeSelection(applySelection) {
+  applySelection();
+  hideChoices();
+  repriceActiveMathTicket("upgrade");
+  if (!state.pendingWaveStart) return;
+  if (canLevelUp()) {
+    showUpgradeChoices();
+    return;
+  }
+  state.pendingWaveStart = false;
+  startWave();
 }
 
 function openUpgradeChoices(choiceCount, rerollUsed) {
@@ -4986,7 +5121,7 @@ function buildUpgradeChoices(choiceCount) {
     const openSlots = Math.max(0, MAX_TOWER_SLOTS - state.towers.length - newTowerIds.size);
     randomTowerChoices(Math.min(count, openSlots), newTowerIds).forEach(t => {
       newTowerIds.add(t.id);
-      choices.push(towerChoice(t, () => { addTower(t); hideChoices(); }));
+      choices.push(towerChoice(t, () => finishUpgradeSelection(() => addTower(t))));
     });
   };
   const guaranteeNewTower = state.towers.length < NEW_TOWER_GUARANTEE_LIMIT;
@@ -5029,9 +5164,10 @@ function buildUpgradeChoices(choiceCount) {
           updateUi();
           return;
         }
-        if (picked.hero) applyHeroUpgrade(picked.hero, picked.up);
-        else applyUpgrade(picked.tower, picked.up);
-        hideChoices();
+        finishUpgradeSelection(() => {
+          if (picked.hero) applyHeroUpgrade(picked.hero, picked.up);
+          else applyUpgrade(picked.tower, picked.up);
+        });
       }
     });
   });
@@ -7429,8 +7565,10 @@ if (HEADLESS_SIM) {
       selectedTemplate:state.selectedTemplate, currentWaveAttr:state.currentWaveAttr,
       currentBet:currentBet(), payout:payout(),
       mathPoolContribution:state.mathPoolContribution, mathPoolCapHits:state.mathPoolCapHits,
-      mathPoolRecycled:state.mathPoolRecycled,
-      mathTotalStake:state.mathTotalStake, mathPool:mathPoolSnapshot(),
+      mathPoolRecycled:state.mathPoolRecycled, mathPoolLastEntryMultiplier:state.mathPoolLastEntryMultiplier,
+      mathTotalStake:state.mathTotalStake, mathPendingStake:state.mathPendingStake,
+      mathPendingCredit:state.mathPendingCredit, pendingWaveStart:state.pendingWaveStart,
+      mathPool:mathPoolSnapshot(),
     };
     if (includeBuild) {
       value.mathTicket = state.mathTicket ? {
@@ -7441,6 +7579,10 @@ if (HEADLESS_SIM) {
         singleShare:state.mathTicket.singleShare,
         areaShare:state.mathTicket.areaShare,
         controlShare:state.mathTicket.controlShare,
+        entryCredit:state.mathTicket.entryCredit,
+        rerollStake:state.mathTicket.rerollStake,
+        repriceCount:state.mathTicket.reprices?.length || 0,
+        displayFloorLift:state.mathTicket.displayFloorLift || 0,
         result:state.mathTicket.result,
       } : null;
       value.hero = state.hero ? { id:state.hero.heroId, name:state.hero.name, attrKey:state.hero.attrKey, level:state.hero.level, upgrades:state.hero.upgrades.slice() } : null;
