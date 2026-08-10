@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "checkpoint-rtp1";
+const BUILD_VERSION = "personal-pool-release1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1164,7 +1164,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 154,
+  balanceRevision: 167,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
@@ -1195,13 +1195,13 @@ const DEFAULT_PARAMS = {
   mathRerollEntryEnabled: 1,
   mathTolerancePct: 1.0,
   mathBuildInfluence: .80,
-  mathBossBuildInfluence: 1.80,
-  mathBossLaterBuildInfluence: .40,
+  mathBossBuildInfluence: .08,
+  mathBossLaterBuildInfluence: .08,
   mathMinionBuildInfluence: 0,
   mathAreaBossRiskDiscount: .08,
-  mathSingleTowerChanceShift: .205,
-  mathAreaTowerChanceShift: -.105,
-  mathControlTowerChanceShift: -.165,
+  mathSingleTowerChanceShift: .04,
+  mathAreaTowerChanceShift: -.02,
+  mathControlTowerChanceShift: -.03,
   mathSingleTowerPayoutShift: 0,
   mathAreaTowerPayoutShift: 0,
   mathControlTowerPayoutShift: 0,
@@ -1212,9 +1212,9 @@ const DEFAULT_PARAMS = {
   mathMinionHpInfluence: 0,
   mathBossHpInfluence: 1.10,
   mathBossLaterHpInfluence: .18,
-  mathBossOrdinalPenalty: .24,
-  mathBossFirstBaseChance: .809,
-  mathBossLaterBaseChance: .50,
+  mathBossOrdinalPenalty: .08,
+  mathBossFirstBaseChance: .97,
+  mathBossLaterBaseChance: .75,
   mathFirstBossDelayPenalty: .012,
   mathFirstBossGuaranteePenalty: 0,
   mathHpReference: .91,
@@ -1237,10 +1237,11 @@ const DEFAULT_PARAMS = {
   mathBossPenalty: .35,
   mathPayoutCalibration: 1,
   mathMinionPayoutChanceScale: 1.00,
-  mathBossPayoutChanceScale: 1.00,
-  mathBossPayoutChanceMidScale: 1.00,
-  mathBossPayoutChanceDeepScale: 1.00,
-  mathBossPayoutChanceUltraScale: 1.00,
+  mathBossPayoutChanceScale: .97,
+  mathBossPayoutChanceMidScale: .95,
+  mathBossPayoutChanceDeepScale: .59,
+  mathBossPayoutChanceUltraScale: 1.15,
+  mathBossPayoutChanceTailScale: 2.70,
   mathPayoutBand1: 1,
   mathPayoutBand2: 1,
   mathPayoutBand3: 1,
@@ -1433,10 +1434,11 @@ function cleanParams(input={}) {
   next.mathBossPenalty = Math.max(0, Math.min(.8, next.mathBossPenalty));
   next.mathPayoutCalibration = Math.max(.5, Math.min(1.5, next.mathPayoutCalibration));
   next.mathMinionPayoutChanceScale = Math.max(.5, Math.min(2, next.mathMinionPayoutChanceScale));
-  next.mathBossPayoutChanceScale = Math.max(.5, Math.min(2, next.mathBossPayoutChanceScale));
-  next.mathBossPayoutChanceMidScale = Math.max(.5, Math.min(2, next.mathBossPayoutChanceMidScale));
-  next.mathBossPayoutChanceDeepScale = Math.max(.5, Math.min(2, next.mathBossPayoutChanceDeepScale));
-  next.mathBossPayoutChanceUltraScale = Math.max(.5, Math.min(2, next.mathBossPayoutChanceUltraScale));
+  next.mathBossPayoutChanceScale = Math.max(.5, Math.min(4, next.mathBossPayoutChanceScale));
+  next.mathBossPayoutChanceMidScale = Math.max(.5, Math.min(4, next.mathBossPayoutChanceMidScale));
+  next.mathBossPayoutChanceDeepScale = Math.max(.5, Math.min(4, next.mathBossPayoutChanceDeepScale));
+  next.mathBossPayoutChanceUltraScale = Math.max(.5, Math.min(6, next.mathBossPayoutChanceUltraScale));
+  next.mathBossPayoutChanceTailScale = Math.max(.5, Math.min(6, next.mathBossPayoutChanceTailScale));
   next.bossHpPerOrdinalMul = Math.max(1, Math.min(2, next.bossHpPerOrdinalMul));
   ["mathPayoutBand1", "mathPayoutBand2", "mathPayoutBand3", "mathPayoutBand4", "mathPayoutBand5"]
     .forEach(key => { next[key] = Math.max(.5, Math.min(1.5, next[key])); });
@@ -2380,6 +2382,83 @@ function migrateBossParams(input={}) {
     }
     next.balanceRevision = 154;
   }
+  if ((Number(input.balanceRevision) || 0) < 155) {
+    [
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 155;
+  }
+  if ((Number(input.balanceRevision) || 0) < 156) {
+    [
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 156;
+  }
+  if ((Number(input.balanceRevision) || 0) < 157) {
+    [
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 157;
+  }
+  if ((Number(input.balanceRevision) || 0) < 159) {
+    [
+      "mathBossBuildInfluence", "mathBossLaterBuildInfluence",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 159;
+  }
+  if ((Number(input.balanceRevision) || 0) < 160) {
+    [
+      "mathBossBuildInfluence", "mathBossLaterBuildInfluence",
+      "mathBossOrdinalPenalty", "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 160;
+  }
+  if ((Number(input.balanceRevision) || 0) < 161) {
+    [
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 161;
+  }
+  if ((Number(input.balanceRevision) || 0) < 162) {
+    [
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 162;
+  }
+  if ((Number(input.balanceRevision) || 0) < 163) {
+    next.mathBossOrdinalPenalty = DEFAULT_PARAMS.mathBossOrdinalPenalty;
+    next.balanceRevision = 163;
+  }
+  if ((Number(input.balanceRevision) || 0) < 164) {
+    [
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 164;
+  }
+  if ((Number(input.balanceRevision) || 0) < 166) {
+    ["mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 166;
+  }
+  if ((Number(input.balanceRevision) || 0) < 167) {
+    next.mathPoolReleaseRate = DEFAULT_PARAMS.mathPoolReleaseRate;
+    next.mathPoolReleaseCapMul = DEFAULT_PARAMS.mathPoolReleaseCapMul;
+    next.balanceRevision = 167;
+  }
   return next;
 }
 
@@ -2585,7 +2664,12 @@ function mathPoolSnapshot() {
 function restoreMathPool(snapshot, reservation=0) {
   if (!snapshot || typeof snapshot !== "object") return mathPoolLedger;
   const fields = ["seed", "available", "reserved", "contributed", "paid", "house", "operatorAdvance", "stake", "capHits"];
-  mathPoolLedger = Object.fromEntries(fields.map(key => [key, key === "house" ? Number(snapshot[key]) || 0 : Math.max(0, Number(snapshot[key]) || 0)]));
+  mathPoolLedger = Object.fromEntries(fields.map(key => [
+    key,
+    key === "house" || key === "available"
+      ? Number(snapshot[key]) || 0
+      : Math.max(0, Number(snapshot[key]) || 0),
+  ]));
   if (state) state.mathReservedPayout = Math.max(0, Number(reservation) || 0);
   return mathPoolLedger;
 }
@@ -2634,46 +2718,47 @@ function releaseMathReservation() {
   state.mathReservedPayout = 0;
   state.mathPoolRecycled = 0;
 }
+function personalPoolPayoutCeiling(stakeOverride=null) {
+  const payoutStake = Math.max(
+    Math.max(0, Number(state.mathTotalStake) || 0),
+    Number.isFinite(Number(stakeOverride)) ? Math.max(0, Number(stakeOverride)) : 0,
+  );
+  const exposureCap = Math.max(0, payoutStake * paramNumber("mathPoolMaxPayoutMul", 500));
+  const outcomeCapMul = paramNumber("mathPoolBaseOutcomeCapMul", 500)
+    + Math.max(0, Number(state.bossAdd) || 0) * paramNumber("mathPoolBossAddCapScale", 0);
+  const outcomeCap = Math.max(0, payoutStake * outcomeCapMul);
+  const liquidityCap = mathPoolEnabled()
+    ? Math.max(0, Number(ensureMathPool().available) || 0)
+    : Number.POSITIVE_INFINITY;
+  return Math.max(0, Math.min(exposureCap, outcomeCap, liquidityCap));
+}
+function recordMathPoolCapHit() {
+  if (!mathPoolEnabled()) return;
+  const pool = ensureMathPool();
+  pool.capHits = (pool.capHits || 0) + 1;
+  state.mathPoolCapHits = (state.mathPoolCapHits || 0) + 1;
+}
 function personalPoolPayoutAmount(targetPayout, stakeOverride=null) {
   const pool = ensureMathPool();
   const desired = Math.max(0, Math.round(Number(targetPayout) || 0));
   const payoutStake = Number.isFinite(Number(stakeOverride)) && Number(stakeOverride) > 0
     ? Number(stakeOverride)
     : state.mathTotalStake;
-  const exposureCap = Math.max(0, payoutStake * paramNumber("mathPoolMaxPayoutMul", 500));
-  const outcomeCapMul = paramNumber("mathPoolBaseOutcomeCapMul", 500)
-    + Math.max(0, Number(state.bossAdd) || 0) * paramNumber("mathPoolBossAddCapScale", 0);
-  const outcomeCap = Math.max(0, payoutStake * outcomeCapMul);
-  const available = Math.max(0, Math.min(exposureCap, outcomeCap, pool.available));
+  const available = Math.max(0, Math.min(personalPoolPayoutCeiling(payoutStake), pool.available));
   const fundedTarget = Math.min(desired, available);
   const surplus = Math.max(0, available - fundedTarget);
-  const releaseRate = clamp(paramNumber("mathPoolReleaseRate", .20), 0, 1);
-  const releaseCap = Math.max(0, payoutStake * paramNumber("mathPoolReleaseCapMul", 3));
+  const releaseRate = clamp(paramNumber("mathPoolReleaseRate", 1), 0, 1);
+  const releaseCap = Math.max(0, payoutStake * paramNumber("mathPoolReleaseCapMul", 500));
   const backlogRelease = Math.min(surplus * releaseRate, releaseCap);
-  let payoutAmount = Math.max(0, Math.min(available, fundedTarget + backlogRelease));
-  const meaningfulWinTrigger = Math.max(0, payoutStake * paramNumber("mathPoolMeaningfulWinTriggerMul", .75));
-  const baseWinFloor = Math.max(payoutStake, payoutStake * paramNumber("mathPoolMeaningfulWinFloorMul", 1.5));
-  const strongWinFloor = Math.max(baseWinFloor, payoutStake * paramNumber("mathPoolStrongWinFloorMul", 2));
-  const strongWinSelected = mathUniform(state.wave, 91) < clamp(paramNumber("mathPoolStrongWinChance", .25), 0, 1);
-  const meaningfulWinFloor = strongWinSelected && available >= strongWinFloor ? strongWinFloor : baseWinFloor;
-  if (desired >= meaningfulWinTrigger && payoutAmount < meaningfulWinFloor && available >= meaningfulWinFloor) {
-    payoutAmount = meaningfulWinFloor;
-  } else if (payoutAmount > payoutStake && payoutAmount < meaningfulWinFloor) {
-    payoutAmount = payoutStake;
-  }
-  return Math.max(0, Math.floor(Math.min(available, payoutAmount)));
+  return Math.max(0, Math.floor(Math.min(available, fundedTarget + backlogRelease)));
 }
 function reserveMathPayout(targetPayout, pricedStake=0) {
   if (!mathPoolEnabled()) return Math.max(0, Math.round(targetPayout || 0));
   const pool = ensureMathPool();
   releaseMathReservation();
   const desired = Math.max(0, Math.round(targetPayout || 0));
-  const advance = Math.max(0, desired - pool.available);
-  if (advance > 0) {
-    pool.operatorAdvance = (pool.operatorAdvance || 0) + advance;
-    pool.available += advance;
-  }
-  const reserved = desired;
+  const reserved = Math.max(0, Math.floor(Math.min(desired, personalPoolPayoutCeiling(pricedStake))));
+  if (reserved < desired) recordMathPoolCapHit();
   state.mathPoolRecycled = 0;
   pool.available -= reserved;
   pool.reserved += reserved;
@@ -2698,12 +2783,8 @@ function settleSimulatedPoolPayout(requestedPayout, stakeOverride=null) {
   }
   releaseMathReservation();
   const pool = ensureMathPool();
-  const advance = Math.max(0, requested - pool.available);
-  if (advance > 0) {
-    pool.operatorAdvance = (pool.operatorAdvance || 0) + advance;
-    pool.available += advance;
-  }
-  const paid = requested;
+  const paid = Math.max(0, Math.floor(Math.min(requested, personalPoolPayoutCeiling(stakeOverride))));
+  if (paid < requested) recordMathPoolCapHit();
   pool.available -= paid;
   pool.paid += paid;
   return paid;
@@ -2765,22 +2846,40 @@ function mathBuildPower(boss=false) {
   return roleAverage * slotFactor * upgradeFactor * coreFactor * heroUpgradeFactor * resonanceFactor * heroPower;
 }
 
-function mathClearChance(wave, boss=false, difficulty=null) {
+function mathRoleProfile(boss=false) {
+  const roleInvestment = role => state.towers
+    .filter(tower => TOWER_ROLE[tower.id] === role)
+    .reduce((sum, tower) => sum + 1 + Math.min(2, (tower.upgrades?.length || 0) * .25), 0);
+  const singleInvestment = roleInvestment("single");
+  const areaInvestment = roleInvestment("area");
+  const controlInvestment = roleInvestment("control");
+  const total = singleInvestment + areaInvestment + controlInvestment;
+  const singleShare = total > 0 ? singleInvestment / total : 1 / 3;
+  const areaShare = total > 0 ? areaInvestment / total : 1 / 3;
+  const controlShare = total > 0 ? controlInvestment / total : 1 / 3;
+  return { buildPower:mathBuildPower(boss), singleInvestment, areaInvestment, controlInvestment, singleShare, areaShare, controlShare };
+}
+
+function mathClearChance(wave, boss=false, difficulty=null, bossOrdinal=null) {
   if (wave === 1 && !boss) return paramNumber("mathFirstWaveClearChance", .985);
+  const seenBefore = boss && Number.isFinite(Number(bossOrdinal))
+    ? Math.max(0, Number(bossOrdinal) - 1)
+    : state.bossSeen;
+  const firstBoss = boss && seenBefore === 0;
   const base = boss
-    ? (state.bossSeen === 0
+    ? (firstBoss
       ? paramNumber("mathBossFirstBaseChance", .995)
       : paramNumber("mathBossLaterBaseChance", .905))
     : mathBaseClearChance(wave);
   const buildInfluence = boss
-    ? (state.bossSeen === 0
+    ? (firstBoss
       ? paramNumber("mathBossBuildInfluence", .8)
       : paramNumber("mathBossLaterBuildInfluence", .45))
     : paramNumber("mathMinionBuildInfluence", 0);
   const buildShift = (mathBuildPower(boss) - 1) * buildInfluence;
   const hpRatio = clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1);
   const hpInfluence = boss
-    ? (state.bossSeen === 0
+    ? (firstBoss
       ? paramNumber("mathBossHpInfluence", paramNumber("mathHpInfluence", .9))
       : paramNumber("mathBossLaterHpInfluence", .3))
     : paramNumber("mathMinionHpInfluence", 0);
@@ -2795,15 +2894,15 @@ function mathClearChance(wave, boss=false, difficulty=null) {
       + controlCount * paramNumber("mathControlTowerChanceShift", 0)
     : 0;
   const difficultyShift = boss ? ({ easy:.08, normal:0, hard:-.08, brutal:-.16 }[difficulty?.id] || 0) : 0;
-  const ordinalShift = boss ? -Math.max(0, state.bossSeen - 1) * paramNumber("mathBossOrdinalPenalty", .25) : 0;
-  const firstBossDelay = boss && state.bossSeen === 0
+  const ordinalShift = boss ? -Math.max(0, seenBefore - 1) * paramNumber("mathBossOrdinalPenalty", .25) : 0;
+  const firstBossDelay = firstBoss
     ? Math.max(0, wave - paramNumber("bossFirstMinWave", 3))
     : 0;
   const firstBossDelayShift = -firstBossDelay * firstBossDelay * paramNumber("mathFirstBossDelayPenalty", .06);
   const waveBossCorrection = boss ? paramNumber(`wave_${wave}_mathBossCorrection`, 0) : 0;
   const raw = base + buildShift + hpShift + areaRiskShift + roleRiskShift + difficultyShift + ordinalShift + firstBossDelayShift + waveBossCorrection - (boss ? paramNumber("mathBossPenalty", .28) : 0);
   const min = boss
-    ? (state.bossSeen === 0
+    ? (firstBoss
       ? paramNumber("mathBossFirstMinClearChance", paramNumber("mathMinClearChance", .18))
       : paramNumber("mathBossLaterMinClearChance", paramNumber("mathMinClearChance", .18)))
     : paramNumber("mathMinClearChance", .18);
@@ -2839,13 +2938,14 @@ function expectedBossAdd(rewardMul) {
 }
 
 function createMathTicket(wave, bet, boss=false, difficulty=null) {
+  const bossOrdinal = boss ? state.bossSeen + 1 : 0;
   const before = Math.max(0, Number(state.certifiedPayout) || 0);
   const targetRtp = mathPoolEnabled() ? mathPoolEntryExpectedRtp() : paramNumber("mathTargetRtp", 1);
   const pricedStake = Math.max(0, Number(state.mathPendingStake) || Number(bet) || 0);
   const entryCredit = Math.max(0, Number(state.mathPendingCredit) || pricedStake * targetRtp);
   state.mathPendingStake = 0;
   state.mathPendingCredit = 0;
-  const clearChance = mathClearChance(wave, boss, difficulty);
+  const clearChance = mathClearChance(wave, boss, difficulty, bossOrdinal);
   const waveReward = mathWaveRewardRoll(wave);
   let rolledAdd = 0;
   let bossRewardFactor = 1;
@@ -2855,16 +2955,8 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
     bossRewardFactor = rolledAdd/Math.max(.1,expectedBossAdd(rewardMul));
   }
   const rewardFactor = waveReward.factor*bossRewardFactor;
-  const roleInvestment = role => state.towers
-    .filter(tower => TOWER_ROLE[tower.id] === role)
-    .reduce((sum,tower) => sum + 1 + Math.min(2,(tower.upgrades?.length || 0) * .25),0);
-  const singleInvestment = roleInvestment("single");
-  const areaInvestment = roleInvestment("area");
-  const controlInvestment = roleInvestment("control");
-  const roleInvestmentTotal = singleInvestment + areaInvestment + controlInvestment;
-  const singleShare = roleInvestmentTotal > 0 ? singleInvestment / roleInvestmentTotal : 1 / 3;
-  const areaShare = roleInvestmentTotal > 0 ? areaInvestment / roleInvestmentTotal : 1 / 3;
-  const controlShare = roleInvestmentTotal > 0 ? controlInvestment / roleInvestmentTotal : 1 / 3;
+  const roleProfile = mathRoleProfile(boss);
+  const { singleInvestment, areaInvestment, controlInvestment, singleShare, areaShare, controlShare, buildPower } = roleProfile;
   const payoutRoleScale = mathPoolEnabled() ? 1 : Math.max(.5, 1
     + (boss ? singleInvestment * paramNumber("mathSingleTowerPayoutShift", 0) : 0)
     + (boss ? areaInvestment * paramNumber("mathAreaTowerPayoutShift", 0) : 0)
@@ -2876,17 +2968,22 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
     ? 1
     : paramNumber("mathPayoutCalibration", 1) * mathPayoutBandScale(wave) * payoutRoleScale;
   const expectedAfter = before + entryCredit * payoutScale * rewardFactor;
-  const bossPayoutChanceKey = wave >= 28
-    ? "mathBossPayoutChanceUltraScale"
-    : wave >= 21 ? "mathBossPayoutChanceDeepScale"
-    : wave >= 11 ? "mathBossPayoutChanceMidScale" : "mathBossPayoutChanceScale";
-  const payoutChanceScale = mathPoolEnabled()
-    ? 1
-    : paramNumber(boss ? bossPayoutChanceKey : "mathMinionPayoutChanceScale", 1);
-  const pricingClearChance = clamp(clearChance * payoutChanceScale, .0001, 1);
+  const bossPayoutChanceKey = bossOrdinal === 1
+    ? "mathBossPayoutChanceScale"
+    : wave <= 10
+      ? "mathBossPayoutChanceMidScale"
+      : wave <= 20
+        ? "mathBossPayoutChanceDeepScale"
+        : wave <= 27 ? "mathBossPayoutChanceUltraScale" : "mathBossPayoutChanceTailScale";
+  const payoutChanceScale = paramNumber(boss ? bossPayoutChanceKey : "mathMinionPayoutChanceScale", 1);
+  const pricingClearChance = clamp(clearChance * payoutChanceScale, .0001, 4);
   const conditionalPayoutExact = expectedAfter / pricingClearChance;
   const payoutUniform = mathUniform(wave, 1);
-  const targetPayout = stochasticRound(conditionalPayoutExact, payoutUniform);
+  const uncappedTargetPayout = stochasticRound(conditionalPayoutExact, payoutUniform);
+  const targetPayout = mathPoolEnabled()
+    ? personalPoolPayoutAmount(uncappedTargetPayout, pricedStake)
+    : uncappedTargetPayout;
+  if (mathPoolEnabled() && targetPayout < uncappedTargetPayout) recordMathPoolCapHit();
   let bossAdd = 0;
   if (boss) {
     const currentMultiplier = 1 + state.bossAdd;
@@ -2896,10 +2993,10 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const targetMultiplier = Math.max(.1, 1 + state.bossAdd + bossAdd);
   const targetPot = Math.max(state.pot, stochasticRound(targetPayout / targetMultiplier, mathUniform(wave, 3)));
   const ticket = {
-    id:state.mathLedger.length + 1, wave, bet, pricedStake, entryCredit, unpricedCredit:0, rerollStake:0, rerollCredits:[], boss, bossDifficulty:difficulty?.id || null,
-    buildPower:mathBuildPower(boss), hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, pricingClearChance, payoutChanceScale, before, targetRtp, payoutScale, payoutRoleScale,
+    id:state.mathLedger.length + 1, wave, bet, pricedStake, entryCredit, unpricedCredit:0, rerollStake:0, rerollCredits:[], boss, bossOrdinal, bossDifficulty:difficulty?.id || null,
+    buildPower, hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, pricingClearChance, payoutChanceScale, before, targetRtp, payoutScale, payoutRoleScale,
     singleShare,areaShare,controlShare,
-    expectedAfter, fairValue:expectedAfter, conditionalPayoutExact, targetPayout, targetPot, targetMultiplier, payoutUniform,
+    expectedAfter, fairValue:expectedAfter, conditionalPayoutExact, uncappedTargetPayout, targetPayout, targetPot, targetMultiplier, payoutUniform,
     waveRewardTier:waveReward.id,waveRewardMultiplier:waveReward.multiplier,waveRewardFactor:waveReward.factor,
     bossRewardFactor,rewardFactor,rolledBossAdd:rolledAdd,
     rewardBudget:Math.max(0, targetPot - state.pot), bossAdd,
@@ -2930,17 +3027,19 @@ function repriceActiveMathTicket(reason="upgrade") {
   const ticket = state.mathTicket;
   if (!certifiedMathEnabled() || !ticket || ticket.settled || !state.waveActive) return;
   if (paramNumber("mathCheckpointRepriceEnabled", 1) < .5) return;
-  const oldChance = clamp(Number(ticket.pricingClearChance) || Number(ticket.clearChance) || 1, .0001, 1);
-  const fullWaveChance = mathClearChance(ticket.wave, ticket.boss, ticket.bossDifficulty ? { id:ticket.bossDifficulty } : null);
+  const oldChance = clamp(Number(ticket.pricingClearChance) || Number(ticket.clearChance) || 1, .0001, 4);
+  const fullWaveChance = mathClearChance(ticket.wave, ticket.boss, ticket.bossDifficulty ? { id:ticket.bossDifficulty } : null, ticket.bossOrdinal);
+  const roleProfile = mathRoleProfile(ticket.boss);
+  const fullWavePricingChance = clamp(fullWaveChance * (Number(ticket.payoutChanceScale) || 1), .0001, 4);
   const remainingUnits = state.monsters.filter(monster => monster.hp > 0).length
     + Math.max(0, Number(state.spawn?.remain) || 0)
     + Math.max(0, Number(state.spawn?.elites) || 0)
     + (state.spawn?.boss ? 1 : 0);
   const initialUnits = Math.max(1, Number(ticket.initialUnits) || remainingUnits || 1);
   const remainingFraction = clamp(remainingUnits / initialUnits, .05, 1);
-  const rawNewChance = Math.pow(clamp(fullWaveChance, .0001, 1), remainingFraction);
+  const rawNewChance = Math.pow(fullWavePricingChance, remainingFraction);
   const minChance = clamp(paramNumber("mathCheckpointMinChance", .05), .01, .99);
-  const newChance = clamp(rawNewChance, minChance, 1);
+  const newChance = clamp(rawNewChance, minChance, 4);
   const newCredit = Math.max(0, Number(ticket.unpricedCredit) || 0);
   const fairValueBefore = Math.max(0, Number(ticket.targetPayout) || 0) * oldChance;
   const fairValue = fairValueBefore + newCredit * (Number(ticket.payoutScale) || 1) * (Number(ticket.rewardFactor) || 1);
@@ -2948,21 +3047,29 @@ function repriceActiveMathTicket(reason="upgrade") {
   const targetMultiplier = Math.max(.1, Number(ticket.targetMultiplier) || 1);
   const currentDisplayFloor = Math.max(0, state.pot * targetMultiplier);
   const roundedTarget = stochasticRound(exactTarget, mathUniform(ticket.wave, 20 + ticket.reprices.length));
-  const targetPayout = Math.max(currentDisplayFloor, roundedTarget);
-  const targetPot = Math.max(state.pot, stochasticRound(targetPayout / targetMultiplier, mathUniform(ticket.wave, 40 + ticket.reprices.length)));
-  const displayTarget = Math.max(0, Math.round(targetPot * targetMultiplier));
+  const proposedTarget = Math.max(currentDisplayFloor, roundedTarget);
+  const targetPayout = mathPoolEnabled()
+    ? Math.max(0, Math.floor(Math.min(proposedTarget, personalPoolPayoutCeiling(ticket.pricedStake))))
+    : proposedTarget;
+  if (mathPoolEnabled() && targetPayout < proposedTarget) recordMathPoolCapHit();
+  const targetPot = Math.max(0, stochasticRound(targetPayout / targetMultiplier, mathUniform(ticket.wave, 40 + ticket.reprices.length)));
+  const displayTarget = targetPayout;
   ticket.displayFloorLift += Math.max(0, displayTarget - roundedTarget);
   ticket.entryCredit += newCredit;
   ticket.unpricedCredit = 0;
-  ticket.clearChance = newChance;
+  ticket.clearChance = fullWaveChance;
   ticket.pricingClearChance = newChance;
+  ticket.buildPower = roleProfile.buildPower;
+  ticket.singleShare = roleProfile.singleShare;
+  ticket.areaShare = roleProfile.areaShare;
+  ticket.controlShare = roleProfile.controlShare;
   ticket.expectedAfter = fairValue;
   ticket.fairValue = fairValue;
   ticket.conditionalPayoutExact = exactTarget;
-  ticket.targetPayout = displayTarget;
+  ticket.targetPayout = targetPayout;
   ticket.targetPot = targetPot;
   ticket.rewardBudget = Math.max(0, targetPot - state.pot);
-  ticket.reprices.push({ reason, oldChance, newChance, fullWaveChance, remainingFraction, addedCredit:newCredit, fairValue, targetPayout:displayTarget, potAtCheckpoint:state.pot });
+  ticket.reprices.push({ reason, oldChance, newChance, fullWaveChance, fullWavePricingChance, remainingFraction, addedCredit:newCredit, fairValue, targetPayout:displayTarget, potAtCheckpoint:state.pot });
   if (state.waveReward) {
     state.waveReward.budget = Math.max(state.waveReward.budget || 0, state.pot + ticket.rewardBudget);
     state.waveReward.remaining = ticket.rewardBudget;
@@ -3345,6 +3452,8 @@ function startBet() {
   const bet = currentBet();
   if (state.wallet < bet) { showResult("錢包不足", "沒有足夠餘額下注。"); return; }
   playSfx("bet");
+  // Continuing puts the previous collect offer back at risk before the new stake enters the pool.
+  releaseMathReservation();
   registerMathStake(bet);
   if (!state.started) {
     state.wallet -= bet;
@@ -7550,8 +7659,11 @@ if (HEADLESS_SIM) {
   const setSeed = value => {
     simSeed = (Number(value) >>> 0) || 1;
     Math.random = () => {
-      simSeed = (simSeed * 1664525 + 1013904223) >>> 0;
-      return simSeed / 4294967296;
+      simSeed = (simSeed + 0x6d2b79f5) >>> 0;
+      let mixed = simSeed;
+      mixed = Math.imul(mixed ^ mixed >>> 15, mixed | 1);
+      mixed ^= mixed + Math.imul(mixed ^ mixed >>> 7, mixed | 61);
+      return ((mixed ^ mixed >>> 14) >>> 0) / 4294967296;
     };
   };
   const headlessSnapshot = (includeBuild=false) => {
@@ -7576,6 +7688,11 @@ if (HEADLESS_SIM) {
         clearChance:state.mathTicket.clearChance,
         pricingClearChance:state.mathTicket.pricingClearChance,
         buildPower:state.mathTicket.buildPower,
+        hpRatio:state.mathTicket.hpRatio,
+        fairValue:state.mathTicket.fairValue,
+        conditionalPayoutExact:state.mathTicket.conditionalPayoutExact,
+        bossOrdinal:state.mathTicket.bossOrdinal,
+        bossDifficulty:state.mathTicket.bossDifficulty,
         singleShare:state.mathTicket.singleShare,
         areaShare:state.mathTicket.areaShare,
         controlShare:state.mathTicket.controlShare,
