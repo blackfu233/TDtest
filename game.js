@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "personal-pool-release2";
+const BUILD_VERSION = "boss-variance1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1164,22 +1164,22 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 168,
+  balanceRevision: 169,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
-  mathPoolEntryTier1Mul: .20,
-  mathPoolEntryTier1Weight: 20,
-  mathPoolEntryTier2Mul: .50,
-  mathPoolEntryTier2Weight: 25,
-  mathPoolEntryTier3Mul: 1.00,
+  mathPoolEntryTier1Mul: .50,
+  mathPoolEntryTier1Weight: 2,
+  mathPoolEntryTier2Mul: .75,
+  mathPoolEntryTier2Weight: 18,
+  mathPoolEntryTier3Mul: .90,
   mathPoolEntryTier3Weight: 30,
-  mathPoolEntryTier4Mul: 1.50,
-  mathPoolEntryTier4Weight: 19,
-  mathPoolEntryTier5Mul: 3.00,
-  mathPoolEntryTier5Weight: 5,
-  mathPoolEntryTier6Mul: 5.00,
-  mathPoolEntryTier6Weight: 1,
+  mathPoolEntryTier4Mul: 1.00,
+  mathPoolEntryTier4Weight: 40,
+  mathPoolEntryTier5Mul: 1.25,
+  mathPoolEntryTier5Weight: 8,
+  mathPoolEntryTier6Mul: 1.75,
+  mathPoolEntryTier6Weight: 2,
   mathPoolSeedBetUnits: 0,
   mathPoolMaxPayoutMul: 500,
   mathPoolBaseOutcomeCapMul: 500,
@@ -1260,22 +1260,22 @@ const DEFAULT_PARAMS = {
   mathClearBand3: .960,
   mathClearBand4: .850,
   mathClearBand5: .850,
-  bossLowWeight: 50,
-  bossMidWeight: 40,
+  bossLowWeight: 55,
+  bossMidWeight: 35,
   bossHighWeight: 10,
   bossLowMin: 1.0,
   bossLowMax: 1.6,
-  bossMidMin: 1.8,
-  bossMidMax: 3.0,
-  bossHighMin: 4.5,
-  bossHighMax: 9.0,
+  bossMidMin: 2.0,
+  bossMidMax: 4.0,
+  bossHighMin: 6.0,
+  bossHighMax: 14.0,
   bossFirstMinWave: 1,
   bossFirstChance: 8,
   bossFirstChanceInc: 12,
   bossFirstChanceCap: 68,
   bossFirstGuaranteeWave: 30,
   bossFirstRewardMul: .35,
-  bossLaterRewardMul: .65,
+  bossLaterRewardMul: .80,
   bossChanceMul: 1.0,
   bossChanceCap: 55,
   minionHpMul: 1.0,
@@ -1293,16 +1293,16 @@ const DEFAULT_PARAMS = {
   deepMoneyBase: 1.35,
   deepMoneyRamp: .04,
   deepMoneyCap: 1.80,
-  waveRewardDryWeight: 20,
-  waveRewardDryMul: .10,
-  waveRewardLowWeight: 15,
-  waveRewardLowMul: .30,
-  waveRewardNormalWeight: 20,
-  waveRewardNormalMul: .50,
-  waveRewardProfitWeight: 35,
-  waveRewardProfitMul: 1.50,
-  waveRewardHotWeight: 10,
-  waveRewardHotMul: 3.00,
+  waveRewardDryWeight: 5,
+  waveRewardDryMul: .50,
+  waveRewardLowWeight: 20,
+  waveRewardLowMul: .75,
+  waveRewardNormalWeight: 40,
+  waveRewardNormalMul: .95,
+  waveRewardProfitWeight: 30,
+  waveRewardProfitMul: 1.20,
+  waveRewardHotWeight: 5,
+  waveRewardHotMul: 1.60,
   bossDiffEasyWeight: 50,
   bossDiffEasyHpMul: .80,
   bossDiffEasyAtkMul: .90,
@@ -2468,6 +2468,23 @@ function migrateBossParams(input={}) {
       "mathBossPayoutChanceTailScale", "mathPoolReleaseRate", "mathPoolReleaseCapMul",
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 168;
+  }
+  if ((Number(input.balanceRevision) || 0) < 169) {
+    [
+      "mathPoolEntryTier1Mul", "mathPoolEntryTier1Weight",
+      "mathPoolEntryTier2Mul", "mathPoolEntryTier2Weight",
+      "mathPoolEntryTier3Mul", "mathPoolEntryTier3Weight",
+      "mathPoolEntryTier4Mul", "mathPoolEntryTier4Weight",
+      "mathPoolEntryTier5Mul", "mathPoolEntryTier5Weight",
+      "mathPoolEntryTier6Mul", "mathPoolEntryTier6Weight",
+      "waveRewardDryWeight", "waveRewardDryMul", "waveRewardLowWeight", "waveRewardLowMul",
+      "waveRewardNormalWeight", "waveRewardNormalMul", "waveRewardProfitWeight", "waveRewardProfitMul",
+      "waveRewardHotWeight", "waveRewardHotMul",
+      "bossLowWeight", "bossMidWeight", "bossHighWeight",
+      "bossLowMin", "bossLowMax", "bossMidMin", "bossMidMax", "bossHighMin", "bossHighMax",
+      "bossFirstRewardMul", "bossLaterRewardMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 169;
   }
   return next;
 }
