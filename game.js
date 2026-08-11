@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "wave-hot3x1";
+const BUILD_VERSION = "boss-rtp-share1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1164,7 +1164,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 170,
+  balanceRevision: 171,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
@@ -1184,7 +1184,8 @@ const DEFAULT_PARAMS = {
   mathPoolMaxPayoutMul: 500,
   mathPoolBaseOutcomeCapMul: 500,
   mathPoolBossAddCapScale: 0,
-  mathPoolReleaseRate: 1,
+  mathPoolReleaseRate: .45,
+  mathPoolBossReleaseRate: 1,
   mathPoolReleaseCapMul: 500,
   mathPoolMeaningfulWinTriggerMul: .75,
   mathPoolMeaningfulWinFloorMul: 1.5,
@@ -1392,6 +1393,7 @@ function cleanParams(input={}) {
   next.mathPoolBaseOutcomeCapMul = Math.max(0, Math.min(500, next.mathPoolBaseOutcomeCapMul));
   next.mathPoolBossAddCapScale = Math.max(0, Math.min(100, next.mathPoolBossAddCapScale));
   next.mathPoolReleaseRate = Math.max(0, Math.min(1, next.mathPoolReleaseRate));
+  next.mathPoolBossReleaseRate = Math.max(0, Math.min(1, next.mathPoolBossReleaseRate));
   next.mathPoolReleaseCapMul = Math.max(0, Math.min(500, next.mathPoolReleaseCapMul));
   next.mathPoolMeaningfulWinTriggerMul = Math.max(0, Math.min(500, next.mathPoolMeaningfulWinTriggerMul));
   next.mathPoolMeaningfulWinFloorMul = Math.max(1, Math.min(500, next.mathPoolMeaningfulWinFloorMul));
@@ -2494,6 +2496,11 @@ function migrateBossParams(input={}) {
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 170;
   }
+  if ((Number(input.balanceRevision) || 0) < 171) {
+    ["mathPoolReleaseRate", "mathPoolBossReleaseRate"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 171;
+  }
   return next;
 }
 
@@ -2773,7 +2780,7 @@ function recordMathPoolCapHit() {
   pool.capHits = (pool.capHits || 0) + 1;
   state.mathPoolCapHits = (state.mathPoolCapHits || 0) + 1;
 }
-function personalPoolPayoutAmount(targetPayout, stakeOverride=null) {
+function personalPoolPayoutAmount(targetPayout, stakeOverride=null, boss=false) {
   const pool = ensureMathPool();
   const desired = Math.max(0, Math.round(Number(targetPayout) || 0));
   const payoutStake = Number.isFinite(Number(stakeOverride)) && Number(stakeOverride) > 0
@@ -2782,7 +2789,7 @@ function personalPoolPayoutAmount(targetPayout, stakeOverride=null) {
   const available = Math.max(0, Math.min(personalPoolPayoutCeiling(payoutStake), pool.available));
   const fundedTarget = Math.min(desired, available);
   const surplus = Math.max(0, available - fundedTarget);
-  const releaseRate = clamp(paramNumber("mathPoolReleaseRate", 1), 0, 1);
+  const releaseRate = clamp(paramNumber(boss ? "mathPoolBossReleaseRate" : "mathPoolReleaseRate", boss ? 1 : .45), 0, 1);
   const releaseCap = Math.max(0, payoutStake * paramNumber("mathPoolReleaseCapMul", 500));
   const backlogRelease = Math.min(surplus * releaseRate, releaseCap);
   return Math.max(0, Math.floor(Math.min(available, fundedTarget + backlogRelease)));
@@ -3016,7 +3023,7 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const payoutUniform = mathUniform(wave, 1);
   const uncappedTargetPayout = stochasticRound(conditionalPayoutExact, payoutUniform);
   const targetPayout = mathPoolEnabled()
-    ? personalPoolPayoutAmount(uncappedTargetPayout, pricedStake)
+    ? personalPoolPayoutAmount(uncappedTargetPayout, pricedStake, boss)
     : uncappedTargetPayout;
   if (mathPoolEnabled() && targetPayout < uncappedTargetPayout) recordMathPoolCapHit();
   let bossAdd = 0;
