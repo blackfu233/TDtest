@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "rtp-volatility1";
+const BUILD_VERSION = "combat-pressure1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -630,12 +630,12 @@ const BOSS_DIFFICULTY_TIERS = [
 ];
 
 const WAVE = [
-  [1,.42,0,0,0,0,2,2.7,0],[2,.60,0,0,0,0,2,2.7,0],[3,.95,2,1,0,0,2,2.7,0],[4,1.08,4,1,0,0,2,2.7,0],[5,1.22,6,1,0,0,2,2.7,0],
-  [6,1.38,8,.9,.1,0,2,2.7,0],[7,1.55,10,.85,.15,0,2,2.7,0],[8,1.73,11,.8,.2,0,2,2.7,0],[9,1.93,12,.75,.25,0,2,2.7,0],[10,2.15,13,.7,.3,0,2,2.7,0],
-  [11,2.30,14,.65,.3,.05,2,2.7,0],[12,2.47,15,.65,.3,.05,2,2.7,0],[13,2.64,16,.6,.35,.05,2,2.7,0],[14,2.82,17,.6,.35,.05,2,2.7,0],[15,3.00,18,.55,.4,.05,2,2.7,0],
-  [16,3.08,19,.5,.4,.1,2,2.7,0],[17,3.16,20,.5,.4,.1,2,2.7,0],[18,3.24,21,.45,.45,.1,2,2.7,0],[19,3.32,22,.45,.45,.1,2,2.7,0],[20,3.40,24,.45,.45,.1,2,2.7,0],
-  [21,3.40,25,.4,.45,.15,2,2.7,0],[22,3.42,26,.4,.44,.16,2,2.7,0],[23,3.44,27,.4,.43,.17,2,2.7,0],[24,3.46,28,.4,.42,.18,2,2.7,0],[25,3.48,29,.4,.41,.19,2,2.7,0],
-  [26,3.50,30,.3,.45,.25,2,2.7,0],[27,3.52,31,.3,.44,.26,2,2.7,0],[28,3.54,32,.3,.43,.27,2,2.7,0],[29,3.56,33,.3,.42,.28,2,2.7,0],[30,3.58,35,.3,.41,.29,2,2.7,0],
+  [1,.45,0,0,0,0,2,2.7,0],[2,.68,0,0,0,0,2,2.7,0],[3,1.08,2,1,0,0,2,2.7,0],[4,1.26,4,1,0,0,2,2.7,0],[5,1.45,6,1,0,0,2,2.7,0],
+  [6,1.62,8,.9,.1,0,2,2.7,0],[7,1.84,10,.85,.15,0,2,2.7,0],[8,2.08,11,.8,.2,0,2,2.7,0],[9,2.33,12,.75,.25,0,2,2.7,0],[10,2.60,13,.7,.3,0,2,2.7,0],
+  [11,2.82,14,.65,.3,.05,2,2.7,0],[12,3.04,15,.65,.3,.05,2,2.7,0],[13,3.26,16,.6,.35,.05,2,2.7,0],[14,3.48,17,.6,.35,.05,2,2.7,0],[15,3.70,18,.55,.4,.05,2,2.7,0],
+  [16,3.91,19,.5,.4,.1,2,2.7,0],[17,4.12,20,.5,.4,.1,2,2.7,0],[18,4.33,21,.45,.45,.1,2,2.7,0],[19,4.54,22,.45,.45,.1,2,2.7,0],[20,4.75,24,.45,.45,.1,2,2.7,0],
+  [21,4.92,25,.4,.45,.15,2,2.7,0],[22,5.09,26,.4,.44,.16,2,2.7,0],[23,5.26,27,.4,.43,.17,2,2.7,0],[24,5.43,28,.4,.42,.18,2,2.7,0],[25,5.60,29,.4,.41,.19,2,2.7,0],
+  [26,5.77,30,.3,.45,.25,2,2.7,0],[27,5.94,31,.3,.44,.26,2,2.7,0],[28,6.11,32,.3,.43,.27,2,2.7,0],[29,6.28,33,.3,.42,.28,2,2.7,0],[30,6.45,35,.3,.41,.29,2,2.7,0],
 ].map(r => ({ wave:r[0], hpMul:r[1], eliteWeight:r[2], e1:r[3], e2:r[4], e3:r[5], bossBase:r[6], bossInc:r[7], bossCd:r[8] }));
 
 const MATH_WAVE_CLEAR_DEFAULTS = [
@@ -744,8 +744,8 @@ const ATTRIBUTE_COUNTER = {
 function enemyAttributeProfile(enemyAttr) {
   const result = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [attr, 1]));
   if (!enemyAttr || enemyAttr === "neutral") return result;
-  result[enemyAttr] = .55;
-  result[ATTRIBUTE_COUNTER[enemyAttr]] = 1.65;
+  result[enemyAttr] = .45;
+  result[ATTRIBUTE_COUNTER[enemyAttr]] = 1.75;
   return result;
 }
 
@@ -1167,7 +1167,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 176,
+  balanceRevision: 177,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
@@ -1290,16 +1290,16 @@ const DEFAULT_PARAMS = {
   bossLaterRewardMul: .80,
   bossChanceMul: 1.0,
   bossChanceCap: 55,
-  minionHpMul: 1.08,
-  minionAtkMul: 1.18,
-  minionSpeedMul: 1.0,
-  wave1MinionAtkMul: .42,
+  minionHpMul: 1.18,
+  minionAtkMul: 1.20,
+  minionSpeedMul: 1.02,
+  wave1MinionAtkMul: .52,
   eliteHpMul: 1.0,
   eliteAtkMul: 1.0,
-  bossFirstHpMul: 1.40,
-  bossHpMul: 1.42,
-  bossHpPerOrdinalMul: 1.08,
-  bossAtkMul: 1.0,
+  bossFirstHpMul: 1.23,
+  bossHpMul: 1.32,
+  bossHpPerOrdinalMul: 1.06,
+  bossAtkMul: .95,
   bossSpeedMul: 1.0,
   moneyMul: 1.0,
   deepMoneyBase: 1.35,
@@ -1355,7 +1355,7 @@ const DEFAULT_PARAMS = {
   bossRollDuration: 4.8,
   bossRollHighThreshold: 2.5,
   bossRollJackpotThreshold: 3.8,
-  bossShieldHpPct: 10,
+  bossShieldHpPct: 8,
   bossShieldDamageMul: .68,
   bossBreakDamageMul: 1.58,
   bossBreakDuration: 2.4,
@@ -1363,7 +1363,7 @@ const DEFAULT_PARAMS = {
   bossAttackWindup: 1.0,
   bossAttackIntervalJitterPct: 18,
   bossPreludeCountMul: .60,
-  bossFirstAtkMul: .80,
+  bossFirstAtkMul: .75,
   bossEnrageHpPct: 32,
   bossEnrageAttackSpeedMul: 1.22,
   bossBetStepMul: 1.50,
@@ -2587,6 +2587,17 @@ function migrateBossParams(input={}) {
       "waveRewardHotWeight", "waveRewardHotMul",
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 176;
+  }
+  if ((Number(input.balanceRevision) || 0) < 177) {
+    [
+      "minionHpMul", "minionAtkMul", "minionSpeedMul", "wave1MinionAtkMul",
+      "bossFirstHpMul", "bossHpMul", "bossHpPerOrdinalMul", "bossAtkMul",
+      "bossFirstAtkMul", "bossShieldHpPct",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    Object.keys(DEFAULT_PARAMS)
+      .filter(key => /^wave_\d+_hpMul$/.test(key) || /^monster_.+_(?:fire|ice|electric|poison|neutral)Mul$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 177;
   }
   return next;
 }
