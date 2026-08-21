@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "deep-chase198";
+const BUILD_VERSION = "deep-chase202";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1167,7 +1167,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 198,
+  balanceRevision: 202,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
@@ -1194,23 +1194,24 @@ const DEFAULT_PARAMS = {
   mathPoolFirstBossOutcomeCapMul: 20,
   mathPoolBossCarryRecycleRate: 0,
   mathPoolBossAddCapScale: 0,
-  mathPoolReleaseRate: .60,
-  mathPoolDeepReleaseRate: 1,
+  mathPoolReleaseRate: .08,
+  mathPoolDeepReleaseRate: .15,
   mathPoolDepthRampWaves: 8,
   mathPoolBossReleaseRate: 1,
-  mathPoolFirstBossReleaseRate: 1,
-  mathPoolLaterBossReleaseRate: 1,
+  mathPoolFirstBossReleaseRate: .55,
+  mathPoolLaterBossReleaseRate: .75,
   mathPoolReleaseCapMul: 500,
   mathPoolMeaningfulWinTriggerMul: .75,
   mathPoolMeaningfulWinFloorMul: 1.5,
-  mathPoolStrongWinChance: .90,
+  mathPoolStrongWinChance: .70,
   mathPoolStrongWinEarlyFloorMul: 1.5,
   mathPoolStrongWinFloorMul: 7,
   mathPoolWeakBossCapMul: .95,
   mathPoolWeakBossReleaseRate: .20,
   mathPoolHotWaveEarlyFloorMul: 1.02,
   mathPoolHotWaveFloorMul: 6,
-  mathPoolHotWaveEarlyReleaseRate: .60,
+  mathPoolHotWaveDeepWeight: 8,
+  mathPoolHotWaveEarlyReleaseRate: .25,
   mathPoolHotWaveReleaseRate: 1,
   mathCheckpointRepriceEnabled: 1,
   mathCheckpointMinChance: .05,
@@ -1460,6 +1461,7 @@ function cleanParams(input={}) {
   next.mathPoolWeakBossReleaseRate = Math.max(0, Math.min(1, next.mathPoolWeakBossReleaseRate));
   next.mathPoolHotWaveEarlyFloorMul = Math.max(1, Math.min(500, next.mathPoolHotWaveEarlyFloorMul));
   next.mathPoolHotWaveFloorMul = Math.max(next.mathPoolHotWaveEarlyFloorMul, Math.min(500, next.mathPoolHotWaveFloorMul));
+  next.mathPoolHotWaveDeepWeight = Math.max(0, Math.min(100, next.mathPoolHotWaveDeepWeight));
   next.mathPoolHotWaveEarlyReleaseRate = Math.max(0, Math.min(next.mathPoolHotWaveReleaseRate, next.mathPoolHotWaveEarlyReleaseRate));
   next.mathPoolHotWaveReleaseRate = Math.max(0, Math.min(1, next.mathPoolHotWaveReleaseRate));
   next.mathCheckpointRepriceEnabled = next.mathCheckpointRepriceEnabled >= .5 ? 1 : 0;
@@ -2683,6 +2685,25 @@ function migrateBossParams(input={}) {
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 184;
   }
+  if ((Number(input.balanceRevision) || 0) < 199) {
+    next.balanceRevision = 199;
+  }
+  if ((Number(input.balanceRevision) || 0) < 200) {
+    [
+      "mathPoolReleaseRate", "mathPoolFirstBossReleaseRate", "mathPoolLaterBossReleaseRate",
+      "mathPoolStrongWinChance", "mathPoolHotWaveEarlyReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 200;
+  }
+  if ((Number(input.balanceRevision) || 0) < 201) {
+    ["mathPoolReleaseRate", "mathPoolDeepReleaseRate"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 201;
+  }
+  if ((Number(input.balanceRevision) || 0) < 202) {
+    next.mathPoolHotWaveDeepWeight = DEFAULT_PARAMS.mathPoolHotWaveDeepWeight;
+    next.balanceRevision = 202;
+  }
   return next;
 }
 
@@ -2996,19 +3017,11 @@ function personalPoolPayoutCeiling(stakeOverride=null, allowBossBudget=false) {
     Number.isFinite(Number(stakeOverride)) ? Math.max(0, Number(stakeOverride)) : 0,
   );
   const exposureCap = Math.max(0, payoutStake * paramNumber("mathPoolMaxPayoutMul", 500));
-  const capRampWaves = Math.max(1, paramNumber("mathPoolOutcomeCapRampWaves", 15));
-  const capDepthLinear = clamp(((Number(state?.wave) || 1) - 1) / capRampWaves, 0, 1);
-  const capDepth = Math.pow(capDepthLinear,paramNumber("mathPoolOutcomeCapCurve", 2.8));
-  const earlyOutcomeCap = paramNumber("mathPoolBaseOutcomeCapMul", 1.35);
-  const deepOutcomeCap = Math.max(earlyOutcomeCap, paramNumber("mathPoolDeepOutcomeCapMul", 8));
-  const outcomeCapMul = earlyOutcomeCap + (deepOutcomeCap - earlyOutcomeCap) * capDepth
-    + Math.max(0, Number(state.bossAdd) || 0) * paramNumber("mathPoolBossAddCapScale", 0);
-  const outcomeCap = Math.max(0, payoutStake * outcomeCapMul);
   const pool = mathPoolEnabled() ? ensureMathPool() : null;
   const liquidityCap = mathPoolEnabled()
     ? Math.max(0, (Number(pool.available) || 0) - (allowBossBudget ? 0 : Math.max(0, Number(pool.bossAvailable) || 0)))
     : Number.POSITIVE_INFINITY;
-  return Math.max(0, Math.min(exposureCap, outcomeCap, liquidityCap));
+  return Math.max(0, Math.min(exposureCap, liquidityCap));
 }
 function recordMathPoolCapHit() {
   if (!mathPoolEnabled()) return;
@@ -3247,7 +3260,9 @@ function mathClearChance(wave, boss=false, difficulty=null, bossOrdinal=null) {
 function mathWaveRewardRoll(wave) {
   const weighted = WAVE_REWARD_TIERS.map(tier => ({
     tier,
-    weight:Math.max(0,paramNumber(tier.weightKey,0)),
+    weight:Math.max(0, tier.id === "hot"
+      ? mathPoolDepthValue(paramNumber(tier.weightKey,0), paramNumber("mathPoolHotWaveDeepWeight", 8), wave)
+      : paramNumber(tier.weightKey,0)),
     multiplier:Math.max(0,paramNumber(tier.mulKey,0)),
   }));
   const totalWeight = weighted.reduce((sum,item) => sum+item.weight,0) || 1;
@@ -3479,8 +3494,12 @@ function failMathTicket() {
   ticket.actualPayout = 0;
 }
 
-function pickParamTier(tiers) {
-  const weights = Object.fromEntries(tiers.map(tier => [tier.id, Math.max(0, paramNumber(tier.weightKey, 0))]));
+function pickParamTier(tiers, wave=null) {
+  const weights = Object.fromEntries(tiers.map(tier => [tier.id, Math.max(0,
+    wave !== null && tier.id === "hot"
+      ? mathPoolDepthValue(paramNumber(tier.weightKey, 0), paramNumber("mathPoolHotWaveDeepWeight", 8), wave)
+      : paramNumber(tier.weightKey, 0),
+  )]));
   if (!Object.values(weights).some(weight => weight > 0)) return tiers[0];
   const id = pickWeighted(weights);
   return tiers.find(tier => tier.id === id) || tiers[0];
@@ -3509,7 +3528,7 @@ function balancedRewardRound(value) {
 }
 
 function rollWaveReward(wave, bet) {
-  const tier = pickParamTier(WAVE_REWARD_TIERS);
+  const tier = pickParamTier(WAVE_REWARD_TIERS, wave);
   const multiplier = Math.max(0, paramNumber(tier.mulKey, 0));
   const budget = balancedRewardRound(bet * multiplier * params.moneyMul * waveRewardDepthMul(wave));
   return { id:tier.id, label:tier.label, multiplier, budget, remaining:budget, weightRemaining:0 };
