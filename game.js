@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "combat-pressure1";
+const BUILD_VERSION = "deep-chase198";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -679,11 +679,11 @@ const TOWER_ROLE = {
   chain:"area", gas:"area", needle:"single", blade:"general", trap:"control",
 };
 const MATH_TOWER_POWER = {
-  flame:{ minion:1.46, boss:.68 }, grenade:{ minion:1.58, boss:.64 },
-  cryo:{ minion:.42, boss:1.88 }, frostbomb:{ minion:1.52, boss:.58 },
-  laser:{ minion:.46, boss:2.05 }, chain:{ minion:1.54, boss:.48 },
-  gas:{ minion:1.48, boss:.64 }, needle:{ minion:.66, boss:2.08 },
-  blade:{ minion:1.00, boss:.88 }, trap:{ minion:1.12, boss:.42 },
+  flame:{ minion:1.68, boss:.68 }, grenade:{ minion:1.74, boss:.64 },
+  cryo:{ minion:.25, boss:1.88 }, frostbomb:{ minion:1.55, boss:.58 },
+  laser:{ minion:.28, boss:2.05 }, chain:{ minion:1.72, boss:.48 },
+  gas:{ minion:1.65, boss:.64 }, needle:{ minion:.42, boss:2.08 },
+  blade:{ minion:1.00, boss:.88 }, trap:{ minion:1.18, boss:.42 },
 };
 const ATTRIBUTE_KEYS = ["fire", "ice", "electric", "poison", "neutral"];
 const ATTRIBUTE_DISPLAY = {
@@ -744,8 +744,8 @@ const ATTRIBUTE_COUNTER = {
 function enemyAttributeProfile(enemyAttr) {
   const result = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [attr, 1]));
   if (!enemyAttr || enemyAttr === "neutral") return result;
-  result[enemyAttr] = .45;
-  result[ATTRIBUTE_COUNTER[enemyAttr]] = 1.75;
+  result[enemyAttr] = .35;
+  result[ATTRIBUTE_COUNTER[enemyAttr]] = 2.00;
   return result;
 }
 
@@ -816,16 +816,16 @@ const PARAM_CHANNEL = "tower-defense-param-sync";
 const INITIAL_WALLET = 10000;
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
-  flame: { damage:104, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.62, eliteMul:.92, bossMul:.82 },
-  grenade: { damage:250, rate:.55, range:700, splash:50, duration:0, cooldown:0, tick:.5, minionMul:1.58, eliteMul:.92, bossMul:.68 },
-  cryo: { damage:371, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.38, eliteMul:1.42, bossMul:1.88 },
-  frostbomb: { damage:236, rate:.45, range:720, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.56, eliteMul:.88, bossMul:.62 },
-  laser: { damage:114, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.45, eliteMul:1.46, bossMul:1.92 },
-  chain: { damage:139, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.58, eliteMul:.90, bossMul:.58 },
-  gas: { damage:104, rate:.42, range:740, splash:43, duration:2.6, cooldown:0, tick:.5, minionMul:1.50, eliteMul:.94, bossMul:.66 },
-  needle: { damage:256, rate:.75, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.64, eliteMul:1.34, bossMul:1.72 },
-  blade: { damage:295, rate:.84, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:1.00, eliteMul:1.08, bossMul:.88 },
-  trap: { damage:140, rate:.48, range:700, splash:50, duration:1.4, cooldown:0, tick:.5, minionMul:1.14, eliteMul:.84, bossMul:.46 },
+  flame: { damage:104, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.78, eliteMul:.95, bossMul:.78 },
+  grenade: { damage:250, rate:.55, range:700, splash:50, duration:0, cooldown:0, tick:.5, minionMul:1.76, eliteMul:.92, bossMul:.64 },
+  cryo: { damage:371, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.25, eliteMul:1.50, bossMul:2.02 },
+  frostbomb: { damage:236, rate:.45, range:720, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.62, eliteMul:.92, bossMul:.58 },
+  laser: { damage:114, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.28, eliteMul:1.55, bossMul:2.12 },
+  chain: { damage:139, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.76, eliteMul:.92, bossMul:.54 },
+  gas: { damage:104, rate:.42, range:740, splash:43, duration:2.6, cooldown:0, tick:.5, minionMul:1.68, eliteMul:.96, bossMul:.62 },
+  needle: { damage:256, rate:.75, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.42, eliteMul:1.42, bossMul:1.92 },
+  blade: { damage:295, rate:.84, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:1.02, eliteMul:1.10, bossMul:.88 },
+  trap: { damage:140, rate:.48, range:700, splash:50, duration:1.4, cooldown:0, tick:.5, minionMul:1.22, eliteMul:.88, bossMul:.44 },
 };
 
 function towerDefaultParams() {
@@ -1167,38 +1167,50 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 177,
+  balanceRevision: 198,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
-  mathGeneralRtpShare: .65,
-  mathBossRtpShare: .30,
-  mathPoolEntryTier1Mul: .25,
-  mathPoolEntryTier1Weight: 5,
-  mathPoolEntryTier2Mul: .60,
+  mathGeneralRtpShare: .52,
+  mathBossRtpShare: .43,
+  mathPoolEntryTier1Mul: .2,
+  mathPoolEntryTier1Weight: 10,
+  mathPoolEntryTier2Mul: .5,
   mathPoolEntryTier2Weight: 20,
-  mathPoolEntryTier3Mul: .85,
-  mathPoolEntryTier3Weight: 25,
+  mathPoolEntryTier3Mul: .8,
+  mathPoolEntryTier3Weight: 30,
   mathPoolEntryTier4Mul: 1.00,
-  mathPoolEntryTier4Weight: 30,
-  mathPoolEntryTier5Mul: 1.35,
-  mathPoolEntryTier5Weight: 15,
-  mathPoolEntryTier6Mul: 2.05,
-  mathPoolEntryTier6Weight: 5,
+  mathPoolEntryTier4Weight: 25,
+  mathPoolEntryTier5Mul: 2.1,
+  mathPoolEntryTier5Weight: 14,
+  mathPoolEntryTier6Mul: 5,
+  mathPoolEntryTier6Weight: 1,
   mathPoolSeedBetUnits: 0,
   mathPoolMaxPayoutMul: 500,
-  mathPoolBaseOutcomeCapMul: 500,
+  mathPoolBaseOutcomeCapMul: 1.2,
+  mathPoolDeepOutcomeCapMul: 500,
+  mathPoolOutcomeCapRampWaves: 29,
+  mathPoolOutcomeCapCurve: 2.4,
+  mathPoolFirstBossOutcomeCapMul: 20,
+  mathPoolBossCarryRecycleRate: 0,
   mathPoolBossAddCapScale: 0,
-  mathPoolReleaseRate: .38,
+  mathPoolReleaseRate: .60,
+  mathPoolDeepReleaseRate: 1,
+  mathPoolDepthRampWaves: 8,
   mathPoolBossReleaseRate: 1,
+  mathPoolFirstBossReleaseRate: 1,
+  mathPoolLaterBossReleaseRate: 1,
   mathPoolReleaseCapMul: 500,
   mathPoolMeaningfulWinTriggerMul: .75,
   mathPoolMeaningfulWinFloorMul: 1.5,
-  mathPoolStrongWinChance: .72,
-  mathPoolStrongWinFloorMul: 2,
+  mathPoolStrongWinChance: .90,
+  mathPoolStrongWinEarlyFloorMul: 1.5,
+  mathPoolStrongWinFloorMul: 7,
   mathPoolWeakBossCapMul: .95,
-  mathPoolWeakBossReleaseRate: .08,
-  mathPoolHotWaveFloorMul: 3,
+  mathPoolWeakBossReleaseRate: .20,
+  mathPoolHotWaveEarlyFloorMul: 1.02,
+  mathPoolHotWaveFloorMul: 6,
+  mathPoolHotWaveEarlyReleaseRate: .60,
   mathPoolHotWaveReleaseRate: 1,
   mathCheckpointRepriceEnabled: 1,
   mathCheckpointMinChance: .05,
@@ -1207,13 +1219,13 @@ const DEFAULT_PARAMS = {
   mathBuildInfluence: .80,
   mathBossBuildInfluence: .08,
   mathBossLaterBuildInfluence: .08,
-  mathMinionBuildInfluence: .24,
-  mathAttributeMinionInfluence: .24,
-  mathAttributeBossInfluence: .34,
+  mathMinionBuildInfluence: .32,
+  mathAttributeMinionInfluence: .32,
+  mathAttributeBossInfluence: .42,
   mathAreaBossRiskDiscount: .08,
-  mathSingleTowerChanceShift: .04,
-  mathAreaTowerChanceShift: -.02,
-  mathControlTowerChanceShift: -.03,
+  mathSingleTowerChanceShift: .07,
+  mathAreaTowerChanceShift: -.03,
+  mathControlTowerChanceShift: -.035,
   mathSingleTowerPayoutShift: 0,
   mathAreaTowerPayoutShift: 0,
   mathControlTowerPayoutShift: 0,
@@ -1290,10 +1302,10 @@ const DEFAULT_PARAMS = {
   bossLaterRewardMul: .80,
   bossChanceMul: 1.0,
   bossChanceCap: 55,
-  minionHpMul: 1.18,
-  minionAtkMul: 1.20,
-  minionSpeedMul: 1.02,
-  wave1MinionAtkMul: .52,
+  minionHpMul: 1.30,
+  minionAtkMul: 1.34,
+  minionSpeedMul: 1.04,
+  wave1MinionAtkMul: .42,
   eliteHpMul: 1.0,
   eliteAtkMul: 1.0,
   bossFirstHpMul: 1.23,
@@ -1426,17 +1438,29 @@ function cleanParams(input={}) {
   next.mathPoolSeedBetUnits = Math.max(0, Math.min(10000, next.mathPoolSeedBetUnits));
   next.mathPoolMaxPayoutMul = Math.max(1, Math.min(500, next.mathPoolMaxPayoutMul));
   next.mathPoolBaseOutcomeCapMul = Math.max(0, Math.min(500, next.mathPoolBaseOutcomeCapMul));
+  next.mathPoolDeepOutcomeCapMul = Math.max(next.mathPoolBaseOutcomeCapMul, Math.min(500, next.mathPoolDeepOutcomeCapMul));
+  next.mathPoolOutcomeCapRampWaves = Math.max(1, Math.min(30, next.mathPoolOutcomeCapRampWaves));
+  next.mathPoolOutcomeCapCurve = Math.max(.25, Math.min(8, next.mathPoolOutcomeCapCurve));
+  next.mathPoolFirstBossOutcomeCapMul = Math.max(1, Math.min(500, next.mathPoolFirstBossOutcomeCapMul));
+  next.mathPoolBossCarryRecycleRate = Math.max(0, Math.min(1, next.mathPoolBossCarryRecycleRate));
   next.mathPoolBossAddCapScale = Math.max(0, Math.min(100, next.mathPoolBossAddCapScale));
   next.mathPoolReleaseRate = Math.max(0, Math.min(1, next.mathPoolReleaseRate));
+  next.mathPoolDeepReleaseRate = Math.max(next.mathPoolReleaseRate, Math.min(1, next.mathPoolDeepReleaseRate));
+  next.mathPoolDepthRampWaves = Math.max(1, Math.min(30, next.mathPoolDepthRampWaves));
   next.mathPoolBossReleaseRate = Math.max(0, Math.min(1, next.mathPoolBossReleaseRate));
+  next.mathPoolFirstBossReleaseRate = Math.max(0, Math.min(next.mathPoolBossReleaseRate, next.mathPoolFirstBossReleaseRate));
+  next.mathPoolLaterBossReleaseRate = Math.max(0, Math.min(next.mathPoolBossReleaseRate, next.mathPoolLaterBossReleaseRate));
   next.mathPoolReleaseCapMul = Math.max(0, Math.min(500, next.mathPoolReleaseCapMul));
   next.mathPoolMeaningfulWinTriggerMul = Math.max(0, Math.min(500, next.mathPoolMeaningfulWinTriggerMul));
   next.mathPoolMeaningfulWinFloorMul = Math.max(1, Math.min(500, next.mathPoolMeaningfulWinFloorMul));
   next.mathPoolStrongWinChance = Math.max(0, Math.min(1, next.mathPoolStrongWinChance));
-  next.mathPoolStrongWinFloorMul = Math.max(next.mathPoolMeaningfulWinFloorMul, Math.min(500, next.mathPoolStrongWinFloorMul));
+  next.mathPoolStrongWinEarlyFloorMul = Math.max(1, Math.min(500, next.mathPoolStrongWinEarlyFloorMul));
+  next.mathPoolStrongWinFloorMul = Math.max(next.mathPoolStrongWinEarlyFloorMul, Math.min(500, next.mathPoolStrongWinFloorMul));
   next.mathPoolWeakBossCapMul = Math.max(0, Math.min(500, next.mathPoolWeakBossCapMul));
   next.mathPoolWeakBossReleaseRate = Math.max(0, Math.min(1, next.mathPoolWeakBossReleaseRate));
-  next.mathPoolHotWaveFloorMul = Math.max(1, Math.min(500, next.mathPoolHotWaveFloorMul));
+  next.mathPoolHotWaveEarlyFloorMul = Math.max(1, Math.min(500, next.mathPoolHotWaveEarlyFloorMul));
+  next.mathPoolHotWaveFloorMul = Math.max(next.mathPoolHotWaveEarlyFloorMul, Math.min(500, next.mathPoolHotWaveFloorMul));
+  next.mathPoolHotWaveEarlyReleaseRate = Math.max(0, Math.min(next.mathPoolHotWaveReleaseRate, next.mathPoolHotWaveEarlyReleaseRate));
   next.mathPoolHotWaveReleaseRate = Math.max(0, Math.min(1, next.mathPoolHotWaveReleaseRate));
   next.mathCheckpointRepriceEnabled = next.mathCheckpointRepriceEnabled >= .5 ? 1 : 0;
   next.mathCheckpointMinChance = Math.max(.01, Math.min(.99, next.mathCheckpointMinChance));
@@ -2599,6 +2623,66 @@ function migrateBossParams(input={}) {
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 177;
   }
+  if ((Number(input.balanceRevision) || 0) < 178) {
+    [
+      "minionHpMul", "minionAtkMul", "minionSpeedMul", "wave1MinionAtkMul",
+      "mathMinionBuildInfluence", "mathAttributeMinionInfluence", "mathAttributeBossInfluence",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    Object.keys(DEFAULT_PARAMS)
+      .filter(key => /^tower_.+_(?:minion|elite|boss)Mul$/.test(key) || /^monster_.+_(?:fire|ice|electric|poison|neutral)Mul$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 178;
+  }
+  if ((Number(input.balanceRevision) || 0) < 179) {
+    [
+      "mathPoolReleaseRate", "mathPoolWeakBossReleaseRate",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 179;
+  }
+  if ((Number(input.balanceRevision) || 0) < 180) {
+    [
+      "mathPoolEntryTier1Mul", "mathPoolEntryTier1Weight", "mathPoolEntryTier2Mul", "mathPoolEntryTier2Weight",
+      "mathPoolEntryTier3Mul", "mathPoolEntryTier3Weight", "mathPoolEntryTier4Mul", "mathPoolEntryTier4Weight",
+      "mathPoolEntryTier5Mul", "mathPoolEntryTier5Weight", "mathPoolEntryTier6Mul", "mathPoolEntryTier6Weight",
+      "mathPoolReleaseRate", "mathPoolDeepReleaseRate", "mathPoolDepthRampWaves",
+      "mathPoolBossReleaseRate", "mathPoolFirstBossReleaseRate", "mathPoolLaterBossReleaseRate",
+      "mathPoolStrongWinEarlyFloorMul", "mathPoolStrongWinFloorMul",
+      "mathPoolHotWaveEarlyFloorMul", "mathPoolHotWaveFloorMul",
+      "mathPoolHotWaveEarlyReleaseRate", "mathPoolHotWaveReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 180;
+  }
+  if ((Number(input.balanceRevision) || 0) < 181) {
+    ["mathPoolBaseOutcomeCapMul", "mathPoolDeepOutcomeCapMul", "mathPoolOutcomeCapRampWaves"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 181;
+  }
+  if ((Number(input.balanceRevision) || 0) < 182) {
+    [
+      "mathPoolBaseOutcomeCapMul", "mathPoolDeepOutcomeCapMul", "mathPoolOutcomeCapRampWaves", "mathPoolFirstBossOutcomeCapMul",
+      "mathPoolReleaseRate", "mathPoolDeepReleaseRate", "mathPoolDepthRampWaves",
+      "mathPoolFirstBossReleaseRate", "mathPoolLaterBossReleaseRate", "mathPoolBossReleaseRate",
+      "mathPoolStrongWinEarlyFloorMul", "mathPoolStrongWinFloorMul",
+      "mathPoolHotWaveEarlyFloorMul", "mathPoolHotWaveFloorMul", "mathPoolHotWaveEarlyReleaseRate", "mathPoolHotWaveReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 182;
+  }
+  if ((Number(input.balanceRevision) || 0) < 183) {
+    [
+      "mathGeneralRtpShare", "mathBossRtpShare",
+      "mathPoolEntryTier1Mul", "mathPoolEntryTier1Weight", "mathPoolEntryTier2Mul", "mathPoolEntryTier2Weight",
+      "mathPoolEntryTier3Mul", "mathPoolEntryTier3Weight", "mathPoolEntryTier4Mul", "mathPoolEntryTier4Weight",
+      "mathPoolEntryTier5Mul", "mathPoolEntryTier5Weight", "mathPoolEntryTier6Mul", "mathPoolEntryTier6Weight",
+      "mathPoolBossCarryRecycleRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 183;
+  }
+  if ((Number(input.balanceRevision) || 0) < 184) {
+    ["mathPoolDeepOutcomeCapMul", "mathPoolOutcomeCapRampWaves", "mathPoolOutcomeCapCurve"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 184;
+  }
   return next;
 }
 
@@ -2647,7 +2731,7 @@ function reset() {
     hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, choiceKind:"", choiceRerollUsed:false, rerollSpent:0, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
     spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, bossDanger: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", simBossSpawned:0,
     certifiedPayout:0, mathTicket:null, mathLedger:[], mathTotalStake:0, mathPendingStake:0, mathPendingCredit:0,
-    mathReservedPayout:0, mathPoolContribution:0, mathGeneralContribution:0, mathBossContribution:0,
+    mathReservedPayout:0, mathReservedBossAmount:0, mathPoolContribution:0, mathGeneralContribution:0, mathBossContribution:0,
     mathPoolCapHits:0, mathPoolRecycled:0, mathPoolLastEntryMultiplier:0,
     pendingWaveStart:false,
   };
@@ -2788,6 +2872,7 @@ function resetMathPool(referenceBet=0) {
   const seed = bet * paramNumber("mathPoolSeedBetUnits", 0);
   mathPoolLedger = {
     seed, available:seed, reserved:0, contributed:0, generalContributed:0, bossContributed:0,
+    bossAvailable:0, bossReserved:0, bossPaid:0, bossMatured:0,
     paid:0, house:0, operatorAdvance:0,
     stake:0, capHits:0,
   };
@@ -2805,7 +2890,7 @@ function mathPoolSnapshot() {
 }
 function restoreMathPool(snapshot, reservation=0) {
   if (!snapshot || typeof snapshot !== "object") return mathPoolLedger;
-  const fields = ["seed", "available", "reserved", "contributed", "generalContributed", "bossContributed", "paid", "house", "operatorAdvance", "stake", "capHits"];
+  const fields = ["seed", "available", "reserved", "contributed", "generalContributed", "bossContributed", "bossAvailable", "bossReserved", "bossPaid", "bossMatured", "paid", "house", "operatorAdvance", "stake", "capHits"];
   mathPoolLedger = Object.fromEntries(fields.map(key => [
     key,
     key === "house" || key === "available"
@@ -2813,6 +2898,10 @@ function restoreMathPool(snapshot, reservation=0) {
       : Math.max(0, Number(snapshot[key]) || 0),
   ]));
   if (state) state.mathReservedPayout = Math.max(0, Number(reservation) || 0);
+  if (state) state.mathReservedBossAmount = Math.min(
+    state.mathReservedPayout,
+    Math.max(0, Number(mathPoolLedger.bossReserved) || 0),
+  );
   return mathPoolLedger;
 }
 function registerMathStake(amount, source="wave") {
@@ -2823,16 +2912,25 @@ function registerMathStake(amount, source="wave") {
   const targetRtp = paramNumber("mathTargetRtp", .95);
   const generalShare = mathPoolEnabled() ? paramNumber("mathGeneralRtpShare", .65) : targetRtp;
   const bossShare = mathPoolEnabled() ? paramNumber("mathBossRtpShare", .30) : 0;
-  const entryMultiplier = mathPoolEnabled() ? generalShare + bossShare : targetRtp;
+  const allocatedShare = Math.max(.0001, generalShare + bossShare);
+  const entryMultiplier = mathPoolEnabled() ? drawMathPoolEntryMultiplier() : targetRtp;
   const contribution = stake * entryMultiplier;
-  const pricedContribution = stake * generalShare;
+  const pricedContribution = mathPoolEnabled()
+    ? contribution * generalShare / allocatedShare
+    : contribution;
   const bossContribution = Math.max(0, contribution - pricedContribution);
   if (mathPoolEnabled()) {
     const pool = ensureMathPool(stake);
+    if (source === "wave" && !state.started) {
+      const matured = Math.max(0,Number(pool.bossAvailable)||0) * paramNumber("mathPoolBossCarryRecycleRate", 1);
+      pool.bossAvailable = Math.max(0,(Number(pool.bossAvailable)||0)-matured);
+      pool.bossMatured = Math.max(0,(Number(pool.bossMatured)||0)+matured);
+    }
     pool.stake += stake;
     pool.contributed += contribution;
     pool.generalContributed += pricedContribution;
     pool.bossContributed += bossContribution;
+    pool.bossAvailable += bossContribution;
     pool.house += stake - contribution;
     pool.available += contribution;
     state.mathPoolContribution += contribution;
@@ -2853,33 +2951,62 @@ function registerMathStake(amount, source="wave") {
   }
   return { stake, multiplier:entryMultiplier, contribution, pricedContribution, bossContribution, activeReroll };
 }
+function mathPoolDepthProgress(wave=state?.wave || 1) {
+  const rampWaves = Math.max(1, paramNumber("mathPoolDepthRampWaves", 14));
+  return clamp((Math.max(1, Number(wave) || 1) - 1) / rampWaves, 0, 1);
+}
+function mathPoolDepthValue(earlyValue, deepValue, wave=state?.wave || 1) {
+  const progress = mathPoolDepthProgress(wave);
+  return earlyValue + (deepValue - earlyValue) * progress;
+}
+function normalPoolReleaseRate(wave=state?.wave || 1) {
+  return clamp(mathPoolDepthValue(
+    paramNumber("mathPoolReleaseRate", .08),
+    paramNumber("mathPoolDeepReleaseRate", .65),
+    wave,
+  ), 0, 1);
+}
 function releaseMathReservation() {
   const amount = Math.max(0, Number(state?.mathReservedPayout) || 0);
   if (!amount || !mathPoolEnabled()) {
     if (state) {
       state.mathReservedPayout = 0;
+      state.mathReservedBossAmount = 0;
       state.mathPoolRecycled = 0;
     }
     return;
   }
   const pool = ensureMathPool();
   const releasable = Math.min(amount, pool.reserved);
+  const reservedBoss = Math.min(
+    releasable,
+    Math.max(0, Number(state.mathReservedBossAmount) || Number(pool.bossReserved) || 0),
+  );
   pool.reserved -= releasable;
   pool.available += releasable;
+  pool.bossReserved = Math.max(0, (Number(pool.bossReserved) || 0) - reservedBoss);
+  pool.bossAvailable = Math.min(pool.available, Math.max(0, (Number(pool.bossAvailable) || 0) + reservedBoss));
   state.mathReservedPayout = 0;
+  state.mathReservedBossAmount = 0;
   state.mathPoolRecycled = 0;
 }
-function personalPoolPayoutCeiling(stakeOverride=null) {
+function personalPoolPayoutCeiling(stakeOverride=null, allowBossBudget=false) {
   const payoutStake = Math.max(
     Math.max(0, Number(state.mathTotalStake) || 0),
     Number.isFinite(Number(stakeOverride)) ? Math.max(0, Number(stakeOverride)) : 0,
   );
   const exposureCap = Math.max(0, payoutStake * paramNumber("mathPoolMaxPayoutMul", 500));
-  const outcomeCapMul = paramNumber("mathPoolBaseOutcomeCapMul", 500)
+  const capRampWaves = Math.max(1, paramNumber("mathPoolOutcomeCapRampWaves", 15));
+  const capDepthLinear = clamp(((Number(state?.wave) || 1) - 1) / capRampWaves, 0, 1);
+  const capDepth = Math.pow(capDepthLinear,paramNumber("mathPoolOutcomeCapCurve", 2.8));
+  const earlyOutcomeCap = paramNumber("mathPoolBaseOutcomeCapMul", 1.35);
+  const deepOutcomeCap = Math.max(earlyOutcomeCap, paramNumber("mathPoolDeepOutcomeCapMul", 8));
+  const outcomeCapMul = earlyOutcomeCap + (deepOutcomeCap - earlyOutcomeCap) * capDepth
     + Math.max(0, Number(state.bossAdd) || 0) * paramNumber("mathPoolBossAddCapScale", 0);
   const outcomeCap = Math.max(0, payoutStake * outcomeCapMul);
+  const pool = mathPoolEnabled() ? ensureMathPool() : null;
   const liquidityCap = mathPoolEnabled()
-    ? Math.max(0, Number(ensureMathPool().available) || 0)
+    ? Math.max(0, (Number(pool.available) || 0) - (allowBossBudget ? 0 : Math.max(0, Number(pool.bossAvailable) || 0)))
     : Number.POSITIVE_INFINITY;
   return Math.max(0, Math.min(exposureCap, outcomeCap, liquidityCap));
 }
@@ -2889,34 +3016,49 @@ function recordMathPoolCapHit() {
   pool.capHits = (pool.capHits || 0) + 1;
   state.mathPoolCapHits = (state.mathPoolCapHits || 0) + 1;
 }
-function personalPoolPayoutAmount(targetPayout, stakeOverride=null, boss=false, releaseRateOverride=null) {
+function personalPoolPayoutAmount(targetPayout, stakeOverride=null, allowBossBudget=false, releaseRateOverride=null) {
   const pool = ensureMathPool();
   const desired = Math.max(0, Math.round(Number(targetPayout) || 0));
   const payoutStake = Number.isFinite(Number(stakeOverride)) && Number(stakeOverride) > 0
     ? Number(stakeOverride)
     : state.mathTotalStake;
-  const available = Math.max(0, Math.min(personalPoolPayoutCeiling(payoutStake), pool.available));
+  const available = Math.max(0, Math.min(personalPoolPayoutCeiling(payoutStake, allowBossBudget), pool.available));
   const fundedTarget = Math.min(desired, available);
   const surplus = Math.max(0, available - fundedTarget);
-  const configuredReleaseRate = Number.isFinite(Number(releaseRateOverride))
+  const hasReleaseRateOverride = releaseRateOverride !== null
+    && releaseRateOverride !== undefined
+    && Number.isFinite(Number(releaseRateOverride));
+  const configuredReleaseRate = hasReleaseRateOverride
     ? Number(releaseRateOverride)
-    : paramNumber(boss ? "mathPoolBossReleaseRate" : "mathPoolReleaseRate", boss ? 1 : .45);
+    : allowBossBudget
+      ? paramNumber("mathPoolBossReleaseRate", 1)
+      : normalPoolReleaseRate(state?.wave || 1);
   const releaseRate = clamp(configuredReleaseRate, 0, 1);
   const releaseCap = Math.max(0, payoutStake * paramNumber("mathPoolReleaseCapMul", 500));
   const backlogRelease = Math.min(surplus * releaseRate, releaseCap);
   return Math.max(0, Math.floor(Math.min(available, fundedTarget + backlogRelease)));
 }
-function reserveMathPayout(targetPayout, pricedStake=0) {
+function reserveMathPayout(targetPayout, pricedStake=0, allowBossBudget=false) {
   if (!mathPoolEnabled()) return Math.max(0, Math.round(targetPayout || 0));
   const pool = ensureMathPool();
   releaseMathReservation();
   const desired = Math.max(0, Math.round(targetPayout || 0));
-  const reserved = Math.max(0, Math.floor(Math.min(desired, personalPoolPayoutCeiling(pricedStake))));
+  const reserved = Math.max(0, Math.floor(Math.min(desired, personalPoolPayoutCeiling(pricedStake, allowBossBudget))));
   if (reserved < desired) recordMathPoolCapHit();
   state.mathPoolRecycled = 0;
+  const generalAvailableBefore = Math.max(
+    0,
+    (Number(pool.available) || 0) - Math.max(0, Number(pool.bossAvailable) || 0),
+  );
+  const reservedBoss = allowBossBudget
+    ? Math.min(Math.max(0, reserved - generalAvailableBefore), Math.max(0, Number(pool.bossAvailable) || 0))
+    : 0;
   pool.available -= reserved;
   pool.reserved += reserved;
+  pool.bossAvailable = Math.max(0,(Number(pool.bossAvailable)||0)-reservedBoss);
+  pool.bossReserved = Math.max(0,(Number(pool.bossReserved)||0)+reservedBoss);
   state.mathReservedPayout = reserved;
+  state.mathReservedBossAmount = reservedBoss;
   return reserved;
 }
 function payMathReservation() {
@@ -2924,9 +3066,13 @@ function payMathReservation() {
   const amount = Math.max(0, Number(state.mathReservedPayout) || 0);
   if (!amount) return;
   const pool = ensureMathPool();
+  const paidBoss = Math.min(amount,Math.max(0,Number(state.mathReservedBossAmount)||Number(pool.bossReserved)||0));
   pool.reserved = Math.max(0, pool.reserved - amount);
+  pool.bossReserved = Math.max(0,(Number(pool.bossReserved)||0)-paidBoss);
+  pool.bossPaid = Math.max(0,(Number(pool.bossPaid)||0)+paidBoss);
   pool.paid += amount;
   state.mathReservedPayout = 0;
+  state.mathReservedBossAmount = 0;
 }
 function settleSimulatedPoolPayout(requestedPayout, stakeOverride=null) {
   const requested = Math.max(0, Math.round(Number(requestedPayout) || 0));
@@ -2935,11 +3081,21 @@ function settleSimulatedPoolPayout(requestedPayout, stakeOverride=null) {
     releaseMathReservation();
     return 0;
   }
+  const allowBossBudget = Math.max(0,Number(state.mathReservedBossAmount)||0) > 0;
   releaseMathReservation();
   const pool = ensureMathPool();
-  const paid = Math.max(0, Math.floor(Math.min(requested, personalPoolPayoutCeiling(stakeOverride))));
+  const paid = Math.max(0, Math.floor(Math.min(requested, personalPoolPayoutCeiling(stakeOverride, allowBossBudget))));
   if (paid < requested) recordMathPoolCapHit();
+  const generalAvailableBefore = Math.max(
+    0,
+    (Number(pool.available) || 0) - Math.max(0, Number(pool.bossAvailable) || 0),
+  );
+  const paidBoss = allowBossBudget
+    ? Math.min(Math.max(0, paid - generalAvailableBefore), Math.max(0, Number(pool.bossAvailable) || 0))
+    : 0;
   pool.available -= paid;
+  pool.bossAvailable = Math.max(0,(Number(pool.bossAvailable)||0)-paidBoss);
+  pool.bossPaid = Math.max(0,(Number(pool.bossPaid)||0)+paidBoss);
   pool.paid += paid;
   return paid;
 }
@@ -2985,7 +3141,11 @@ function mathBuildPower(boss=false) {
   const key = boss ? "boss" : "minion";
   const roleAverage = state.towers.reduce((sum, tower) => {
     const fallback = MATH_TOWER_POWER[tower.id]?.[key] || 1;
-    const power = boss ? paramNumber(`mathTowerBossPower_${tower.id}`, fallback) : fallback;
+    const baseClassMul = Number(TOWER_BASE_PARAMS[tower.id]?.minionMul) || 1;
+    const tunedClassMul = Math.max(.01, paramNumber(`tower_${tower.id}_minionMul`, baseClassMul));
+    const power = boss
+      ? paramNumber(`mathTowerBossPower_${tower.id}`, fallback)
+      : fallback * tunedClassMul / baseClassMul;
     return sum + power;
   }, 0) / state.towers.length;
   const slotFactor = .82 + Math.min(3, state.towers.length - 1) * .10;
@@ -3003,10 +3163,17 @@ function mathBuildPower(boss=false) {
 function mathAttributePower() {
   const profile = enemyAttributeProfile(state.currentWaveAttr);
   const sources = [];
-  if (state.hero) sources.push(state.hero.attrKey || "neutral");
-  state.towers.forEach(tower => sources.push(towerAttr(tower)));
+  if (state.hero) {
+    sources.push({ attr:state.hero.attrKey || "neutral", weight:1 + Math.min(1.5, (state.hero.upgrades?.length || 0) * .12) });
+  }
+  state.towers.forEach(tower => {
+    const upgrades = tower.upgrades?.length || 0;
+    const hasCore = (tower.upgrades || []).some(name => CORE_UPGRADE_NAMES.has(name) || !!UPGRADE_REQUIREMENTS[name]);
+    sources.push({ attr:towerAttr(tower), weight:1.15 + Math.min(2, upgrades * .18) + (hasCore ? .35 : 0) });
+  });
   if (!sources.length) return 1;
-  return sources.reduce((sum, attr) => sum + (Number(profile[attr]) || 1), 0) / sources.length;
+  const totalWeight = sources.reduce((sum, source) => sum + source.weight, 0) || 1;
+  return sources.reduce((sum, source) => sum + (Number(profile[source.attr]) || 1) * source.weight, 0) / totalWeight;
 }
 
 function mathRoleProfile(boss=false) {
@@ -3113,6 +3280,7 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   state.mathPendingStake = 0;
   state.mathPendingCredit = 0;
   const clearChance = mathClearChance(wave, boss, difficulty, bossOrdinal);
+  const attributePower = mathAttributePower();
   const waveReward = mathWaveRewardRoll(wave);
   let rolledAdd = 0;
   let bossRewardFactor = 1;
@@ -3152,12 +3320,22 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const strongBossPayout = bossTailEligible && mathUniform(wave, 71) < paramNumber("mathPoolStrongWinChance", .72);
   const strongHotWavePayout = !bossTailEligible && waveReward.id === "hot";
   const totalExposureStake = Math.max(pricedStake, Number(state.mathTotalStake) || 0);
+  const strongBossFloorMul = mathPoolDepthValue(
+    paramNumber("mathPoolStrongWinEarlyFloorMul", 1.35),
+    paramNumber("mathPoolStrongWinFloorMul", 3),
+    wave,
+  );
   const strongBossFloor = totalExposureStake * Math.max(
-    paramNumber("mathPoolStrongWinFloorMul", 2),
+    strongBossFloorMul,
     bossDisplayMultiplier,
   );
   const weakBossCap = totalExposureStake * paramNumber("mathPoolWeakBossCapMul", .95);
-  const hotWaveFloor = totalExposureStake * paramNumber("mathPoolHotWaveFloorMul", 3);
+  const hotWaveFloorMul = mathPoolDepthValue(
+    paramNumber("mathPoolHotWaveEarlyFloorMul", 1.25),
+    paramNumber("mathPoolHotWaveFloorMul", 3),
+    wave,
+  );
+  const hotWaveFloor = totalExposureStake * hotWaveFloorMul;
   const payoutFloor = strongBossPayout
     ? strongBossFloor
     : strongHotWavePayout ? hotWaveFloor : 0;
@@ -3170,14 +3348,33 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
       : baseUncappedTargetPayout;
   const bossReleaseRate = bossTailEligible
     ? strongBossPayout
-      ? paramNumber("mathPoolBossReleaseRate", 1)
+      ? bossOrdinal === 1
+        ? mathPoolDepthValue(
+          paramNumber("mathPoolFirstBossReleaseRate", .38),
+          paramNumber("mathPoolLaterBossReleaseRate", .62),
+          wave,
+        )
+        : mathPoolDepthValue(
+          paramNumber("mathPoolLaterBossReleaseRate", .62),
+          paramNumber("mathPoolBossReleaseRate", 1),
+          wave,
+        )
       : paramNumber("mathPoolWeakBossReleaseRate", .08)
     : strongHotWavePayout
-      ? paramNumber("mathPoolHotWaveReleaseRate", 1)
+      ? mathPoolDepthValue(
+        paramNumber("mathPoolHotWaveEarlyReleaseRate", .16),
+        paramNumber("mathPoolHotWaveReleaseRate", 1),
+        wave,
+      )
       : null;
-  const targetPayout = mathPoolEnabled()
-    ? personalPoolPayoutAmount(uncappedTargetPayout, pricedStake, bossTailEligible, bossReleaseRate)
+  const bossBudgetEligible = boss;
+  const poolFundedTargetPayout = mathPoolEnabled()
+    ? personalPoolPayoutAmount(uncappedTargetPayout, pricedStake, bossBudgetEligible, bossReleaseRate)
     : uncappedTargetPayout;
+  const firstBossPayoutCap = Math.max(before, totalExposureStake * paramNumber("mathPoolFirstBossOutcomeCapMul", 1.5));
+  const targetPayout = bossOrdinal === 1
+    ? Math.min(poolFundedTargetPayout, firstBossPayoutCap)
+    : poolFundedTargetPayout;
   if (mathPoolEnabled() && targetPayout < uncappedTargetPayout) recordMathPoolCapHit();
   let bossAdd = 0;
   if (boss) {
@@ -3189,12 +3386,13 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
   const targetPot = Math.max(state.pot, stochasticRound(targetPayout / targetMultiplier, mathUniform(wave, 3)));
   const ticket = {
     id:state.mathLedger.length + 1, wave, bet, pricedStake, entryCredit, unpricedCredit:0, rerollStake:0, rerollCredits:[], boss, bossOrdinal, bossDifficulty:difficulty?.id || null,
-    buildPower, hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, pricingClearChance, payoutChanceScale, before, targetRtp, payoutScale, payoutRoleScale,
+    buildPower, attributePower, waveAttribute:state.currentWaveAttr || "neutral", hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, pricingClearChance, payoutChanceScale, before, targetRtp, payoutScale, payoutRoleScale,
     singleShare,areaShare,controlShare,
     expectedAfter, fairValue:expectedAfter, conditionalPayoutExact, uncappedTargetPayout, targetPayout, targetPot, targetMultiplier, payoutUniform,
     waveRewardTier:waveReward.id,waveRewardMultiplier:waveReward.multiplier,waveRewardFactor:waveReward.factor,
     bossRewardFactor,rewardFactor,rolledBossAdd:rolledAdd,
     rewardBudget:Math.max(0, targetPot - state.pot), bossAdd, bossTailEligible, strongBossPayout, strongHotWavePayout, bossReleaseRate, payoutFloor,
+    depthReleaseProgress:mathPoolDepthProgress(wave),strongBossFloorMul,hotWaveFloorMul,firstBossPayoutCap,bossBudgetEligible,
     identityError:Math.abs(pricingClearChance * conditionalPayoutExact - expectedAfter),
     settled:false, result:"pending", reprices:[], displayFloorLift:0,
   };
@@ -3206,7 +3404,7 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
 function settleMathTicket() {
   const ticket = state.mathTicket;
   if (!certifiedMathEnabled() || !ticket || ticket.settled) return;
-  const reservedPayout = reserveMathPayout(ticket.targetPayout, ticket.pricedStake);
+  const reservedPayout = reserveMathPayout(ticket.targetPayout, ticket.pricedStake, ticket.bossBudgetEligible);
   state.certifiedPayout = reservedPayout;
   const targetMultiplier = Math.max(.1, Number(ticket.targetMultiplier) || 1 + state.bossAdd + (ticket.bossAdd || 0));
   state.pot = Math.max(state.pot, stochasticRound(reservedPayout / targetMultiplier, mathUniform(ticket.wave, 6)));
@@ -8018,6 +8216,8 @@ if (HEADLESS_SIM) {
         clearChance:state.mathTicket.clearChance,
         pricingClearChance:state.mathTicket.pricingClearChance,
         buildPower:state.mathTicket.buildPower,
+        attributePower:state.mathTicket.attributePower,
+        waveAttribute:state.mathTicket.waveAttribute,
         hpRatio:state.mathTicket.hpRatio,
         fairValue:state.mathTicket.fairValue,
         conditionalPayoutExact:state.mathTicket.conditionalPayoutExact,
