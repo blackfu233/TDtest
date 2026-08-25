@@ -8218,6 +8218,7 @@ if (HEADLESS_SIM) {
       exp:state.exp, level:state.level, choicesOpen:state.choicesOpen, waveActive:state.waveActive,
       choiceRerollUsed:state.choiceRerollUsed, rerollSpent:state.rerollSpent,
       spawning:!!state.spawn, spawnBoss:!!state.spawn?.boss, monsters:state.monsters.length,
+      projectiles:state.projectiles.length, zones:state.zones.length,
       bossAlive:state.monsters.some(monster => monster.boss), bossSpawned:state.simBossSpawned || 0, bossSeen:state.bossSeen, bossRolled:state.bossRolled,
       bossAdd:state.bossAdd, bossRolling:!!state.bossRoll, bossDanger:Number(state.bossDanger) || 0,
       selectedTemplate:state.selectedTemplate, currentWaveAttr:state.currentWaveAttr,

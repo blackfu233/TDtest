@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>塔防 RTP 模擬工具</title>
+  <link rel="stylesheet" href="simulator.css?v=deep-chase202">
+</head>
+<body>
+  <main class="sim-shell">
+    <header class="sim-header">
+      <div>
+        <p class="eyebrow">Tower Defense Prototype</p>
+        <h1>RTP 模擬工具</h1>
+        <p class="subtext">使用正式戰鬥邏輯模擬 RTP、逐王擊殺率、每波存活切片與 Build 表現。</p>
+      </div>
+      <nav class="header-actions" aria-label="工具連結">
+        <a class="button secondary" href="tuner.html" target="_blank" rel="noreferrer">調參工具</a>
+        <a class="button secondary" href="index.html" target="_blank" rel="noreferrer">開啟遊戲</a>
+      </nav>
+    </header>
+
+    <section class="param-strip" aria-live="polite">
+      <span id="paramDot" class="status-dot"></span>
+      <strong id="paramStatus">正在讀取調參工具數值</strong>
+      <span id="paramMeta">尚未載入</span>
+      <select id="paramSource" aria-label="模擬參數來源">
+        <option value="live">即時參數</option>
+      </select>
+      <button id="refreshParamsBtn" class="button secondary" type="button">重新讀取</button>
+    </section>
+
+    <section class="setup-band" aria-labelledby="setupTitle">
+      <div class="section-heading">
+        <div><h2 id="setupTitle">模擬設定</h2><p id="setupHint">每場都以起始錢包重新開局；總樣本為玩家數乘以每人場數。</p></div>
+        <strong id="sampleTotal">100 場</strong>
+      </div>
+      <div class="control-grid">
+        <label><span>策略模板</span><select id="strategy">
+          <option value="matrix">驗證矩陣（5 種策略）</option>
+          <option value="balanced">平衡策略</option>
+          <option value="single">單體爆發</option>
+          <option value="area">群體清場</option>
+          <option value="control">控場連動</option>
+          <option value="greedy">高評級優先</option>
+          <option value="random">完全隨機</option>
+        </select></label>
+        <label><span>玩家數量</span><input id="playerCount" type="number" min="1" max="100000" step="1" value="20"></label>
+        <label><span>每位玩家場數</span><input id="gamesPerPlayer" type="number" min="1" max="10000" step="1" value="5"></label>
+        <label><span>錢包模式</span><select id="walletMode">
+          <option value="independent" selected>獨立場次</option>
+          <option value="continuous">連續錢包</option>
+        </select></label>
+        <label><span>起始 BET</span><select id="baseBet">
+          <option>10</option><option>20</option><option>50</option><option selected>100</option><option>200</option>
+          <option>500</option><option>1000</option><option>2000</option><option>5000</option>
+        </select></label>
+        <label><span>起始錢包</span><input id="startWallet" type="number" min="1" max="1000000000" step="100" value="10000"></label>
+        <label><span>Collect 策略</span><select id="collectPolicy">
+          <option value="fixedWaveMatrix">第 1–30 波固定收手矩陣</option>
+          <option value="profit">得分高於總投注時收手</option>
+          <option value="adaptive">風險報酬判斷</option>
+          <option value="humanConservative">真人模板｜保守</option>
+          <option value="humanBalanced">真人模板｜平衡</option>
+          <option value="humanChaser">真人模板｜追高</option>
+          <option value="humanGreedyChaser">真人模板｜深追貪心</option>
+          <option value="boss1">首王後收手</option>
+          <option value="boss2">第二王後收手</option>
+          <option value="preboss">危險升高時收手</option>
+          <option value="wave5">第 5 波收手</option>
+          <option value="wave10">第 10 波收手</option>
+          <option value="wave20">第 20 波收手</option>
+          <option value="never">追到上限或失敗</option>
+        </select></label>
+        <label><span>最大波次</span><select id="maxWave">
+          <option>5</option><option>10</option><option>20</option><option selected>30</option>
+        </select></label>
+        <label><span>決策準確度</span><select id="accuracy">
+          <option value="1">100%</option><option value="0.9" selected>90%</option><option value="0.75">75%</option><option value="0.5">50%</option><option value="0">完全隨機</option>
+        </select></label>
+        <label><span>Reroll 使用率</span><select id="rerollChance">
+          <option value="0">0%</option><option value="0.1">10%</option><option value="0.25" selected>25%</option><option value="0.5">50%</option><option value="1">100%</option>
+        </select></label>
+        <label><span>亂數種子</span><input id="seed" type="number" min="1" max="4294967295" step="1" value="1000003"></label>
+        <label><span>CPU 執行緒</span><select id="workerCount">
+          <option value="auto">自動</option><option value="1">1（精度基準）</option><option value="2">2</option><option value="4">4</option>
+          <option value="6">6</option><option value="8" selected>8</option><option value="12">12</option><option value="16">16</option>
+        </select></label>
+      </div>
+      <div class="run-row">
+        <button id="runBtn" class="button primary" type="button">開始模擬</button>
+        <button id="trustedRunBtn" class="button secondary" type="button">正式驗證 500,000 場（30 波）</button>
+        <button id="parityBtn" class="button secondary" type="button">精度檢查</button>
+        <button id="cancelBtn" class="button danger" type="button" disabled>停止</button>
+        <input id="profileName" type="text" maxlength="40" placeholder="設定檔名稱">
+        <button id="saveProfileBtn" class="button secondary" type="button">儲存設定</button>
+        <select id="profileSelect" aria-label="已儲存設定"><option value="">載入設定檔</option></select>
+        <button id="deleteProfileBtn" class="button danger" type="button" disabled>刪除設定</button>
+      </div>
+      <div class="progress-track"><div id="progressFill"></div></div>
+      <div class="progress-line"><span id="progressText">尚未開始</span><span id="workerStatus">偵測本機 CPU 中</span><span id="elapsedText"></span></div>
+    </section>
+
+    <section id="summaryBand" class="summary-band" aria-label="模擬摘要">
+      <div><span>RTP</span><strong id="rtpValue">--</strong><small id="rtpCi">尚無資料</small></div>
+      <div><span>BOSS 擊殺率</span><strong id="bossKillValue">--</strong><small id="bossKillMeta">尚無資料</small></div>
+      <div><span>獲利局比例</span><strong id="profitValue">--</strong><small id="zeroMeta">尚無資料</small></div>
+      <div><span>平均到達波次</span><strong id="waveValue">--</strong><small id="volatilityMeta">尚無資料</small></div>
+    </section>
+
+    <div class="result-toolbar">
+      <nav class="result-tabs" aria-label="模擬報表">
+        <button class="result-tab active" type="button" data-tab="overview">總覽</button>
+        <button class="result-tab" type="button" data-tab="waves">波次切片</button>
+        <button class="result-tab" type="button" data-tab="bosses">BOSS</button>
+        <button class="result-tab" type="button" data-tab="builds">Build 分析</button>
+        <button class="result-tab" type="button" data-tab="saved">儲存與比較</button>
+      </nav>
+      <div class="copy-actions">
+        <button id="copySummaryBtn" class="button secondary" type="button" disabled>複製摘要</button>
+        <button id="copyTabBtn" class="button secondary" type="button" disabled>複製本頁</button>
+        <button id="copyAllBtn" class="button secondary" type="button" disabled>複製全部（含格式）</button>
+      </div>
+    </div>
+
+    <section id="overviewTab" class="result-panel active">
+      <div class="section-heading"><div><h2>總覽</h2><p id="resultMeta">完成模擬後顯示結果。</p></div><button id="saveResultBtn" class="button secondary" type="button" disabled>儲存本次結果</button></div>
+      <div class="table-wrap"><table><thead><tr><th>指標</th><th>結果</th><th>說明</th></tr></thead><tbody id="overviewBody"></tbody></table></div>
+      <div class="section-heading compact"><div><h3>Build 中性驗證</h3><p>每名玩家固定一種 Build 策略並使用獨立個人水池；固定相同 Collect 策略，比較 RTP、進度與 VI。</p></div></div>
+      <div class="table-wrap"><table class="wide-table"><thead><tr><th>策略</th><th>樣本</th><th>Cash Out RTP</th><th>配置 RTP</th><th>期末責任</th><th>95% 區間</th><th>平均波次</th><th>一般通過率</th><th>一般預估</th><th>一般強度</th><th>BOSS 擊殺率</th><th>BOSS 預估</th><th>BOSS 強度</th><th>VI</th></tr></thead><tbody id="validationBody"></tbody></table></div>
+      <div class="section-heading compact"><div><h3>單局回收倍數分布</h3><p>以該局最終賠付除以該局總 BET，區分小賺與真正高倍獎。</p></div></div>
+        <div class="table-wrap"><table class="wide-table"><thead><tr><th>0x</th><th>0-0.5x</th><th>0.5-1x</th><th>1x 保本</th><th>1-1.2x</th><th>1.2-1.5x</th><th>1.5-2x</th><th>2-3x</th><th>3-5x</th><th>5-10x</th><th>10-20x</th><th>20-50x</th><th>50x+</th></tr></thead><tbody id="distributionBody"></tbody></table></div>
+    </section>
+
+    <section id="wavesTab" class="result-panel">
+      <div class="section-heading"><div><h2>固定波次 Collect RTP（Crash 報表）</h2><p>同一批玩家皆從第 1 波開始；每列代表所有玩家固定在該波 Collect，途中失敗則賠付為 0。</p></div></div>
+      <div class="table-wrap"><table class="wide-table"><thead><tr><th>波次</th><th>全部樣本</th><th>進入波次</th><th>成功 Collect</th><th>條件通過率</th><th>固定收手成功率</th><th>獲利局率（含死亡）</th><th>存活獲利率</th><th>2x+</th><th>5x+</th><th>最大倍數</th><th>存活者平均 HP</th><th>基地 HP%（含死亡）</th><th>平均 POT</th><th>平均已付 BET</th><th>一般波 RTP</th><th>BOSS RTP</th><th>Cash Out RTP</th><th>95% 區間</th><th>BOSS 波比例</th></tr></thead><tbody id="waveBody"></tbody></table></div>
+      <div class="section-heading compact"><div><h3>POT 深追風險</h3><p>追蹤每波清場當下的可 Collect 帳面倍率，以及玩家帶著獲利繼續後歸零的比例。</p></div></div>
+      <div class="table-wrap"><table class="wide-table"><thead><tr><th>波次</th><th>清場檢查點</th><th>帳面 RTP</th><th>帳面獲利</th><th>帳面 2x+</th><th>帳面 5x+</th><th>獲利後繼續</th><th>2x 後繼續</th><th>續追後死亡</th><th>2x 續追後死亡</th><th>該波最高</th></tr></thead><tbody id="chaseWaveBody"></tbody></table></div>
+    </section>
+
+    <section id="bossesTab" class="result-panel">
+      <div class="section-heading"><div><h2>逐隻 BOSS 分析</h2><p>依一局內遇到的第 1、2、3 隻 BOSS 分開統計。</p></div></div>
+      <div class="table-wrap"><table><thead><tr><th>BOSS 順序</th><th>遭遇次數</th><th>到達率</th><th>擊殺數</th><th>擊殺率</th><th>模型預估</th><th>平均出現波次</th><th>平均增加倍率</th><th>對總 RTP 貢獻</th></tr></thead><tbody id="bossBody"></tbody></table></div>
+    </section>
+
+    <section id="buildsTab" class="result-panel">
+      <div class="section-heading"><div><h2>Build 組合</h2><p>樣本過少的組合會標示資料不足，避免把少數幸運局誤判為強勢 Build。</p></div></div>
+      <div class="table-wrap"><table class="wide-table"><thead><tr><th>最終塔組合</th><th>樣本</th><th>占比</th><th>RTP</th><th>平均波次</th><th>BOSS 擊殺率</th><th>獲利率</th><th>判定</th></tr></thead><tbody id="buildBody"></tbody></table></div>
+      <div class="section-heading compact"><div><h3>角色表現</h3></div></div>
+      <div class="table-wrap"><table><thead><tr><th>角色</th><th>使用場數</th><th>使用率</th><th>Cash Out RTP</th><th>配置 RTP</th><th>期末未付責任</th><th>平均波次</th><th>BOSS 擊殺率</th></tr></thead><tbody id="heroBody"></tbody></table></div>
+      <div class="section-heading compact"><div><h3>單塔表現</h3></div></div>
+      <div class="table-wrap"><table><thead><tr><th>塔</th><th>使用場數</th><th>使用率</th><th>含此塔 RTP</th><th>平均波次</th><th>BOSS 擊殺率</th></tr></thead><tbody id="towerBody"></tbody></table></div>
+      <div class="section-heading compact"><div><h3>升級選取</h3></div></div>
+      <div class="table-wrap"><table><thead><tr><th>升級</th><th>所屬塔</th><th>取得場數</th><th>平均取得次數</th><th>含此升級 RTP</th><th>平均波次</th></tr></thead><tbody id="upgradeBody"></tbody></table></div>
+    </section>
+
+    <section id="savedTab" class="result-panel">
+      <div class="manage-grid">
+        <section>
+          <div class="section-heading compact"><div><h2>參數快照</h2><p>保存完整調參數值，之後可選取並重新模擬。</p></div></div>
+          <div class="manage-row"><input id="snapshotName" type="text" maxlength="40" placeholder="參數快照名稱"><button id="saveSnapshotBtn" class="button primary" type="button">儲存目前參數</button></div>
+          <div class="manage-row"><button id="exportParamsBtn" class="button secondary" type="button">匯出目前參數 JSON</button><label class="button secondary file-button">匯入參數 JSON<input id="importParamsInput" type="file" accept="application/json,.json"></label></div>
+          <div class="table-wrap"><table><thead><tr><th>名稱</th><th>版本</th><th>雜湊</th><th>時間</th><th></th></tr></thead><tbody id="snapshotBody"></tbody></table></div>
+        </section>
+        <section>
+          <div class="section-heading compact"><div><h2>模擬結果</h2><p>保留報表與當次參數識別，可重新載入比較。</p></div></div>
+          <div class="table-wrap"><table><thead><tr><th>名稱</th><th>RTP</th><th>場數</th><th>參數</th><th>時間</th><th></th></tr></thead><tbody id="historyBody"></tbody></table></div>
+        </section>
+      </div>
+    </section>
+
+    <p id="toast" class="toast" role="status" aria-live="polite"></p>
+  <iframe id="engineFrame" class="engine-frame" src="index.html?headless=1&amp;v=greedy-chase202" title="模擬戰鬥引擎"></iframe>
+  </main>
+  <script src="simulator-core.js?v=greedy-chase202"></script>
+  <script src="simulator.js?v=greedy-chase202"></script>
+</body>
+</html>

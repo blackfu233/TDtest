@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>塔防調參工具</title>
+  <link rel="stylesheet" href="tuner.css?v=deep-chase202">
+</head>
+<body>
+  <main class="tool-shell">
+    <header class="tool-header">
+      <div>
+        <p class="eyebrow">Tower Defense Prototype</p>
+        <h1>調參工具</h1>
+        <p class="hint">表格中的數值會寫入本機參數。調整後按「更新到遊戲」，目前開著的遊戲分頁會同步更新。</p>
+      </div>
+      <div class="actions">
+        <a class="ghost" href="index.html?v=strategy-attribute-release179" target="_blank" rel="noreferrer">開啟遊戲</a>
+        <a class="ghost" href="simulator.html?v=strategy-attribute-release179" target="_blank" rel="noreferrer">RTP 模擬</a>
+        <button id="resetBtn" class="ghost" type="button">恢復預設</button>
+        <button id="applyBtn" type="button">更新到遊戲</button>
+      </div>
+    </header>
+
+    <section class="sheet-card">
+      <table class="summary-table">
+        <thead><tr><th>即時計算</th><th>目前結果</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td>第一隻 BOSS 平均最終倍率</td><td id="bossAvgText">x0.00</td><td>最終倍率 = 1 + BOSS 加成倍率</td></tr>
+          <tr><td>第一隻 BOSS 最終倍率範圍</td><td id="bossRangeText">x0.0 - x0.0</td><td>由倍率區間與首王倍率係數共同決定</td></tr>
+          <tr><td>一般波平均彩金</td><td id="rewardAvgText">0.00x BET</td><td>每次 BET 先抽整波彩金，BOSS 不參與分錢</td></tr>
+          <tr><td>BOSS 平均難度</td><td id="bossDifficultyAvgText">1.00x</td><td>首王與後段王分開估算</td></tr>
+          <tr><td>同定位塔最大落差</td><td id="towerGapText">0.00x</td><td id="towerGapNote">尚未計算</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <nav class="tabs" aria-label="調參分類">
+      <button class="tab active" type="button" data-tab="evaluation">評估</button>
+      <button class="tab" type="button" data-tab="pool">水池 / RTP</button>
+      <button class="tab" type="button" data-tab="rewards">波次彩金</button>
+      <button class="tab" type="button" data-tab="bossDifficulty">BOSS難度</button>
+      <button class="tab" type="button" data-tab="monsters">怪物類型</button>
+      <button class="tab" type="button" data-tab="templates">組成模板</button>
+      <button class="tab" type="button" data-tab="waves">WAVE</button>
+      <button class="tab" type="button" data-tab="exp">EXP</button>
+      <button class="tab" type="button" data-tab="heroes">角色</button>
+      <button class="tab" type="button" data-tab="towers">塔數值</button>
+      <button class="tab" type="button" data-tab="upgrades">升級選項</button>
+      <button class="tab" type="button" data-tab="logic">計算邏輯</button>
+      <button class="tab" type="button" data-tab="json">JSON</button>
+    </nav>
+
+    <section id="evaluationTab" class="tab-panel active">
+      <div class="sheet-card block-gap">
+        <div class="section-heading">
+          <div><h2>實際 RTP 影響來源</h2><p>這裡只列遊戲真的會使用的規則；數值回到對應分頁調整，避免同一項目重複控制。</p></div>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>來源</th><th>調整位置</th><th>會改變什麼</th><th>RTP / VI 影響</th></tr></thead>
+          <tbody>
+            <tr><td>一般波彩金</td><td>波次彩金</td><td>各彩金結果的權重與倍數</td><td>倍率會除以加權平均正規化；改變回收分布與波動，不改長期期望</td></tr>
+            <tr><td>BOSS 倍率</td><td>BOSS難度</td><td>低／中／高倍的權重、範圍與首王／後王係數</td><td>以加權平均正規化；改變高倍尾端與VI，不單獨增加長期RTP</td></tr>
+            <tr><td>BOSS 出現</td><td>BOSS難度、WAVE</td><td>起始機率、累積權重、CD與單波上限</td><td>改變倍率事件頻率與遊戲波動</td></tr>
+            <tr><td>戰鬥存活</td><td>怪物類型、組成模板、WAVE</td><td>怪物數量、血攻速、菁英與波次成長</td><td>改變擊殺率、可追深度與 Collect 成功率</td></tr>
+            <tr><td>Build 強度</td><td>角色、塔數值、升級選項、EXP</td><td>輸出、控場、成形速度與跨塔連動</td><td>改變策略差異與可承受 VI</td></tr>
+            <tr><td>BET 成長</td><td>BOSS難度</td><td>擊殺王後階梯與中／深波最低 BET</td><td>改變投入規模與深追 VI，不應單獨提高長期 RTP</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="sheet-card block-gap">
+        <table class="data-table">
+          <thead><tr><th>驗證項目</th><th>短局</th><th>中局</th><th>長局</th><th>說明</th></tr></thead>
+          <tbody id="rtpTableBody"></tbody>
+        </table>
+      </div>
+      <div class="sheet-card block-gap">
+        <div class="section-heading">
+          <div><h2>真人 Collect 模擬模板</h2><p>這些是模擬器的玩家決策模型，不是彩金或水池參數；它們只改變收手時點、追深程度、死亡風險與VI。</p></div>
+        </div>
+        <table class="data-table collect-policy-table">
+          <thead><tr><th>模板</th><th>&lt;0.5x</th><th>0.5–0.8x</th><th>0.8–1x</th><th>1–1.2x</th><th>1.2–1.5x</th><th>1.5–2x</th><th>2–3x</th><th>3–5x</th><th>5x+</th><th>情境修正</th><th>用途</th></tr></thead>
+          <tbody id="collectPolicyTableBody"></tbody>
+        </table>
+      </div>
+      <div class="sheet-card">
+        <table class="data-table">
+          <thead><tr><th>塔</th><th>傷害</th><th>攻速</th><th>冷卻</th><th>持續</th><th>Tick</th><th>射程</th><th>範圍</th><th>控場</th><th>輸出分</th><th>控場分</th><th>總分</th><th>評分</th><th>狀態</th></tr></thead>
+          <tbody id="towerScoreBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="poolTab" class="tab-panel">
+      <div class="pool-target-grid block-gap">
+        <section class="sheet-card pool-target-card">
+          <p class="eyebrow">ENTRY RTP TARGET</p>
+          <label for="poolTargetRtpInput">目標 RTP（檢核）</label>
+          <div class="pool-target-input"><input id="poolTargetRtpInput" data-key="mathTargetRtp" data-scale="0.01" type="number" min="50" max="99" step="0.1"><span>%</span></div>
+          <p>實際 RTP 由入池配籤的加權平均決定；此欄用來顯示目標與偏差。</p>
+        </section>
+        <section class="sheet-card pool-metric-card"><span>理論莊家優勢</span><strong id="poolHouseEdge">5.00%</strong><code>1 - 目標 RTP</code></section>
+        <section class="sheet-card pool-metric-card"><span>BET 100 平均入池</span><strong id="poolContributionPreview">95.00</strong><code>BET × 配籤 RTP</code></section>
+        <section class="sheet-card pool-metric-card"><span>配置守恆</span><strong id="poolConservation">100.00%</strong><code>入池 + 莊家份額</code></section>
+      </div>
+      <div class="pool-entry-layout block-gap">
+        <section class="sheet-card pool-entry-sheet">
+          <div class="section-heading"><div><h2>舊版入池配籤參考</h2><p>目前正式模型已改為固定拆分一般波與 BOSS 預算；此表僅保留舊數據對照，不再參與遊戲定價。</p></div></div>
+          <table class="data-table pool-entry-table"><thead><tr><th>籤位</th><th>入池倍率</th><th>權重</th><th>實際機率</th><th>BET 100 入池</th><th>RTP 貢獻</th><th>引擎 Key</th><th>實際計算邏輯</th></tr></thead><tbody id="poolEntryTableBody"></tbody></table>
+        </section>
+        <aside class="sheet-card pool-entry-score">
+          <span>配籤即時 RTP</span><strong id="poolEntryRtp">95.00%</strong><small id="poolEntryGap">符合目標 95.00%</small>
+          <dl>
+            <div><dt>入池高於 1x</dt><dd id="poolEntryProfitChance">25.00%</dd></div>
+            <div><dt>單次標準差</dt><dd id="poolEntrySd1">0.772x</dd></div>
+            <div><dt>5 BET 平均波動</dt><dd id="poolEntrySd5">0.345x</dd></div>
+            <div><dt>10 BET 平均波動</dt><dd id="poolEntrySd10">0.244x</dd></div>
+            <div><dt>20 BET 平均波動</dt><dd id="poolEntrySd20">0.173x</dd></div>
+          </dl>
+          <p>平均波動以獨立、等額 BET 估算：σₙ = σ₁ ÷ √n。實際 BET 階梯會讓有效樣本數略低。</p>
+        </aside>
+      </div>
+      <div class="sheet-card block-gap">
+        <div class="section-heading"><div><h2>RTP 定價與升級節點</h2><p>公開彩金依入水配籤、通關率與個人池可用餘額定價；不足時在公開前套用硬上限，不使用外部墊付。</p></div></div>
+        <table class="param-table"><thead><tr><th>參數</th><th>數值</th><th>單位</th><th>最小</th><th>最大</th><th>引擎 Key</th><th>用途</th><th>實際計算邏輯</th></tr></thead><tbody id="poolParamTableBody"></tbody></table>
+      </div>
+      <div class="sheet-card">
+        <div class="section-heading"><div><h2>RTP 單局運算順序</h2><p>以下順序對應遊戲引擎，供工程師核對伺服器實作。</p></div></div>
+        <table class="data-table logic-summary-table"><thead><tr><th>步驟</th><th>帳本變化</th><th>公式</th><th>守恆條件</th></tr></thead><tbody id="poolLedgerLogicBody"></tbody></table>
+      </div>
+    </section>
+
+    <section id="rewardsTab" class="tab-panel">
+      <div class="sheet-card block-gap rtp-budget-panel">
+        <div class="section-heading">
+          <div><h2>RTP 預算估算</h2><p>以最新正式實跑為校準基準，調整權重或彩金時即時估算各來源占比。</p></div>
+          <strong id="rewardRtpTotal">--</strong>
+        </div>
+        <table class="data-table rtp-budget-table"><thead><tr><th>回收來源</th><th>預估 RTP</th><th>占總 RTP</th><th>相對基準</th><th>判讀</th></tr></thead><tbody id="rewardRtpBudgetBody"></tbody></table>
+        <p id="rewardRtpMeta" class="budget-meta"></p>
+      </div>
+      <div class="sheet-card">
+        <table class="data-table"><caption>彩金倍率直接乘上本波 BET；一般怪與菁英依怪物金錢參數分配整筆彩金。</caption><thead><tr><th>結果</th><th>權重</th><th>彩金倍率</th><th>實際機率</th><th>BET 100 預估彩金</th><th>定位</th></tr></thead><tbody id="rewardTableBody"></tbody></table>
+      </div>
+    </section>
+    <section id="bossDifficultyTab" class="tab-panel">
+      <div class="sheet-card block-gap">
+        <table class="param-table"><thead><tr><th>BOSS 情緒參數</th><th>數值</th><th>單位</th><th>最小</th><th>最大</th><th>引擎 Key</th><th>說明</th><th>實際計算邏輯</th></tr></thead><tbody id="bossEmotionTableBody"></tbody></table>
+      </div>
+      <div class="sheet-card block-gap rtp-budget-panel">
+        <div class="section-heading">
+          <div><h2>BOSS RTP 預算估算</h2><p>同時納入倍率、出現頻率、難度與擊殺率變化，檢查首王或後續王是否吃掉過多預算。</p></div>
+          <strong id="bossRtpTotal">--</strong>
+        </div>
+        <table class="data-table rtp-budget-table"><thead><tr><th>回收來源</th><th>預估 RTP</th><th>占總 RTP</th><th>相對基準</th><th>判讀</th></tr></thead><tbody id="bossRtpBudgetBody"></tbody></table>
+        <p id="bossRtpMeta" class="budget-meta"></p>
+      </div>
+      <div class="sheet-card">
+        <table class="data-table"><caption>首王與後段王分開抽權重；首王再套用「首王難度差距」壓縮極端值。難度結果不顯示在遊戲畫面。</caption><thead><tr><th>難度</th><th>首王權重</th><th>首王機率</th><th>後段權重</th><th>後段機率</th><th>血量倍率</th><th>攻擊倍率</th><th>速度倍率</th><th>完整壓力</th></tr></thead><tbody id="bossDifficultyTableBody"></tbody></table>
+      </div>
+    </section>
+    <section id="monstersTab" class="tab-panel"><div class="sheet-card"><table class="data-table"><thead><tr><th>類型</th><th>血量</th><th>速度</th><th>攻擊距離</th><th>攻擊力</th><th>攻擊頻率</th><th>EXP</th><th>金錢下限</th><th>金錢上限</th></tr></thead><tbody id="monsterTableBody"></tbody></table></div></section>
+    <section id="templatesTab" class="tab-panel">
+      <div class="sheet-card block-gap"><table class="data-table"><thead><tr><th>模板</th><th>普通怪</th><th>快速怪</th><th>厚血怪</th><th>遠程怪</th><th>特殊怪</th></tr></thead><tbody id="templateTableBody"></tbody></table></div>
+      <div class="sheet-card"><table class="data-table"><thead><tr><th>波次區間</th><th>數量下限</th><th>數量上限</th><th>普通分配率</th><th>快速分配率</th><th>厚血分配率</th><th>遠程分配率</th><th>特殊分配率</th><th>標準</th><th>快速</th><th>厚血</th><th>遠程</th><th>干擾</th><th>混壓</th></tr></thead><tbody id="bandTableBody"></tbody></table></div>
+    </section>
+    <section id="wavesTab" class="tab-panel"><div class="sheet-card"><table class="data-table"><thead><tr><th>波次</th><th>血量倍率</th><th>菁英權重</th><th>菁英1隻</th><th>菁英2隻</th><th>菁英3隻</th><th>BOSS基礎權重</th><th>BOSS累積增量</th><th>BOSS CD</th><th>預估通關率</th><th>本波彩金係數</th></tr></thead><tbody id="waveTableBody"></tbody></table></div></section>
+    <section id="expTab" class="tab-panel"><div class="sheet-card"><table class="data-table narrow-table"><thead><tr><th>等級</th><th>所需 EXP</th></tr></thead><tbody id="expTableBody"></tbody></table></div></section>
+    <section id="heroesTab" class="tab-panel">
+      <div class="sheet-card block-gap"><table class="param-table"><caption>角色共用成長與同屬性砲塔加成。</caption><thead><tr><th>參數</th><th>數值</th><th>單位</th><th>最小</th><th>最大</th><th>引擎 Key</th><th>說明</th><th>實際計算邏輯</th></tr></thead><tbody id="heroGlobalTableBody"></tbody></table></div>
+      <div class="sheet-card"><table class="data-table"><caption>每名角色使用獨立攻擊模型；X 代表該攻擊方式不使用此欄位。</caption><thead><tr><th>角色</th><th>屬性</th><th>攻擊方式</th></tr></thead><tbody id="heroTableBody"></tbody></table></div>
+    </section>
+    <section id="towersTab" class="tab-panel"><div class="sheet-card"><table class="data-table"><thead><tr><th>塔</th><th>傷害</th><th>攻速<br><small>下/秒</small></th><th>冷卻<br><small>秒</small></th><th>持續時間<br><small>秒</small></th><th>區域Tick<br><small>秒/跳</small></th><th>射程</th><th>範圍半徑</th></tr></thead><tbody id="towerTableBody"></tbody></table></div></section>
+    <section id="upgradesTab" class="tab-panel">
+      <div class="sheet-card block-gap">
+        <table class="data-table upgrade-summary-table">
+          <thead><tr><th>塔</th><th>定位</th><th>整體潛力</th><th>升級均分</th><th>最高</th><th>最低</th><th>池內落差</th><th>輸出/控場/機制</th><th>評估</th></tr></thead>
+          <tbody id="upgradeSummaryBody"></tbody>
+        </table>
+      </div>
+      <div id="upgradeOptionTables" class="upgrade-grid"></div>
+    </section>
+
+    <section id="logicTab" class="tab-panel">
+      <div class="logic-intro block-gap">
+        <div><p class="eyebrow">ENGINEERING SPECIFICATION</p><h2>完整遊戲參數計算邏輯</h2><p>按一局實際執行順序整理。符號、引擎 key、上下限與公式皆由目前調參資料自動產生。</p></div>
+        <div class="logic-badges"><span>目標 RTP <b id="logicTargetRtp">95.00%</b></span><span>配籤 RTP <b id="logicActualRtp">95.00%</b></span><span>莊家優勢 <b id="logicHouseEdge">5.00%</b></span><span>個人水池 <b id="logicPoolMode">啟用</b></span></div>
+      </div>
+      <div id="logicPipeline" class="logic-pipeline block-gap"></div>
+      <div class="sheet-card block-gap">
+        <div class="section-heading"><div><h2>核心公式與程式對照</h2><p>伺服器、前端與模擬器應使用相同公式及相同運算順序。</p></div></div>
+        <table class="data-table logic-detail-table"><thead><tr><th>系統</th><th>輸入</th><th>公式</th><th>輸出</th><th>程式對照</th><th>驗證條件</th></tr></thead><tbody id="logicFormulaBody"></tbody></table>
+      </div>
+      <div class="sheet-card">
+        <div class="section-heading"><div><h2>完整可調參數索引</h2><p>收錄目前頁面所有可調欄位；可依引擎 key 搜尋並核對計算位置。</p></div><input id="logicSearch" class="logic-search" type="search" placeholder="搜尋 key、參數或公式"></div>
+        <table class="data-table param-index-table"><thead><tr><th>分類</th><th>參數</th><th>引擎 Key</th><th>目前值</th><th>實際計算邏輯</th><th>計算時機</th></tr></thead><tbody id="logicParameterBody"></tbody></table>
+      </div>
+    </section>
+
+    <section id="jsonTab" class="tab-panel">
+      <section class="sheet-card json-card">
+        <div class="json-head">
+          <div><h2>JSON 匯入 / 匯出</h2><p>用來保存一組調參結果，或貼回之前匯出的設定。</p></div>
+          <div><button id="exportBtn" class="ghost" type="button">匯出</button><button id="importBtn" class="ghost" type="button">匯入</button></div>
+        </div>
+        <textarea id="jsonText" spellcheck="false" placeholder="匯出後會顯示 JSON，也可以貼上 JSON 後匯入。"></textarea>
+      </section>
+    </section>
+
+    <p id="statusText" class="status">尚未更新。</p>
+  </main>
+  <script src="tuner.js?v=greedy-chase202"></script>
+</body>
+</html>
