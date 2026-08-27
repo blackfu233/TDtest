@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "deep-boss-tail205";
+const BUILD_VERSION = "postboss-reserve206";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1167,12 +1167,13 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 205,
+  balanceRevision: 206,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
   mathGeneralRtpShare: .52,
   mathBossRtpShare: .43,
+  mathPostBossIncrementBossShare: .65,
   mathPoolEntryTier1Mul: .2,
   mathPoolEntryTier1Weight: 10,
   mathPoolEntryTier2Mul: .5,
@@ -1202,8 +1203,8 @@ const DEFAULT_PARAMS = {
   mathPoolDeepReleaseRate: .15,
   mathPoolDepthRampWaves: 8,
   mathPoolBossReleaseRate: 1,
-  mathPoolFirstBossReleaseRate: .55,
-  mathPoolLaterBossReleaseRate: .75,
+  mathPoolFirstBossReleaseRate: .45,
+  mathPoolLaterBossReleaseRate: .95,
   mathPoolReleaseCapMul: 500,
   mathPoolMeaningfulWinTriggerMul: .75,
   mathPoolMeaningfulWinFloorMul: 1.5,
@@ -1437,6 +1438,7 @@ function cleanParams(input={}) {
   next.mathPoolEnabled = next.mathPoolEnabled >= .5 ? 1 : 0;
   next.mathGeneralRtpShare = Math.max(0, Math.min(next.mathTargetRtp, next.mathGeneralRtpShare));
   next.mathBossRtpShare = Math.max(0, Math.min(next.mathTargetRtp - next.mathGeneralRtpShare, next.mathBossRtpShare));
+  next.mathPostBossIncrementBossShare = Math.max(0, Math.min(next.mathTargetRtp, next.mathPostBossIncrementBossShare));
   for (let tier=1; tier<=6; tier+=1) {
     next[`mathPoolEntryTier${tier}Mul`] = Math.max(0, Math.min(100, next[`mathPoolEntryTier${tier}Mul`]));
     next[`mathPoolEntryTier${tier}Weight`] = Math.max(0, Math.min(100000, next[`mathPoolEntryTier${tier}Weight`]));
@@ -2731,6 +2733,14 @@ function migrateBossParams(input={}) {
       .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 205;
   }
+  if ((Number(input.balanceRevision) || 0) < 206) {
+    [
+      "mathPostBossIncrementBossShare",
+      "mathPoolFirstBossReleaseRate",
+      "mathPoolLaterBossReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 206;
+  }
   return next;
 }
 
@@ -2963,8 +2973,22 @@ function registerMathStake(amount, source="wave") {
   const allocatedShare = Math.max(.0001, generalShare + bossShare);
   const entryMultiplier = mathPoolEnabled() ? drawMathPoolEntryMultiplier() : targetRtp;
   const contribution = stake * entryMultiplier;
+  const baseStake = Math.min(stake, BET_STEPS[state.baseBetIndex] || stake);
+  const bossRaisedStake = state.bossSeen > 0
+    ? clamp(Math.min(stake, (BET_STEPS[state.baseBetIndex] || stake) * bossBetMultiplier()) - baseStake, 0, stake)
+    : 0;
+  const regularStake = Math.max(0, stake - bossRaisedStake);
+  const postBossBossShare = clamp(
+    paramNumber("mathPostBossIncrementBossShare", bossShare),
+    0,
+    allocatedShare,
+  );
+  const postBossGeneralShare = Math.max(0, allocatedShare - postBossBossShare);
   const pricedContribution = mathPoolEnabled()
-    ? contribution * generalShare / allocatedShare
+    ? entryMultiplier * (
+      regularStake * generalShare / allocatedShare
+      + bossRaisedStake * postBossGeneralShare / allocatedShare
+    )
     : contribution;
   const bossContribution = Math.max(0, contribution - pricedContribution);
   if (mathPoolEnabled()) {
@@ -2998,7 +3022,10 @@ function registerMathStake(amount, source="wave") {
     state.mathPendingStake += stake;
     state.mathPendingCredit += pricedContribution;
   }
-  return { stake, multiplier:entryMultiplier, contribution, pricedContribution, bossContribution, activeReroll };
+  return {
+    stake, multiplier:entryMultiplier, contribution, pricedContribution, bossContribution, activeReroll,
+    bossRaisedStake, postBossGeneralShare, postBossBossShare,
+  };
 }
 function mathPoolDepthProgress(wave=state?.wave || 1) {
   const rampWaves = Math.max(1, paramNumber("mathPoolDepthRampWaves", 14));
