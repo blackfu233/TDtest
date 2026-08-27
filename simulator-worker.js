@@ -102,7 +102,7 @@ function installHeadlessDom() {
 }
 
 installHeadlessDom();
-importScripts("simulator-core.js?v=deep-chase202", "game.js?v=deep-chase202");
+importScripts("simulator-core.js?v=deep-boss-tail205", "game.js?v=deep-boss-tail205");
 
 const engine = self.__tdHeadless;
 if (!engine?.ready) throw new Error("Worker 戰鬥引擎載入失敗");

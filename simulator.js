@@ -332,12 +332,21 @@ function buildChaseAnalysis(rows, maxWave=30) {
     profitStates:0,x2States:0,x5States:0,
     continuedProfit:0,continued2x:0,continued5x:0,
     diedAfterProfit:0,diedAfter2x:0,diedAfter5x:0,checkpointMax:0,
+    twoXTransitions:0,twoXNextClears:0,twoXNextDeaths:0,twoXUp:0,twoXFlat:0,twoXDown:0,twoXRetained:0,
+    twoXProfitUp:0,twoXProfitFlat:0,twoXProfitDown:0,
+    twoXStartRatio:0,twoXNextRatio:0,twoXStartBet:0,twoXNextBet:0,twoXStartPayout:0,twoXNextPayout:0,
   }));
   let hadProfit=0,had2x=0,had5x=0,diedAfterProfit=0,diedAfter2x=0,diedAfter5x=0;
   let deepPeak2x=0,deepPeak5x=0,deepFinal2x=0,deepFinal5x=0;
   let peakReturnSum=0,peakReturnMax=0,peakWaveSum=0,lostPeakPayout=0;
+  let twoXTransitions=0,twoXNextClears=0,twoXNextDeaths=0,twoXUp=0,twoXFlat=0,twoXDown=0,twoXRetained=0;
+  let twoXProfitUp=0,twoXProfitFlat=0,twoXProfitDown=0;
+  let twoXStartRatio=0,twoXNextRatio=0,twoXStartBet=0,twoXNextBet=0,twoXStartPayout=0,twoXNextPayout=0;
+  let wave6TwoX=0,wave6Continued=0,wave6FinalDeaths=0,wave6Final2x=0,wave6StartProfit=0,wave6FinalProfit=0;
   rows.forEach(row => {
-    const records = (row.waveRecords || []).filter(record => record.finished && record.cleared && record.cumulativeBet > 0);
+    const allRecords = (row.waveRecords || []).filter(record => record.finished && record.cumulativeBet > 0);
+    const recordMap = new Map(allRecords.map(record => [record.wave,record]));
+    const records = allRecords.filter(record => record.cleared);
     let peakReturn=0,peakPayout=0,peakWave=0;
     let runHadProfit=false,runHad2x=false,runHad5x=false,runDeep2x=false,runDeep5x=false;
     records.forEach(record => {
@@ -370,6 +379,74 @@ function buildChaseAnalysis(rows, maxWave=30) {
       item.diedAfter2x += laterDeath && ratio >= 2 ? 1 : 0;
       item.diedAfter5x += laterDeath && ratio >= 5 ? 1 : 0;
     });
+    records.filter(record => record.wave >= 6).forEach(record => {
+      const startBet = Math.max(1,Number(record.cumulativeBet)||0);
+      const startPayout = Math.max(0,Number(record.payout)||0);
+      const startRatio = startPayout/startBet;
+      if (startRatio < 2) return;
+      const next = recordMap.get(record.wave+1);
+      if (!next) return;
+      const item = waves[record.wave-1];
+      twoXTransitions += 1;
+      twoXStartRatio += startRatio;
+      twoXStartBet += startBet;
+      twoXStartPayout += startPayout;
+      if (item) {
+        item.twoXTransitions += 1;
+        item.twoXStartRatio += startRatio;
+        item.twoXStartBet += startBet;
+        item.twoXStartPayout += startPayout;
+      }
+      if (!next.cleared) {
+        twoXNextDeaths += 1;
+        if (item) item.twoXNextDeaths += 1;
+        return;
+      }
+      const nextBet = Math.max(1,Number(next.cumulativeBet)||0);
+      const nextPayout = Math.max(0,Number(next.payout)||0);
+      const nextRatio = nextPayout/nextBet;
+      const delta = nextRatio-startRatio;
+      const ratioBand = Math.max(.15,startRatio*.15);
+      const profitDelta = (nextPayout-nextBet)-(startPayout-startBet);
+      twoXNextClears += 1;
+      twoXNextRatio += nextRatio;
+      twoXNextBet += nextBet;
+      twoXNextPayout += nextPayout;
+      twoXRetained += nextRatio >= 2 ? 1 : 0;
+      if (delta > ratioBand) twoXUp += 1;
+      else if (delta < -ratioBand) twoXDown += 1;
+      else twoXFlat += 1;
+      if (profitDelta > 0) twoXProfitUp += 1;
+      else if (profitDelta < 0) twoXProfitDown += 1;
+      else twoXProfitFlat += 1;
+      if (item) {
+        item.twoXNextClears += 1;
+        item.twoXNextRatio += nextRatio;
+        item.twoXNextBet += nextBet;
+        item.twoXNextPayout += nextPayout;
+        item.twoXRetained += nextRatio >= 2 ? 1 : 0;
+        if (delta > ratioBand) item.twoXUp += 1;
+        else if (delta < -ratioBand) item.twoXDown += 1;
+        else item.twoXFlat += 1;
+        if (profitDelta > 0) item.twoXProfitUp += 1;
+        else if (profitDelta < 0) item.twoXProfitDown += 1;
+        else item.twoXProfitFlat += 1;
+      }
+    });
+    const wave6 = recordMap.get(6);
+    if (wave6?.cleared) {
+      const startBet = Math.max(1,Number(wave6.cumulativeBet)||0);
+      const startPayout = Math.max(0,Number(wave6.payout)||0);
+      if (startPayout/startBet >= 2) {
+        wave6TwoX += 1;
+        wave6StartProfit += startPayout-startBet;
+        if (recordMap.has(7)) wave6Continued += 1;
+        const finalRatio = Number(row.bets) > 0 ? Math.max(0,Number(row.payout)||0)/Number(row.bets) : 0;
+        wave6FinalDeaths += Number(row.payout) === 0 ? 1 : 0;
+        wave6Final2x += finalRatio >= 2 ? 1 : 0;
+        wave6FinalProfit += Math.max(0,Number(row.payout)||0)-Math.max(0,Number(row.bets)||0);
+      }
+    }
     const finalReturn = row.bets ? row.payout/row.bets : 0;
     hadProfit += runHadProfit ? 1 : 0;
     had2x += runHad2x ? 1 : 0;
@@ -396,6 +473,33 @@ function buildChaseAnalysis(rows, maxWave=30) {
       deepPeak2xRate:samples?deepPeak2x/samples:0,deepPeak5xRate:samples?deepPeak5x/samples:0,
       deepFinal2xRate:samples?deepFinal2x/samples:0,deepFinal5xRate:samples?deepFinal5x/samples:0,
       avgPeakReturn:samples?peakReturnSum/samples:0,peakReturnMax,avgPeakWave:samples?peakWaveSum/samples:0,lostPeakPayout,
+      twoXTransitionCount:twoXTransitions,
+      twoXNextClearCount:twoXNextClears,twoXNextDeathCount:twoXNextDeaths,
+      twoXRetainedCount:twoXRetained,twoXUpCount:twoXUp,twoXFlatCount:twoXFlat,twoXDownCount:twoXDown,
+      twoXProfitUpCount:twoXProfitUp,twoXProfitFlatCount:twoXProfitFlat,twoXProfitDownCount:twoXProfitDown,
+      twoXStartRatioSum:twoXStartRatio,twoXNextRatioSum:twoXNextRatio,
+      twoXStartBetSum:twoXStartBet,twoXNextBetSum:twoXNextBet,
+      twoXStartPayoutSum:twoXStartPayout,twoXNextPayoutSum:twoXNextPayout,
+      twoXNextClearRate:twoXTransitions?twoXNextClears/twoXTransitions:0,
+      twoXNextDeathRate:twoXTransitions?twoXNextDeaths/twoXTransitions:0,
+      twoXRetainRate:twoXNextClears?twoXRetained/twoXNextClears:0,
+      twoXUpRate:twoXNextClears?twoXUp/twoXNextClears:0,
+      twoXFlatRate:twoXNextClears?twoXFlat/twoXNextClears:0,
+      twoXDownRate:twoXNextClears?twoXDown/twoXNextClears:0,
+      twoXProfitUpRate:twoXNextClears?twoXProfitUp/twoXNextClears:0,
+      twoXProfitFlatRate:twoXNextClears?twoXProfitFlat/twoXNextClears:0,
+      twoXProfitDownRate:twoXNextClears?twoXProfitDown/twoXNextClears:0,
+      twoXAvgStartRatio:twoXTransitions?twoXStartRatio/twoXTransitions:0,
+      twoXAvgNextRatio:twoXNextClears?twoXNextRatio/twoXNextClears:0,
+      twoXAvgStartProfit:twoXTransitions?(twoXStartPayout-twoXStartBet)/twoXTransitions:0,
+      twoXAvgNextProfit:twoXNextClears?(twoXNextPayout-twoXNextBet)/twoXNextClears:0,
+      wave6TwoXCount:wave6TwoX,
+      wave6ContinuedCount:wave6Continued,wave6FinalDeathCount:wave6FinalDeaths,wave6Final2xCount:wave6Final2x,
+      wave6StartProfitSum:wave6StartProfit,wave6FinalProfitSum:wave6FinalProfit,
+      wave6ContinueRate:wave6TwoX?wave6Continued/wave6TwoX:0,
+      wave6FinalDeathRate:wave6TwoX?wave6FinalDeaths/wave6TwoX:0,
+      wave6Final2xRate:wave6TwoX?wave6Final2x/wave6TwoX:0,
+      wave6AvgProfitGrowth:wave6TwoX?(wave6FinalProfit-wave6StartProfit)/wave6TwoX:0,
     },
     waves:waves.map(item => ({
       ...item,
@@ -407,6 +511,19 @@ function buildChaseAnalysis(rows, maxWave=30) {
       continueAfter2xRate:item.x2States?item.continued2x/item.x2States:0,
       deathAfterProfitRiskRate:item.continuedProfit?item.diedAfterProfit/item.continuedProfit:0,
       deathAfter2xRiskRate:item.continued2x?item.diedAfter2x/item.continued2x:0,
+      twoXNextClearRate:item.twoXTransitions?item.twoXNextClears/item.twoXTransitions:0,
+      twoXNextDeathRate:item.twoXTransitions?item.twoXNextDeaths/item.twoXTransitions:0,
+      twoXRetainRate:item.twoXNextClears?item.twoXRetained/item.twoXNextClears:0,
+      twoXUpRate:item.twoXNextClears?item.twoXUp/item.twoXNextClears:0,
+      twoXFlatRate:item.twoXNextClears?item.twoXFlat/item.twoXNextClears:0,
+      twoXDownRate:item.twoXNextClears?item.twoXDown/item.twoXNextClears:0,
+      twoXProfitUpRate:item.twoXNextClears?item.twoXProfitUp/item.twoXNextClears:0,
+      twoXProfitFlatRate:item.twoXNextClears?item.twoXProfitFlat/item.twoXNextClears:0,
+      twoXProfitDownRate:item.twoXNextClears?item.twoXProfitDown/item.twoXNextClears:0,
+      twoXAvgStartRatio:item.twoXTransitions?item.twoXStartRatio/item.twoXTransitions:0,
+      twoXAvgNextRatio:item.twoXNextClears?item.twoXNextRatio/item.twoXNextClears:0,
+      twoXAvgStartProfit:item.twoXTransitions?(item.twoXStartPayout-item.twoXStartBet)/item.twoXTransitions:0,
+      twoXAvgNextProfit:item.twoXNextClears?(item.twoXNextPayout-item.twoXNextBet)/item.twoXNextClears:0,
     })),
   };
 }
@@ -418,8 +535,12 @@ function mergeChaseReports(reports, samples) {
       wave:row.wave,clears:0,checkpointPayout:0,checkpointBet:0,
       profitStates:0,x2States:0,x5States:0,continuedProfit:0,continued2x:0,continued5x:0,
       diedAfterProfit:0,diedAfter2x:0,diedAfter5x:0,checkpointMax:0,
+      twoXTransitions:0,twoXNextClears:0,twoXNextDeaths:0,twoXUp:0,twoXFlat:0,twoXDown:0,twoXRetained:0,
+      twoXProfitUp:0,twoXProfitFlat:0,twoXProfitDown:0,
+      twoXStartRatio:0,twoXNextRatio:0,twoXStartBet:0,twoXNextBet:0,twoXStartPayout:0,twoXNextPayout:0,
     };
-    ["clears","checkpointPayout","checkpointBet","profitStates","x2States","x5States","continuedProfit","continued2x","continued5x","diedAfterProfit","diedAfter2x","diedAfter5x"]
+    ["clears","checkpointPayout","checkpointBet","profitStates","x2States","x5States","continuedProfit","continued2x","continued5x","diedAfterProfit","diedAfter2x","diedAfter5x",
+      "twoXTransitions","twoXNextClears","twoXNextDeaths","twoXUp","twoXFlat","twoXDown","twoXRetained","twoXProfitUp","twoXProfitFlat","twoXProfitDown","twoXStartRatio","twoXNextRatio","twoXStartBet","twoXNextBet","twoXStartPayout","twoXNextPayout"]
       .forEach(key => { item[key] += Number(row[key]) || 0; });
     item.checkpointMax = Math.max(item.checkpointMax,Number(row.checkpointMax)||0);
     waveMap.set(row.wave,item);
@@ -437,11 +558,58 @@ function mergeChaseReports(reports, samples) {
   };
   summary.profitRiskDeathRate = summary.hadProfitRate ? summary.diedAfterProfitRate/summary.hadProfitRate : 0;
   summary.twoXRiskDeathRate = summary.had2xRate ? summary.diedAfter2xRate/summary.had2xRate : 0;
+  summary.twoXTransitionCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXTransitionCount)||0),0);
+  summary.twoXNextClearCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXNextClearCount)||0),0);
+  summary.twoXNextDeathCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXNextDeathCount)||0),0);
+  summary.twoXRetainedCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXRetainedCount)||0),0);
+  summary.twoXUpCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXUpCount)||0),0);
+  summary.twoXFlatCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXFlatCount)||0),0);
+  summary.twoXDownCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXDownCount)||0),0);
+  summary.twoXProfitUpCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXProfitUpCount)||0),0);
+  summary.twoXProfitFlatCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXProfitFlatCount)||0),0);
+  summary.twoXProfitDownCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXProfitDownCount)||0),0);
+  summary.twoXStartRatioSum = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXStartRatioSum)||0),0);
+  summary.twoXNextRatioSum = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXNextRatioSum)||0),0);
+  summary.twoXStartBetSum = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXStartBetSum)||0),0);
+  summary.twoXNextBetSum = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXNextBetSum)||0),0);
+  summary.twoXStartPayoutSum = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXStartPayoutSum)||0),0);
+  summary.twoXNextPayoutSum = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXNextPayoutSum)||0),0);
+  summary.twoXNextClearRate = summary.twoXTransitionCount ? summary.twoXNextClearCount/summary.twoXTransitionCount : 0;
+  summary.twoXNextDeathRate = summary.twoXTransitionCount ? summary.twoXNextDeathCount/summary.twoXTransitionCount : 0;
+  summary.twoXRetainRate = summary.twoXNextClearCount ? summary.twoXRetainedCount/summary.twoXNextClearCount : 0;
+  summary.twoXUpRate = summary.twoXNextClearCount ? summary.twoXUpCount/summary.twoXNextClearCount : 0;
+  summary.twoXFlatRate = summary.twoXNextClearCount ? summary.twoXFlatCount/summary.twoXNextClearCount : 0;
+  summary.twoXDownRate = summary.twoXNextClearCount ? summary.twoXDownCount/summary.twoXNextClearCount : 0;
+  summary.twoXProfitUpRate = summary.twoXNextClearCount ? summary.twoXProfitUpCount/summary.twoXNextClearCount : 0;
+  summary.twoXProfitFlatRate = summary.twoXNextClearCount ? summary.twoXProfitFlatCount/summary.twoXNextClearCount : 0;
+  summary.twoXProfitDownRate = summary.twoXNextClearCount ? summary.twoXProfitDownCount/summary.twoXNextClearCount : 0;
+  summary.twoXAvgStartRatio = summary.twoXTransitionCount ? summary.twoXStartRatioSum/summary.twoXTransitionCount : 0;
+  summary.twoXAvgNextRatio = summary.twoXNextClearCount ? summary.twoXNextRatioSum/summary.twoXNextClearCount : 0;
+  summary.twoXAvgStartProfit = summary.twoXTransitionCount ? (summary.twoXStartPayoutSum-summary.twoXStartBetSum)/summary.twoXTransitionCount : 0;
+  summary.twoXAvgNextProfit = summary.twoXNextClearCount ? (summary.twoXNextPayoutSum-summary.twoXNextBetSum)/summary.twoXNextClearCount : 0;
+  summary.wave6TwoXCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.wave6TwoXCount)||0),0);
+  summary.wave6ContinuedCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.wave6ContinuedCount)||0),0);
+  summary.wave6FinalDeathCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.wave6FinalDeathCount)||0),0);
+  summary.wave6Final2xCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.wave6Final2xCount)||0),0);
+  summary.wave6StartProfitSum = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.wave6StartProfitSum)||0),0);
+  summary.wave6FinalProfitSum = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.wave6FinalProfitSum)||0),0);
+  summary.wave6ContinueRate = summary.wave6TwoXCount ? summary.wave6ContinuedCount/summary.wave6TwoXCount : 0;
+  summary.wave6FinalDeathRate = summary.wave6TwoXCount ? summary.wave6FinalDeathCount/summary.wave6TwoXCount : 0;
+  summary.wave6Final2xRate = summary.wave6TwoXCount ? summary.wave6Final2xCount/summary.wave6TwoXCount : 0;
+  summary.wave6AvgProfitGrowth = summary.wave6TwoXCount ? (summary.wave6FinalProfitSum-summary.wave6StartProfitSum)/summary.wave6TwoXCount : 0;
   return {summary,waves:[...waveMap.values()].sort((a,b)=>a.wave-b.wave).map(item=>({
     ...item,checkpointRtp:item.checkpointBet?item.checkpointPayout/item.checkpointBet:0,
     profitStateRate:item.clears?item.profitStates/item.clears:0,x2StateRate:item.clears?item.x2States/item.clears:0,x5StateRate:item.clears?item.x5States/item.clears:0,
     continueAfterProfitRate:item.profitStates?item.continuedProfit/item.profitStates:0,continueAfter2xRate:item.x2States?item.continued2x/item.x2States:0,
     deathAfterProfitRiskRate:item.continuedProfit?item.diedAfterProfit/item.continuedProfit:0,deathAfter2xRiskRate:item.continued2x?item.diedAfter2x/item.continued2x:0,
+    twoXNextClearRate:item.twoXTransitions?item.twoXNextClears/item.twoXTransitions:0,twoXNextDeathRate:item.twoXTransitions?item.twoXNextDeaths/item.twoXTransitions:0,
+    twoXRetainRate:item.twoXNextClears?item.twoXRetained/item.twoXNextClears:0,twoXUpRate:item.twoXNextClears?item.twoXUp/item.twoXNextClears:0,
+    twoXFlatRate:item.twoXNextClears?item.twoXFlat/item.twoXNextClears:0,twoXDownRate:item.twoXNextClears?item.twoXDown/item.twoXNextClears:0,
+    twoXProfitUpRate:item.twoXNextClears?item.twoXProfitUp/item.twoXNextClears:0,twoXProfitFlatRate:item.twoXNextClears?item.twoXProfitFlat/item.twoXNextClears:0,
+    twoXProfitDownRate:item.twoXNextClears?item.twoXProfitDown/item.twoXNextClears:0,
+    twoXAvgStartRatio:item.twoXTransitions?item.twoXStartRatio/item.twoXTransitions:0,twoXAvgNextRatio:item.twoXNextClears?item.twoXNextRatio/item.twoXNextClears:0,
+    twoXAvgStartProfit:item.twoXTransitions?(item.twoXStartPayout-item.twoXStartBet)/item.twoXTransitions:0,
+    twoXAvgNextProfit:item.twoXNextClears?(item.twoXNextPayout-item.twoXNextBet)/item.twoXNextClears:0,
   }))};
 }
 
@@ -509,7 +677,7 @@ function buildReport(results, config, paramRecord, startedAt, elapsedMs, request
 
   const waveMap = new Map(Array.from({length:config.maxWave},(_,index) => {
     const wave = index + 1;
-    return [wave,{ wave,samples:0,entrants:0,clears:0,hp:0,pot:0,totalBet:0,waveBet:0,checkpointPayout:0,basePayout:0,bossPayout:0,boss:0,cashoutResidual:0,cashoutResidualSq:0,returnMax:0,return1x:0,return2x:0,return5x:0,return10x:0,return20x:0,return50x:0,personalPools:0,poolSeed:0,poolClosingAvailable:0,poolClosingReserved:0,poolClosingPaid:0 }];
+    return [wave,{ wave,samples:0,entrants:0,clears:0,hp:0,pot:0,totalBet:0,waveBet:0,checkpointPayout:0,basePayout:0,bossPayout:0,boss:0,cashoutResidual:0,cashoutResidualSq:0,returnMax:0,return1x:0,return2x:0,return5x:0,return10x:0,return20x:0,return50x:0,personalPools:0,poolSeed:0,poolClosingAvailable:0,poolClosingReserved:0,poolClosingPaid:0,poolOperatorAdvance:0 }];
   }));
   results.forEach(row => {
     const records = new Map((row.waveRecords || []).map(record => [record.wave,record]));
@@ -538,6 +706,7 @@ function buildReport(results, config, paramRecord, startedAt, elapsedMs, request
       item.poolClosingAvailable += Number(row.mathPoolAvailable)||0;
       item.poolClosingReserved += Math.max(0,Number(row.mathPoolReserved)||0);
       item.poolClosingPaid += Math.max(0,Number(row.mathPoolPaid)||0);
+      item.poolOperatorAdvance += Math.max(0,Number(row.mathPoolOperatorAdvance)||0);
     }
     if (record) {
       item.entrants += 1;
@@ -578,7 +747,8 @@ function buildReport(results, config, paramRecord, startedAt, elapsedMs, request
     return10xRate:item.samples ? item.return10x/item.samples : 0,
     return20xRate:item.samples ? item.return20x/item.samples : 0,
     return50xRate:item.samples ? item.return50x/item.samples : 0,
-    allocatedRtp:item.totalBet ? (item.poolClosingPaid+item.poolClosingAvailable+item.poolClosingReserved-item.poolSeed)/item.totalBet : 0,
+    allocatedRtp:item.totalBet ? (item.poolClosingPaid+item.poolClosingAvailable+item.poolClosingReserved-item.poolSeed-item.poolOperatorAdvance)/item.totalBet : 0,
+    operatorAdvanceRtp:item.totalBet ? item.poolOperatorAdvance/item.totalBet : 0,
     closingLiabilityRtp:item.totalBet ? (item.poolClosingAvailable+item.poolClosingReserved)/item.totalBet : 0,
   };});
 
@@ -758,7 +928,7 @@ function runWorkerPool(config, params, strategySet, requestedWorkers, onProgress
     activeWorkers = localWorkers;
     activeParallelCancel = () => finish(true);
     buckets.forEach(bucket => {
-    const worker = new Worker("simulator-worker.js?headless=1&v=greedy-chase202");
+    const worker = new Worker("simulator-worker.js?headless=1&v=deep-boss-tail205");
       localWorkers.push(worker);
       worker.onmessage = event => {
         if (settled) return;
@@ -964,8 +1134,8 @@ function mergeFormalReports(reports, returns, config, paramRecord, startedAt, el
 
   const waveMap = new Map();
   reports.forEach(report => report.waves.forEach(row => {
-    const item = waveMap.get(row.wave) || {wave:row.wave,samples:0,entrants:0,clears:0,hp:0,pot:0,totalBet:0,waveBet:0,checkpointPayout:0,basePayout:0,bossPayout:0,boss:0,cashoutResidual:0,cashoutResidualSq:0,returnMax:0,return1x:0,return2x:0,return5x:0,return10x:0,return20x:0,return50x:0,personalPools:0,poolSeed:0,poolClosingAvailable:0,poolClosingReserved:0,poolClosingPaid:0};
-    ["samples","entrants","clears","hp","pot","totalBet","waveBet","checkpointPayout","basePayout","bossPayout","boss","cashoutResidual","cashoutResidualSq","return1x","return2x","return5x","return10x","return20x","return50x","personalPools","poolSeed","poolClosingAvailable","poolClosingReserved","poolClosingPaid"].forEach(key => { item[key] += row[key] || 0; });
+    const item = waveMap.get(row.wave) || {wave:row.wave,samples:0,entrants:0,clears:0,hp:0,pot:0,totalBet:0,waveBet:0,checkpointPayout:0,basePayout:0,bossPayout:0,boss:0,cashoutResidual:0,cashoutResidualSq:0,returnMax:0,return1x:0,return2x:0,return5x:0,return10x:0,return20x:0,return50x:0,personalPools:0,poolSeed:0,poolClosingAvailable:0,poolClosingReserved:0,poolClosingPaid:0,poolOperatorAdvance:0};
+    ["samples","entrants","clears","hp","pot","totalBet","waveBet","checkpointPayout","basePayout","bossPayout","boss","cashoutResidual","cashoutResidualSq","return1x","return2x","return5x","return10x","return20x","return50x","personalPools","poolSeed","poolClosingAvailable","poolClosingReserved","poolClosingPaid","poolOperatorAdvance"].forEach(key => { item[key] += row[key] || 0; });
     item.returnMax = Math.max(item.returnMax,row.returnMax || 0);
     waveMap.set(row.wave,item);
   }));
@@ -989,7 +1159,8 @@ function mergeFormalReports(reports, returns, config, paramRecord, startedAt, el
     return10xRate:item.samples ? item.return10x/item.samples : 0,
     return20xRate:item.samples ? item.return20x/item.samples : 0,
     return50xRate:item.samples ? item.return50x/item.samples : 0,
-    allocatedRtp:item.totalBet ? (item.poolClosingPaid+item.poolClosingAvailable+item.poolClosingReserved-item.poolSeed)/item.totalBet : 0,
+    allocatedRtp:item.totalBet ? (item.poolClosingPaid+item.poolClosingAvailable+item.poolClosingReserved-item.poolSeed-item.poolOperatorAdvance)/item.totalBet : 0,
+    operatorAdvanceRtp:item.totalBet ? item.poolOperatorAdvance/item.totalBet : 0,
     closingLiabilityRtp:item.totalBet ? (item.poolClosingAvailable+item.poolClosingReserved)/item.totalBet : 0,
   };});
   const chase = mergeChaseReports(reports,samples);
@@ -1225,7 +1396,7 @@ function renderReport(report) {
     ["BOSS RTP",pct(s.bossRtp || 0,2),`BOSS 倍率追加賠付 ${Math.round(s.bossPayout || 0).toLocaleString()} / 總 BET`],
     ["個人返還池",`${Math.round(s.personalPools || 0).toLocaleString()} 個`,`每位玩家獨立且跨局沿用；玩家之間不共用`],
     ["投注入水 RTP",pct(s.bets ? (s.mathPoolContribution || 0) / s.bets : 0,2),`累計入水 ${Math.round(s.mathPoolContribution || 0).toLocaleString()}｜Reroll BET ${Math.round(s.rerollSpent || 0).toLocaleString()}`],
-    ["外部墊付（應為 0）",Math.round(s.mathPoolOperatorAdvance || 0).toLocaleString(),`個人池採硬上限；不足時縮減尚未公開的條件彩金`],
+    ["倍率重排暫時責任",Math.round(s.mathPoolOperatorAdvance || 0).toLocaleString(),`只支付同一公平平均內的上升分支；由同玩家後續入水回收，配置RTP已扣除`],
     ["帳本守恆",number(s.mathPoolMaxInvariantError || 0,6),`seed + 入水 = available + reserved + paid`],
     ["顯示／實付一致性",s.payoutMismatchCount ? "異常" : "一致",`差異場次 ${Math.round(s.payoutMismatchCount || 0).toLocaleString()}｜最大差額 ${number(s.payoutMismatchMax || 0,6)}`],
     ["目標 RTP",pct(v.targetRtp,2),`各策略容許偏差 ${pct(v.tolerance,2)}`],
@@ -1370,10 +1541,15 @@ function reportSections(report) {
       ["曾經帳面 5x+",sheetPercent(chase.had5xRate || 0,2),`最後死亡占全部樣本 ${sheetPercent(chase.diedAfter5xRate || 0,2)}`],
       ["第 6 波後曾達 2x+",sheetPercent(chase.deepPeak2xRate || 0,2),`最後實領 2x+ ${sheetPercent(chase.deepFinal2xRate || 0,2)}`],
       ["第 6 波後曾達 5x+",sheetPercent(chase.deepPeak5xRate || 0,2),`最後實領 5x+ ${sheetPercent(chase.deepFinal5xRate || 0,2)}`],
+      ["2x 深追下一波",`${chase.twoXTransitionCount || 0} 次`, `通過 ${sheetPercent(chase.twoXNextClearRate || 0,1)}｜死亡 ${sheetPercent(chase.twoXNextDeathRate || 0,1)}`],
+      ["2x 深追倍率走向",`同區間 ${sheetPercent(chase.twoXFlatRate || 0,1)}`,`上升>15% ${sheetPercent(chase.twoXUpRate || 0,1)}｜下降>15% ${sheetPercent(chase.twoXDownRate || 0,1)}｜仍≥2x ${sheetPercent(chase.twoXRetainRate || 0,1)}`],
+      ["2x 深追實際淨利",`增加 ${sheetPercent(chase.twoXProfitUpRate || 0,1)}`,`持平 ${sheetPercent(chase.twoXProfitFlatRate || 0,1)}｜減少 ${sheetPercent(chase.twoXProfitDownRate || 0,1)}`],
+      ["2x 深追平均狀態",`${sheetNumber(chase.twoXAvgStartRatio || 0,2)}x → ${sheetNumber(chase.twoXAvgNextRatio || 0,2)}x`,`平均淨利 ${sheetNumber(chase.twoXAvgStartProfit || 0,0)} → ${sheetNumber(chase.twoXAvgNextProfit || 0,0)}`],
+      ["第6波已2x的最終結果",`${chase.wave6TwoXCount || 0} 局`,`繼續 ${sheetPercent(chase.wave6ContinueRate || 0,1)}｜最終死亡 ${sheetPercent(chase.wave6FinalDeathRate || 0,1)}｜最終仍≥2x ${sheetPercent(chase.wave6Final2xRate || 0,1)}`],
       ["平均最高帳面倍率",`${sheetNumber(chase.avgPeakReturn || 0,2)}x`,`平均峰值波次 ${sheetNumber(chase.avgPeakWave || 0,1)}｜最高 ${sheetNumber(chase.peakReturnMax || 0,2)}x`],
     ]},
-    {id:"chaseWaves",title:"逐波 POT 深追風險",headers:["波次","清場檢查點","帳面 RTP","帳面獲利","帳面 2x+","帳面 5x+","獲利後繼續","2x 後繼續","續追後死亡","2x 續追後死亡","該波最高"],rows:(report.chase?.waves || []).map(row=>[
-      `第 ${row.wave} 波`,row.clears,sheetPercent(row.checkpointRtp || 0,2),sheetPercent(row.profitStateRate || 0,1),sheetPercent(row.x2StateRate || 0,1),sheetPercent(row.x5StateRate || 0,1),sheetPercent(row.continueAfterProfitRate || 0,1),sheetPercent(row.continueAfter2xRate || 0,1),sheetPercent(row.deathAfterProfitRiskRate || 0,1),sheetPercent(row.deathAfter2xRiskRate || 0,1),`${sheetNumber(row.checkpointMax || 0,2)}x`,
+    {id:"chaseWaves",title:"逐波 POT 深追風險",headers:["波次","清場檢查點","帳面 RTP","帳面獲利","帳面 2x+","帳面 5x+","獲利後繼續","2x 後繼續","續追後死亡","2x 續追後死亡","2x轉移樣本","下一波死亡","倍率上升>15%","倍率同區間","倍率下降>15%","仍≥2x","淨利增加","淨利持平","淨利減少","平均倍率變化","平均淨利變化","該波最高"],rows:(report.chase?.waves || []).map(row=>[
+      `第 ${row.wave} 波`,row.clears,sheetPercent(row.checkpointRtp || 0,2),sheetPercent(row.profitStateRate || 0,1),sheetPercent(row.x2StateRate || 0,1),sheetPercent(row.x5StateRate || 0,1),sheetPercent(row.continueAfterProfitRate || 0,1),sheetPercent(row.continueAfter2xRate || 0,1),sheetPercent(row.deathAfterProfitRiskRate || 0,1),sheetPercent(row.deathAfter2xRiskRate || 0,1),row.twoXTransitions || 0,sheetPercent(row.twoXNextDeathRate || 0,1),sheetPercent(row.twoXUpRate || 0,1),sheetPercent(row.twoXFlatRate || 0,1),sheetPercent(row.twoXDownRate || 0,1),sheetPercent(row.twoXRetainRate || 0,1),sheetPercent(row.twoXProfitUpRate || 0,1),sheetPercent(row.twoXProfitFlatRate || 0,1),sheetPercent(row.twoXProfitDownRate || 0,1),`${sheetNumber(row.twoXAvgStartRatio || 0,2)}x → ${sheetNumber(row.twoXAvgNextRatio || 0,2)}x`,`${sheetNumber(row.twoXAvgStartProfit || 0,0)} → ${sheetNumber(row.twoXAvgNextProfit || 0,0)}`,`${sheetNumber(row.checkpointMax || 0,2)}x`,
     ])},
     {id:"bosses",title:"逐隻 BOSS 分析",headers:["BOSS 順序","遭遇次數","到達率","擊殺數","擊殺率","模型預估","平均出現波次","平均增加倍率","RTP 貢獻"],rows:report.bosses.length?report.bosses.map(row=>[
       `第 ${row.order} 隻`,row.encounters,sheetPercent(row.reachRate,1),row.kills,sheetPercent(row.killRate,1),sheetPercent(row.avgModelChance,1),sheetNumber(row.avgWave,1),`+${sheetNumber(row.avgAdd,2)}`,sheetPercent(row.rtpContribution,2),

@@ -436,7 +436,7 @@ bossFirstMinWave:1,bossFirstChance:8,bossFirstChanceInc:12,bossFirstChanceCap:68
   modelBossKillRate:.70,modelClearRate10:.63,modelClearRate20:.18,modelClearRate30:.06,
   upgradeDamage40:1.4,upgradeDamage35:1.35,upgradeDamage30:1.3,upgradeRate25:1.25,upgradeRate20:1.2,upgradeRange25:1.25,upgradeDuration50:1.5,upgradeDotDamage100:2,upgradeExtraChain:3,upgradePathDamage:50,upgradeVulnerable15:.15,upgradeSlow25:.25,
 };
-DEFAULT_PARAMS.balanceRevision = 202;
+DEFAULT_PARAMS.balanceRevision = 205;
 DEFAULT_PARAMS.mathGeneralRtpShare = .52;
 DEFAULT_PARAMS.mathBossRtpShare = .43;
 DEFAULT_PARAMS.mathPoolEntryTier1Mul = .2;
@@ -489,6 +489,10 @@ DEFAULT_PARAMS.mathBossPayoutChanceTailScale = 2.70;
 DEFAULT_PARAMS.mathPoolEnabled = 1;
 DEFAULT_PARAMS.mathPoolSeedBetUnits = 0;
 DEFAULT_PARAMS.mathPoolMaxPayoutMul = 500;
+DEFAULT_PARAMS.mathPoolTemporaryDeficitEnabled = 1;
+DEFAULT_PARAMS.mathCarryShapeEnabled = 1;
+DEFAULT_PARAMS.mathCarryAnchorChance = .60;
+DEFAULT_PARAMS.mathCarryMinReturn = 1;
 DEFAULT_PARAMS.mathPoolBaseOutcomeCapMul = 1.2;
 DEFAULT_PARAMS.mathPoolDeepOutcomeCapMul = 500;
 DEFAULT_PARAMS.mathPoolOutcomeCapRampWaves = 29;
@@ -505,7 +509,8 @@ DEFAULT_PARAMS.mathPoolLaterBossReleaseRate = .75;
 DEFAULT_PARAMS.mathPoolReleaseCapMul = 500;
 DEFAULT_PARAMS.mathPoolMeaningfulWinTriggerMul = .75;
 DEFAULT_PARAMS.mathPoolMeaningfulWinFloorMul = 1.5;
-DEFAULT_PARAMS.mathPoolStrongWinChance = .70;
+DEFAULT_PARAMS.mathPoolStrongWinChance = .55;
+DEFAULT_PARAMS.mathPoolStrongWinDeepChance = .95;
 DEFAULT_PARAMS.mathPoolStrongWinEarlyFloorMul = 1.5;
 DEFAULT_PARAMS.mathPoolStrongWinFloorMul = 7;
 DEFAULT_PARAMS.mathPoolWeakBossCapMul = .95;
@@ -752,6 +757,16 @@ const PARAM_GROUPS = [
   ]],
 ];
 PARAM_GROUPS.unshift([
+  "深追倍率分布",
+  "economy-group",
+  [
+    ["mathCarryShapeEnabled", "啟用等期望重排", "0/1", 0, 1, 1, "先算出原水池可配置平均彩金，再重排成倍率維持、上升與下降；不增加平均RTP。"],
+    ["mathCarryAnchorChance", "維持原倍率機率", "通關分支比例", .05, .95, .01, "符合門檻時，通關後落在進場前回收倍率附近的基礎機率；其餘機率依公平平均自動形成上升或下降。"],
+    ["mathCarryMinReturn", "啟用回收倍率門檻", "總回收 / 總BET", 0, 10, .05, "進場前回收倍率達到此值才做倍率重排；預設1x，前期仍可能直接贏到高倍。"],
+    ["mathPoolTemporaryDeficitEnabled", "允許重排暫時責任", "0/1", 0, 1, 1, "只為支付同一平均值內的上升分支建立暫時責任；下降分支與後續入水回收，長期配置RTP不變。"],
+  ],
+]);
+PARAM_GROUPS.unshift([
   "個人水池釋放",
   "economy-group",
   [
@@ -771,7 +786,8 @@ PARAM_GROUPS.unshift([
   [
     ["mathGeneralRtpShare", "一般波 RTP 預算", "比例", 0, .99, .01, "每筆 BET 用於一般波彩金定價的長期期望預算。"],
     ["mathBossRtpShare", "BOSS RTP 預算", "比例", 0, .99, .01, "每筆 BET 保留給 BOSS 倍率與高倍後續波次的長期期望預算。"],
-    ["mathPoolStrongWinChance", "BOSS 強獎分支機率", "比例", 0, 1, .01, "BOSS 擊殺後進入集中釋放分支的機率；只重新分配個人水池，不增加RTP。"],
+    ["mathPoolStrongWinChance", "前段BOSS強獎機率", "比例", 0, 1, .01, "前段BOSS進入集中釋放分支的機率；只重新分配個人水池，不增加RTP。"],
+    ["mathPoolStrongWinDeepChance", "深追BOSS強獎機率", "比例", 0, 1, .01, "深追BOSS進入集中釋放分支的機率；由前段值平滑成長，只改派彩時機與VI。"],
     ["mathPoolStrongWinEarlyFloorMul", "前段BOSS強獎底線", "總BET倍數", 1, 20, .05, "前段BOSS強獎最低嘗試回收；隨深度成長。"],
     ["mathPoolStrongWinFloorMul", "深追BOSS強獎底線", "總BET倍數", 1, 20, .1, "深追BOSS強獎最低嘗試回收，仍受個人池可用預算限制。"],
     ["mathPoolWeakBossCapMul", "BOSS 弱獎上限", "總BET倍數", 0, 5, .05, "非強獎分支的當局回收上限，未派預算保留到後續遊戲。"],
@@ -795,7 +811,7 @@ const BOSS_EMOTION_KEYS = new Set([
   "bossPreludeCountMul", "bossFirstAtkMul", "bossEnrageHpPct", "bossEnrageAttackSpeedMul",
 ]);
 const POOL_PARAM_KEYS = new Set([
-  "mathTargetRtp", "mathPoolEnabled", "mathGeneralRtpShare", "mathBossRtpShare", "mathPoolStrongWinChance", "mathPoolStrongWinEarlyFloorMul", "mathPoolStrongWinFloorMul", "mathPoolWeakBossCapMul", "mathPoolWeakBossReleaseRate", "mathPoolHotWaveEarlyFloorMul", "mathPoolHotWaveFloorMul", "mathPoolHotWaveDeepWeight", "mathPoolHotWaveEarlyReleaseRate", "mathPoolHotWaveReleaseRate", "mathCheckpointRepriceEnabled", "mathCheckpointMinChance", "mathRerollEntryEnabled",
+  "mathTargetRtp", "mathPoolEnabled", "mathGeneralRtpShare", "mathBossRtpShare", "mathCarryShapeEnabled", "mathCarryAnchorChance", "mathCarryMinReturn", "mathPoolTemporaryDeficitEnabled", "mathPoolStrongWinChance", "mathPoolStrongWinDeepChance", "mathPoolStrongWinEarlyFloorMul", "mathPoolStrongWinFloorMul", "mathPoolWeakBossCapMul", "mathPoolWeakBossReleaseRate", "mathPoolHotWaveEarlyFloorMul", "mathPoolHotWaveFloorMul", "mathPoolHotWaveDeepWeight", "mathPoolHotWaveEarlyReleaseRate", "mathPoolHotWaveReleaseRate", "mathCheckpointRepriceEnabled", "mathCheckpointMinChance", "mathRerollEntryEnabled",
   "mathBossFirstBaseChance", "mathBossLaterBaseChance", "mathBossOrdinalPenalty",
   "mathBossBuildInfluence", "mathBossLaterBuildInfluence",
   "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
@@ -1977,6 +1993,23 @@ function migrateBossParams(input={}) {
     next.mathPoolHotWaveDeepWeight = DEFAULT_PARAMS.mathPoolHotWaveDeepWeight;
     next.balanceRevision = 202;
   }
+  if ((Number(input.balanceRevision) || 0) < 203) {
+    next.balanceRevision = 203;
+  }
+  if ((Number(input.balanceRevision) || 0) < 204) {
+    [
+      "mathPoolTemporaryDeficitEnabled",
+      "mathCarryShapeEnabled",
+      "mathCarryAnchorChance",
+      "mathCarryMinReturn",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 204;
+  }
+  if ((Number(input.balanceRevision) || 0) < 205) {
+    ["mathPoolStrongWinChance", "mathPoolStrongWinDeepChance"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 205;
+  }
   return next;
 }
 function cleanParams(input={}) {
@@ -2011,6 +2044,7 @@ function cleanParams(input={}) {
   next.mathGeneralRtpShare = Math.max(0, Math.min(next.mathTargetRtp, next.mathGeneralRtpShare));
   next.mathBossRtpShare = Math.max(0, Math.min(next.mathTargetRtp - next.mathGeneralRtpShare, next.mathBossRtpShare));
   next.mathPoolStrongWinChance = Math.max(0, Math.min(1, next.mathPoolStrongWinChance));
+  next.mathPoolStrongWinDeepChance = Math.max(0, Math.min(1, next.mathPoolStrongWinDeepChance));
   next.mathPoolStrongWinEarlyFloorMul = Math.max(1, Math.min(500, next.mathPoolStrongWinEarlyFloorMul));
   next.mathPoolStrongWinFloorMul = Math.max(next.mathPoolStrongWinEarlyFloorMul, Math.min(500, next.mathPoolStrongWinFloorMul));
   next.mathPoolWeakBossCapMul = Math.max(0, Math.min(500, next.mathPoolWeakBossCapMul));
@@ -2026,6 +2060,10 @@ function cleanParams(input={}) {
   });
   next.mathPoolSeedBetUnits = Math.max(0, Math.min(10000, next.mathPoolSeedBetUnits));
   next.mathPoolMaxPayoutMul = Math.max(1, Math.min(500, next.mathPoolMaxPayoutMul));
+  next.mathPoolTemporaryDeficitEnabled = next.mathPoolTemporaryDeficitEnabled >= .5 ? 1 : 0;
+  next.mathCarryShapeEnabled = next.mathCarryShapeEnabled >= .5 ? 1 : 0;
+  next.mathCarryAnchorChance = Math.max(.05, Math.min(.95, next.mathCarryAnchorChance));
+  next.mathCarryMinReturn = Math.max(0, Math.min(100, next.mathCarryMinReturn));
   next.mathPoolBaseOutcomeCapMul = Math.max(0, Math.min(500, next.mathPoolBaseOutcomeCapMul));
   next.mathPoolDeepOutcomeCapMul = Math.max(next.mathPoolBaseOutcomeCapMul, Math.min(500, next.mathPoolDeepOutcomeCapMul));
   next.mathPoolOutcomeCapRampWaves = Math.max(1, Math.min(30, next.mathPoolOutcomeCapRampWaves));
@@ -2043,6 +2081,7 @@ function cleanParams(input={}) {
   next.mathPoolMeaningfulWinTriggerMul = Math.max(0, Math.min(500, next.mathPoolMeaningfulWinTriggerMul));
   next.mathPoolMeaningfulWinFloorMul = Math.max(1, Math.min(500, next.mathPoolMeaningfulWinFloorMul));
   next.mathPoolStrongWinChance = Math.max(0, Math.min(1, next.mathPoolStrongWinChance));
+  next.mathPoolStrongWinDeepChance = Math.max(0, Math.min(1, next.mathPoolStrongWinDeepChance));
   next.mathPoolStrongWinFloorMul = Math.max(next.mathPoolStrongWinEarlyFloorMul, Math.min(500, next.mathPoolStrongWinFloorMul));
   next.mathCheckpointRepriceEnabled = next.mathCheckpointRepriceEnabled >= .5 ? 1 : 0;
   next.mathCheckpointMinChance = Math.max(.01, Math.min(.99, next.mathCheckpointMinChance));
@@ -2278,6 +2317,10 @@ function escapeHtml(value) {
 }
 function parameterLogic(key) {
   const modern = {
+    mathCarryShapeEnabled:"啟用時：先算 fundedMean，再做等期望值兩點分布；E[重排彩金 | 當下狀態] = fundedMean，不額外增加RTP",
+    mathCarryAnchorChance:"倍率維持目標 = 上波POT + 上波回收倍率 × 本波新增BET；另一分支彩金由公平平均反推",
+    mathCarryMinReturn:"上波POT ÷ 上波累計BET ≥ 此值時才啟用倍率維持分布",
+    mathPoolTemporaryDeficitEnabled:"上升分支可形成暫時個人池責任；責任由同分布下降分支與後續入水回收，報表需列期末未結責任",
     mathCheckpointRepriceEnabled:"1=每次戰鬥中升級後重估剩餘通關率；只重算尚未掉落的彩金，不改已顯示POT",
     mathCheckpointMinChance:"重定價通關率 = max(即時戰鬥估算, 本值)，避免除以接近0產生失控彩金",
     mathRerollEntryEnabled:"1=Reroll費用視為獨立投注；Reroll入水額 = 當前BET × 該次抽中入水倍率",
@@ -2291,8 +2334,8 @@ function parameterLogic(key) {
     mathPoolFirstBossOutcomeCapMul:"首王應付上限 = max(進王前已顯示得分, 累計BET × 本值)",
     mathPoolBossCarryRecycleRate:"每次開新局時：成熟額 = 上局剩餘BOSS子池 × 本值；只解除用途限制，個人池available總額不變",
     mathPoolBossAddCapScale:"結果上限倍率增加量 = Boss加總倍率 × 本值",
-    mathPoolReleaseRate:"第1波一般釋放率 = 本值；實際值會隨波次線性成長",
-    mathPoolDeepReleaseRate:"深追一般釋放率上限 = 本值",
+    mathPoolReleaseRate:"第1波一般舊餘額釋放率 = 本值；已公開POT會全額帶入下一波重新定價，不受本值折減",
+    mathPoolDeepReleaseRate:"深追一般舊餘額釋放率上限；只控制尚未公開的可用餘額，不會稀釋已顯示POT",
     mathPoolDepthRampWaves:"深度進度 = clamp((波次-1) ÷ 本值, 0, 1)",
     mathPoolFirstBossReleaseRate:"首王強獎釋放率起點 = 本值",
     mathPoolLaterBossReleaseRate:"後王強獎釋放率起點 = 本值",
@@ -2301,7 +2344,8 @@ function parameterLogic(key) {
     mathPoolHotWaveDeepWeight:"熱波權重 = 前段熱波權重 + (本值-前段熱波權重) × 深度進度；該波五層彩金再依實際權重正規化至期望1",
     mathPoolMeaningfulWinTriggerMul:"有感判定 = 原始應付 ≥ 本局累計 BET × 本值",
     mathPoolMeaningfulWinFloorMul:"有感最低回收 = max(累計 BET, 累計 BET × 本值)",
-    mathPoolStrongWinChance:"強獲利命中 = 固定種子亂數 < mathPoolStrongWinChance",
+    mathPoolStrongWinChance:"前段強獎機率 = 本值；實際強獎機率會依深度進度往深追值插值",
+    mathPoolStrongWinDeepChance:"實際強獎機率 = lerp(前段強獎機率, 深追強獎機率, 深度進度)",
     mathPoolStrongWinEarlyFloorMul:"前段BOSS強獎底線 = 累計BET × 本值",
     mathPoolStrongWinFloorMul:"BOSS強獎底線 = 累計BET × lerp(前段底線, 本值, 深度進度)",
     mathPoolHotWaveEarlyFloorMul:"前段熱波底線 = 累計BET × 本值",
@@ -3324,12 +3368,13 @@ function renderPoolLedgerLogic() {
     ["4. 戰鬥中升級重定價", "完成3選1後", "新條件彩金 = (舊條件彩金×舊計價率 + 尚未定價入水額) ÷ 新計價率", "沿用相同BOSS順位/深度計價倍率；已顯示POT不可下降"],
     ["5. Reroll獨立入水", "玩家每次升級最多使用一次", "Reroll費用 = 當前BET；Reroll入水額 = 費用 × 獨立抽中倍率", "戰鬥中計入當波；波間先承諾下一波後才可使用"],
     ["6. BOSS倍率", "擊殺BOSS時", "總倍率 = 1 + 各BOSS加成倍率相加", "主要VI來源；首王偏低倍，後王保留高倍尾端"],
-    ["7. 分帳與深追釋放", "計算波末可領彩金時", "每筆入水先拆為一般子池與BOSS子池；一般波只能使用一般子池，BOSS波可使用BOSS子池；所有波次從第1波起都具備高倍資格", "高倍是否付得出取決於該玩家已累積的可用預算，不再由波次解鎖"],
-    ["8. 跨局BOSS預算成熟", "玩家開始下一局時", "成熟額 = 上局剩餘BOSS子池 × 成熟率；只解除用途限制，個人池總available不變", "讓固定早收手玩家的長期RTP也能收斂，不會永久鎖住BOSS預算"],
-    ["9. 個人預算帳本", "清波預留與Collect支付時", "實際預留 = min(條件彩金, 累計BET×全局Max Win, 當下可用子池餘額)", "available 永不為負；不與其他玩家互補，也不預支未來投注"],
-    ["10. 顯示即實付", "清波與Collect時", "Collect實付 = 畫面公開總得分 = 已預留金額", "波末不可縮POT；不可在Collect時突然補成另一個數字"],
-    ["11. 帳本守恆與驗證", "每次入水、預留、支付後", "seed + contributed = available + reserved + paid；Cash Out RTP = Σ實付÷Σ總BET", "守恆誤差必須為0；正式判定看Cash Out RTP，不以帳面配置RTP代替"],
-    ["12. 策略公平驗證", "比較不同Build策略時", "每名玩家固定一種策略並持有獨立個人水池；策略RTP = 該策略Σ實付÷Σ該策略BET；配置RTP = 實領RTP + 期末未付責任÷Σ該策略BET", "策略可改變深度、VI與死亡位置，但相同Collect規則的長期配置RTP應接近"],
+    ["7. POT風險延續", "玩家帶著POT繼續BET時", "新公平預算=上一波已公開應付+本波入水；上一波已保留的BOSS來源金額只能原額帶入，不能順帶解鎖其他BOSS子池", "倍率可上升、持平或下降；不會只因總BET增加而被帳本硬性稀釋"],
+    ["8. 分帳與深追釋放", "計算波末可領彩金時", "每筆入水先拆為一般子池與BOSS子池；一般波可使用一般子池與上一波已公開的POT，BOSS波才可新增動用BOSS子池", "尚未公開的BOSS預算仍保留；一般波釋放率只作用於未公開舊餘額"],
+    ["9. 跨局BOSS預算成熟", "玩家開始下一局時", "成熟額 = 上局剩餘BOSS子池 × 成熟率；只解除用途限制，個人池總available不變", "讓固定早收手玩家的長期RTP也能收斂，不會永久鎖住BOSS預算"],
+    ["10. 個人預算帳本", "清波預留與Collect支付時", "實際預留 = min(條件彩金, 累計BET×全局Max Win, 當下可用子池餘額+上一波已保留應付)", "available 永不為負；不與其他玩家互補，也不預支未來投注"],
+    ["11. 顯示即實付", "清波與Collect時", "Collect實付 = 畫面公開總得分 = 已預留金額", "波末不可縮POT；不可在Collect時突然補成另一個數字"],
+    ["12. 帳本守恆與驗證", "每次入水、預留、支付後", "seed + contributed = available + reserved + paid；Cash Out RTP = Σ實付÷Σ總BET", "守恆誤差必須為0；正式判定看Cash Out RTP，不以帳面配置RTP代替"],
+    ["13. 策略公平驗證", "比較不同Build策略時", "每名玩家固定一種策略並持有獨立個人水池；策略RTP = 該策略Σ實付÷Σ該策略BET；配置RTP = 實領RTP + 期末未付責任÷Σ該策略BET", "策略可改變深度、VI與死亡位置，但相同Collect規則的長期配置RTP應接近"],
   ];
   ui.poolLedgerLogicBody.innerHTML = rows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
 }
@@ -3348,8 +3393,9 @@ function logicFormulaRows() {
     ["BOSS難度", "首/後王難度權重與三維倍率", "P(難度)=權重÷總權重；首王三維=1+(抽中倍率-1)×firstDifficultyCompression", "BOSS HP、攻擊、速度", "rollBossDifficulty", "首王與後王必須使用不同權重池"],
     ["BOSS倍率", "低中高倍權重、區間、首/後王係數", "層內uniform(min,max)；加成=round(max(1,抽中值×rewardMul),0.1)；總倍率=1+所有BOSS加成相加", "POT旁倍率與主要VI", "bossMultiplier / createMathTicket", "首王較保守、後王高倍尾端較長；多隻BOSS加成相加，不相乘"],
     ["風險定價", "clearChance、首王/後續深度計價倍率、rewardFactor、配籤RTP", "pricingRate=clamp(clearChance×chanceScale,0.0001,4)；expectedAfter=before+entryCredit×rewardFactor；conditionalPayout=expectedAfter÷pricingRate", "未受風險上限限制的targetPayout", "createMathTicket", "首王使用首王倍率；第2隻後依1-10、11-20、21-27、28-30波選倍率。pricingRate×conditionalPayout 必須等於 expectedAfter"],
-    ["個人水池分帳", "入水額、一般/BOSS占比、BOSS解鎖狀態", "entryCredit拆為general與boss；首王前spendable=available-bossAvailable；首王後spendable=available", "可使用的一般彩金與BOSS彩金", "registerMathStake / personalPoolPayoutAmount", "BOSS子池不能被首王前的一般波消耗；玩家間不可互補"],
-    ["深追水池釋放", "波次、個人池available、前段/深追釋放率", "depth=clamp((wave-1)÷rampWaves,0,1)；releaseRate=early+(deep-early)×depth；額外釋放=max(0,available-原始應付)×releaseRate", "一般波、熱波與BOSS的深度釋放", "mathPoolDepthProgress / personalPoolPayoutAmount", "只移動獎金出現時機，不創造額外入水；首王使用獨立起點"],
+    ["個人水池分帳", "入水額、一般/BOSS占比、上一波已保留應付", "entryCredit拆為general與boss；一般波spendable=generalAvailable+上一波已公開應付；BOSS波spendable=available+上一波已公開應付", "可使用的一般彩金、已公開POT與BOSS彩金", "registerMathStake / personalPoolPayoutAmount", "一般波只能續帶已公開的BOSS來源金額，不能解鎖其他BOSS子池；玩家間不可互補"],
+    ["深追水池釋放", "波次、個人池available、前段/深追釋放率", "depth=clamp((wave-1)÷rampWaves,0,1)；releaseRate=early+(deep-early)×depth；額外釋放=max(0,可用額-條件應付)×releaseRate", "尚未公開舊餘額的釋放時機", "mathPoolDepthProgress / personalPoolPayoutAmount", "上一波已公開應付先全額納入風險定價；釋放率只移動其餘預算，不創造RTP"],
+    ["深追倍率重排", "原水池可配置平均、上波POT、上波累計BET、本波新增BET", "anchor=上波POT+(上波POT÷上波累計BET)×新增BET；以anchorChance抽anchor，另一分支=(fundedMean-anchorChance×anchor)÷(1-anchorChance)", "通關後倍率維持、上升或下降", "mathCarryPayoutShape", "先算fundedMean才重排，所以三個分支只改VI與深追體感；正式驗證需同时列實領RTP與期末未結責任"],
     ["全波次回收資格", "累計BET、全局Max Win、個人池可用額", "本波可付≤min(累計BET×MaxWin, 可用子池餘額)；公式不含波次解鎖或深度上限", "前期與深追都可能高倍；深追差異來自累積BET、POT與BOSS子池", "personalPoolPayoutCeiling", "長期RTP仍由入水配籤與帳本守恆控制"],
     ["跨局BOSS預算成熟", "上局bossAvailable、成熟率", "matured=bossAvailable×recycleRate；bossAvailable-=matured；available總額不變", "早收手玩家下一局可用的一般預算", "registerMathStake", "只改用途標記，不創造彩金；用來維持不同Collect策略的長期公平"],
     ["Collect", "reservedPayout、累計BET", "玩家回收=reservedPayout；單局回收倍率=玩家回收÷本局累計BET", "錢包增加、paid增加", "collect / payMathReservation", "只有場上無怪時可Collect"],

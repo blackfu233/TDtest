@@ -141,7 +141,7 @@
     return false;
   }
 
-  function finalizeWaveRecord(record, state, cleared) {
+  function finalizeWaveRecord(record, state, cleared, ticket=null) {
     if (!record || record.finished) return;
     record.finished = true;
     record.cleared = !!cleared;
@@ -152,6 +152,30 @@
     record.bossPayout = Math.max(0,record.payout-record.basePayout);
     record.marginalPayout = record.payout - (Number(record.beforePayout) || 0);
     record.bossSeen = state.bossSeen;
+    if (ticket) {
+      record.modelClearChance = Number(ticket.clearChance) || record.modelClearChance || 0;
+      record.modelPricingChance = Number(ticket.pricingClearChance) || record.modelPricingChance || 0;
+      record.modelFairValue = Number(ticket.fairValue) || record.modelFairValue || 0;
+      record.modelConditionalPayout = Number(ticket.conditionalPayoutExact) || record.modelConditionalPayout || 0;
+      record.uncappedTargetPayout = Math.max(0,Number(ticket.uncappedTargetPayout)||0);
+      record.targetPayout = Math.max(0,Number(ticket.targetPayout)||0);
+      record.reservedPayout = Math.max(0,Number(ticket.reservedPayout)||0);
+      record.poolCapped = !!ticket.poolCapped;
+      record.pricedStake = Math.max(0,Number(ticket.pricedStake)||0);
+      record.entryCredit = Math.max(0,Number(ticket.entryCredit)||0);
+      record.waveRewardTier = ticket.waveRewardTier || "normal";
+      record.waveRewardMultiplier = Math.max(0,Number(ticket.waveRewardMultiplier)||0);
+      record.waveRewardFactor = Math.max(0,Number(ticket.waveRewardFactor)||0);
+      record.rewardFactor = Math.max(0,Number(ticket.rewardFactor)||0);
+      record.carryShapeEnabled = !!ticket.carryShapeEnabled;
+      record.carryShapeBranch = ticket.carryShapeBranch || "mean";
+      record.carryMeanTarget = Math.max(0,Number(ticket.carryMeanTarget)||0);
+      record.carryAnchorTarget = Math.max(0,Number(ticket.carryAnchorTarget)||0);
+      record.carryAlternateTarget = Math.max(0,Number(ticket.carryAlternateTarget)||0);
+      record.carryAnchorChance = Math.max(0,Number(ticket.carryAnchorChance)||0);
+      record.carryPreviousReturn = Math.max(0,Number(ticket.carryPreviousReturn)||0);
+      record.poolBudgetCapped = record.targetPayout + .5 < record.uncappedTargetPayout;
+    }
   }
 
   function runOne(engine, config, playerWallet, seed) {
@@ -379,11 +403,11 @@
       consecutiveChoiceIterations = 0;
 
       if (activeWaveRecord && !activeWaveRecord.finished && !state.waveActive && !state.spawning && state.monsters === 0 && state.hp > 0) {
-        finalizeWaveRecord(activeWaveRecord, state, true);
+        finalizeWaveRecord(activeWaveRecord, state, true, engine.mathTicket?.());
       }
 
       if (state.over) {
-        if (activeWaveRecord && !activeWaveRecord.finished) finalizeWaveRecord(activeWaveRecord, state, state.wave >= 30 && state.hp > 0);
+        if (activeWaveRecord && !activeWaveRecord.finished) finalizeWaveRecord(activeWaveRecord, state, state.wave >= 30 && state.hp > 0, engine.mathTicket?.());
         completed = state.wave >= 30 && state.hp > 0;
         state = fullSnapshot();
         if (completed && !decisionOutcome) captureDecision(state,true);
