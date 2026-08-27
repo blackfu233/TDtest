@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-visual214";
+const BUILD_VERSION = "encounter-readable215";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
@@ -4236,6 +4236,8 @@ function bossEncounterDifficulty(threat, firstBoss=false) {
 
 function buildRegularEncounterChoices(wave) {
   const biomeAttr = wavePrimaryAttribute(wave);
+  const band = tunedBand(bandFor(wave), wave);
+  const baseEnemyCount = rand(band.count[0], band.count[1]);
   const formationWeights = encounterFormationWeights(wave);
   const usedFormations = new Set();
   const usedAttributes = new Set();
@@ -4257,6 +4259,7 @@ function buildRegularEncounterChoices(wave) {
     const threat = matchup.tier;
     const reward = rollEncounterReward(threat);
     const art = encounterArtFor(attr, formation);
+    const enemyCount = Math.max(6, Math.round(baseEnemyCount * Math.max(.25, formation.countMul)));
     choices.push({
       id:`${wave}-${formation.id}-${attr}-${index}`,
       wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
@@ -4266,6 +4269,7 @@ function buildRegularEncounterChoices(wave) {
       atkMul:tunedFormation.atkMul,
       speedMul:formation.speedMul,
       forcedElites:formation.eliteCount,
+      enemyCount,
       rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
       expMul:ENCOUNTER_EXP_FACTORS[reward],
       matchup,
@@ -4278,6 +4282,9 @@ function buildRegularEncounterChoices(wave) {
 
 function buildBossEncounterChoices(wave) {
   const biomeAttr = wavePrimaryAttribute(wave);
+  const band = tunedBand(bandFor(wave), wave);
+  const rolledCount = rand(band.count[0], band.count[1]);
+  const preludeCount = Math.max(4, Math.round(rolledCount * clamp(paramNumber("bossPreludeCountMul", .55), .1, 1)));
   const usedAttributes = new Set();
   const firstBoss = state.bossSeen === 0;
   const difficultyPattern = shuffled(firstBoss ? [2,2,3] : [2,3,3]);
@@ -4296,6 +4303,7 @@ function buildBossEncounterChoices(wave) {
       template:{ fire:"fast", ice:"tank", electric:"disrupt", poison:"ranged", neutral:"mixed" }[attr] || "mixed",
       attr, threat, reward, countMul:.78, hpMul:1, atkMul:1, speedMul:1,
       forcedElites:0,
+      enemyCount:Math.max(3, Math.round(preludeCount * .78)),
       bossDifficulty,
       rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
       expMul:ENCOUNTER_EXP_FACTORS[reward],
@@ -4307,8 +4315,13 @@ function buildBossEncounterChoices(wave) {
 }
 
 function encounterImageHtml(choice) {
-  const count = choice.boss || choice.formation === "elite" ? 1 : Math.max(1, choice.artCount || 1);
   const src = choice.art?.sprite ? `assets/enemies-v3/${choice.art.sprite}` : enemySpritePath(choice.art || {});
+  if (choice.formation === "elite") {
+    const supportArt = (MINION_VARIANTS[choice.attr] || MINION_VARIANTS.neutral)[0];
+    const supportSrc = supportArt?.sprite ? `assets/enemies-v3/${supportArt.sprite}` : enemySpritePath(supportArt || {});
+    return `<img class="encounter-support" src="${supportSrc}" alt=""><img class="encounter-elite-lead" src="${src}" alt=""><img class="encounter-support" src="${supportSrc}" alt="">`;
+  }
+  const count = choice.boss ? 1 : Math.max(1, choice.artCount || 1);
   return Array.from({ length:count }, (_, index) => `<img src="${src}" alt="" style="--unit-index:${index};--unit-count:${count}">`).join("");
 }
 
@@ -4334,16 +4347,19 @@ function renderEncounterDraft(choices, boss) {
     button.style.setProperty("--deal-index", index);
     const cardName = choice.boss ? `${display.label}屬 BOSS` : `${display.label}屬 ${choice.formationLabel}`;
     const formationHint = choice.boss ? choice.art?.name || ENCOUNTER_FORMATION_HINTS.boss : ENCOUNTER_FORMATION_HINTS[choice.formation] || choice.art?.name || "敵軍來襲";
+    const displayCount = choice.boss ? 1 : Math.max(1, Math.round((choice.enemyCount || 0) + (choice.forcedElites || 0)));
     button.innerHTML = `
       <span class="encounter-danger-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
       <span class="encounter-emblem" aria-hidden="true">
         <span class="encounter-art">${encounterImageHtml(choice)}</span>
         <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
+        <span class="encounter-count">×${displayCount}</span>
       </span>
       <span class="encounter-loot" aria-hidden="true">
-        <span class="loot-core"><i class="loot-gem"></i><i class="loot-wing loot-wing-left"></i><i class="loot-wing loot-wing-right"></i></span>
+        <small>獎勵</small>
+        <span class="loot-crate"><i class="loot-crate-core"></i><i class="loot-wing loot-wing-left"></i><i class="loot-wing loot-wing-right"></i></span>
       </span>`;
-    button.setAttribute("aria-label", `${cardName}，${formationHint}，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}，${encounterMatchupLabel(choice)}`);
+    button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}，${encounterMatchupLabel(choice)}`);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
     ui.encounterList.appendChild(button);
   });
@@ -4753,11 +4769,14 @@ function startWave(encounterChoice=null) {
   state.currentWaveAttr = primaryAttr;
   const boss = encounter ? !!encounter.boss : consumeBossPreview(state.wave, info);
   const bossDifficulty = boss ? encounter?.bossDifficulty || rollBossDifficulty(state.bossSeen === 0) : null;
-  const rolledCount = rand(band.count[0], band.count[1]);
-  const baseCount = boss
-    ? Math.max(4, Math.round(rolledCount * clamp(paramNumber("bossPreludeCountMul", .55), .1, 1)))
-    : rolledCount;
-  const count = Math.max(boss ? 3 : 6, Math.round(baseCount * Math.max(.25, encounter?.countMul || 1)));
+  let count = Number.isFinite(encounter?.enemyCount) ? Math.max(boss ? 3 : 6, Math.round(encounter.enemyCount)) : 0;
+  if (!count) {
+    const rolledCount = rand(band.count[0], band.count[1]);
+    const baseCount = boss
+      ? Math.max(4, Math.round(rolledCount * clamp(paramNumber("bossPreludeCountMul", .55), .1, 1)))
+      : rolledCount;
+    count = Math.max(boss ? 3 : 6, Math.round(baseCount * Math.max(.25, encounter?.countMul || 1)));
+  }
   const mathTicket = certifiedMathEnabled()
     ? applyEncounterRewardToTicket(createMathTicket(state.wave, betForWave(state.wave), boss, bossDifficulty), encounter)
     : null;
