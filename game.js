@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-risk212";
+const BUILD_VERSION = "encounter-clear213";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
@@ -824,8 +824,15 @@ const ENCOUNTER_FORMATIONS = [
 
 const ENCOUNTER_REWARD_FACTORS = { 1:.72, 2:1.00, 3:1.42, 4:2.10 };
 const ENCOUNTER_EXP_FACTORS = { 1:.82, 2:1.00, 3:1.34, 4:1.72 };
-const ENCOUNTER_ATTR_MARKS = { fire:"▲", ice:"◆", electric:"ϟ", poison:"●", neutral:"◎" };
-const ENCOUNTER_ROLE_MARKS = { area:"•••", single:"◆", control:"≫", boss:"!" };
+const ENCOUNTER_ATTR_MARKS = { fire:"火", ice:"冰", electric:"電", poison:"毒", neutral:"無" };
+const ENCOUNTER_FORMATION_HINTS = {
+  swarm:"大量小怪",
+  rush:"高速突進",
+  armor:"少量重甲",
+  siege:"遠程火力",
+  elite:"單隻菁英",
+  boss:"強敵來襲",
+};
 
 const ALL_MINION_VARIANTS = Object.values(MINION_VARIANTS).flat();
 const ALL_ELITE_VARIANTS = Object.values(ELITE_VARIANTS).flat();
@@ -4309,12 +4316,6 @@ function encounterPips(count, className) {
   return Array.from({ length:count }, () => `<i class="${className}"></i>`).join("");
 }
 
-function encounterMatchupVisual(choice) {
-  const attributeMark = choice.matchup?.attributeState === "good" ? "▲" : choice.matchup?.attributeState === "bad" ? "▼" : "◆";
-  const roleMark = choice.matchup?.roleState === "good" ? "✓" : choice.matchup?.roleState === "bad" ? "!" : "·";
-  return `<span class="encounter-fit fit-${choice.matchup?.attributeState || "even"}" aria-hidden="true"><i>${attributeMark}</i></span><span class="encounter-fit role-${choice.matchup?.roleState || "even"}" aria-hidden="true"><i>${roleMark}</i></span>`;
-}
-
 function encounterMatchupLabel(choice) {
   const attribute = choice.matchup?.attributeState === "good" ? "屬性有利" : choice.matchup?.attributeState === "bad" ? "屬性不利" : "屬性均衡";
   const role = choice.matchup?.roleState === "good" ? "陣型有利" : choice.matchup?.roleState === "bad" ? "陣型不利" : "陣型均衡";
@@ -4335,20 +4336,20 @@ function renderEncounterDraft(choices, boss) {
     button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} attr-${choice.attr} matchup-${choice.matchup?.attributeState || "even"}${choice.boss ? " boss-card" : ""}`;
     button.style.setProperty("--encounter-color", display.color);
     button.style.setProperty("--deal-index", index);
+    const cardName = choice.boss ? `${display.label}屬 BOSS` : `${display.label}屬 ${choice.formationLabel}`;
+    const formationHint = choice.boss ? choice.art?.name || ENCOUNTER_FORMATION_HINTS.boss : ENCOUNTER_FORMATION_HINTS[choice.formation] || choice.art?.name || "敵軍來襲";
     button.innerHTML = `
       <span class="encounter-emblem" aria-hidden="true">
         <span class="encounter-art">${encounterImageHtml(choice)}</span>
         <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
       </span>
       <span class="encounter-copy">
-        <span class="encounter-category"><i>${ENCOUNTER_ROLE_MARKS[choice.role] || "◆"}</i>${choice.boss ? "BOSS" : "敵軍選擇"}</span>
-        <span class="encounter-name">${choice.formationLabel}</span>
-        <span class="encounter-sub">${display.label}屬 · ${choice.art?.name || "未知敵軍"}</span>
-        <span class="encounter-matchup">${encounterMatchupVisual(choice)}</span>
+        <span class="encounter-name">${cardName}</span>
+        <span class="encounter-sub">${formationHint}</span>
       </span>
       <span class="encounter-readout" aria-hidden="true">
-        <span class="encounter-threat">${encounterPips(choice.threat, "threat-mark")}</span>
-        <span class="encounter-bounty">${encounterPips(choice.reward, "reward-core")}</span>
+        <span class="encounter-metric danger-metric"><small>危險</small><span class="encounter-threat">${encounterPips(choice.threat, "threat-mark")}</span></span>
+        <span class="encounter-metric reward-metric"><small>獎勵</small><span class="encounter-bounty">${encounterPips(choice.reward, "reward-core")}</span></span>
       </span>`;
     button.setAttribute("aria-label", `${display.label}屬性 ${choice.formationLabel}，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}，${encounterMatchupLabel(choice)}`);
     button.title = encounterMatchupLabel(choice);

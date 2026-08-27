@@ -1748,7 +1748,7 @@ canvas {
   display: grid;
   min-width: 0;
   align-content: center;
-  gap: 3px;
+  gap: 7px;
   text-align: left;
 }
 
@@ -1787,7 +1787,7 @@ canvas {
   display: inline-flex;
   width: max-content;
   max-width: 100%;
-  min-height: 22px;
+  min-height: 24px;
   align-items: center;
   padding: 3px 8px;
   overflow: hidden;
@@ -1795,34 +1795,11 @@ canvas {
   border-radius: 4px;
   color: #f4f7fa;
   background: color-mix(in srgb, var(--encounter-color) 14%, rgba(2, 5, 8, .82));
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.encounter-matchup {
-  display: flex;
-  gap: 5px;
-  margin-top: 1px;
-}
-
-.encounter-fit {
-  display: grid;
-  width: 22px;
-  height: 18px;
-  place-items: center;
-  border: 1px solid #718193;
-  border-radius: 3px;
-  color: #aab7c3;
-  background: rgba(3, 7, 11, .82);
-}
-
-.encounter-fit i { font: 950 11px/1 Arial, sans-serif; }
-.encounter-fit.fit-good,
-.encounter-fit.role-good { border-color: #53d98b; color: #75f0a8; box-shadow: 0 0 7px rgba(64, 224, 134, .28); }
-.encounter-fit.fit-bad,
-.encounter-fit.role-bad { border-color: #ff5a4d; color: #ff7368; box-shadow: 0 0 7px rgba(255, 73, 61, .36); }
 
 .encounter-readout {
   position: relative;
@@ -1831,12 +1808,29 @@ canvas {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 13px;
+  gap: 9px;
   min-width: 0;
   padding-left: 7px;
   border-left: 1px solid color-mix(in srgb, var(--danger-color) 54%, transparent);
   background: radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--danger-color) 13%, transparent), transparent 70%);
 }
+
+.encounter-metric {
+  display: grid;
+  width: 100%;
+  justify-items: center;
+  gap: 4px;
+}
+
+.encounter-metric small {
+  color: #c5d0d9;
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.danger-metric small { color: color-mix(in srgb, var(--danger-color) 78%, #fff); }
+.reward-metric small { color: #ffe28a; }
 
 .encounter-threat,
 .encounter-bounty {
@@ -1848,8 +1842,23 @@ canvas {
   gap: 2px;
 }
 
-.threat-mark { width: 12px; height: 10px; }
-.reward-core { width: 11px; height: 11px; }
+.threat-mark {
+  width: 12px;
+  height: 6px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--danger-color);
+  clip-path: none;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--danger-color) 68%, transparent));
+}
+.reward-core {
+  width: 10px;
+  height: 10px;
+  border: 1px solid #fff0ae;
+  border-radius: 50%;
+  background: #f3bf3f;
+  clip-path: none;
+}
 .reward-4 .reward-core { background: #ffe27a; filter: drop-shadow(0 0 5px rgba(255, 213, 75, .95)); }
 
 .encounter-card:hover,
@@ -1905,7 +1914,7 @@ canvas {
   .encounter-card { min-height: 86px; grid-template-columns: 76px minmax(0, 1fr) 50px; padding: 5px 7px 5px 5px; }
   .encounter-emblem { width: 74px; height: 74px; }
   .encounter-name { font-size: 18px; }
-  .encounter-sub { min-height: 19px; padding: 2px 6px; }
+  .encounter-sub { min-height: 21px; padding: 2px 6px; font-size: 10px; }
   .encounter-readout { gap: 8px; }
 }
 
