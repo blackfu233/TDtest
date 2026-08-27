@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "deep-carry208";
+const BUILD_VERSION = "score-state-sync209";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -3266,9 +3266,7 @@ function payout() {
 
 function scoreDisplaySnapshot() {
   const multiplier = Math.max(.1, Number(state.bossRoll?.value) || 1 + state.bossAdd);
-  const total = state.bossRoll
-    ? Math.max(0, Math.round(state.pot * multiplier))
-    : payout();
+  const total = Math.max(0, Math.round(state.pot * multiplier));
   const exactPot = total / multiplier;
   let potText = exactPot.toFixed(4);
   for (let decimals=0; decimals<=4; decimals+=1) {
@@ -3603,7 +3601,7 @@ function createMathTicket(wave, bet, boss=false, difficulty=null) {
     bossAdd = Math.round(Math.min(rolledAdd, maxAffordableAdd) * 10) / 10;
   }
   const targetMultiplier = Math.max(.1, 1 + state.bossAdd + bossAdd);
-  const targetPot = Math.max(state.pot, stochasticRound(targetPayout / targetMultiplier, mathUniform(wave, 3)));
+  const targetPot = Math.max(0, targetPayout / targetMultiplier);
   const ticket = {
     id:state.mathLedger.length + 1, wave, bet, pricedStake, entryCredit, unpricedCredit:0, rerollStake:0, rerollCredits:[], boss, bossOrdinal, bossDifficulty:difficulty?.id || null,
     buildPower, attributePower, waveAttribute:state.currentWaveAttr || "neutral", hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, pricingClearChance, payoutChanceScale, before, targetRtp, payoutScale, payoutRoleScale,
@@ -3631,7 +3629,7 @@ function settleMathTicket() {
   const reservedPayout = reserveMathPayout(ticket.targetPayout, ticket.pricedStake, ticket.bossBudgetEligible);
   state.certifiedPayout = reservedPayout;
   const targetMultiplier = Math.max(.1, Number(ticket.targetMultiplier) || 1 + state.bossAdd + (ticket.bossAdd || 0));
-  state.pot = Math.max(state.pot, stochasticRound(reservedPayout / targetMultiplier, mathUniform(ticket.wave, 6)));
+  state.pot = Math.max(0, reservedPayout / targetMultiplier);
   ticket.settled = true;
   ticket.result = "clear";
   ticket.poolCapped = reservedPayout < ticket.targetPayout;
@@ -3682,7 +3680,7 @@ function repriceActiveMathTicket(reason="upgrade") {
       : Math.max(0, Math.floor(Math.min(proposedTarget, personalPoolPayoutCeiling(ticket.pricedStake))))
     : proposedTarget;
   if (mathPoolEnabled() && fundedMeanTargetPayout < proposedMeanTarget) recordMathPoolCapHit();
-  const targetPot = Math.max(0, stochasticRound(targetPayout / targetMultiplier, mathUniform(ticket.wave, 40 + ticket.reprices.length)));
+  const targetPot = Math.max(0, targetPayout / targetMultiplier);
   const displayTarget = targetPayout;
   ticket.displayFloorLift += Math.max(0, fundedMeanTargetPayout - roundedMeanTarget);
   ticket.entryCredit += newCredit;
@@ -8482,6 +8480,7 @@ if (HEADLESS_SIM) {
     result:state.mathTicket.result,
   } : null;
   const headlessSnapshot = (includeBuild=false) => {
+    const display = scoreDisplaySnapshot();
     const value = {
       wallet:state.wallet, started:state.started, over:state.over, wave:state.wave, hp:state.hp, pot:state.pot,
       exp:state.exp, level:state.level, choicesOpen:state.choicesOpen, waveActive:state.waveActive,
@@ -8492,6 +8491,8 @@ if (HEADLESS_SIM) {
       bossAdd:state.bossAdd, bossRolling:!!state.bossRoll, bossDanger:Number(state.bossDanger) || 0,
       selectedTemplate:state.selectedTemplate, currentWaveAttr:state.currentWaveAttr,
       currentBet:currentBet(), payout:payout(),
+      displayPot:Number(display.potText), displayPayout:display.total, displayMultiplier:display.multiplier,
+      displayInvariantError:Math.abs(Math.round(Number(display.potText) * display.multiplier) - display.total),
       mathPoolContribution:state.mathPoolContribution, mathGeneralContribution:state.mathGeneralContribution,
       mathBossContribution:state.mathBossContribution, mathPoolCapHits:state.mathPoolCapHits,
       mathPoolRecycled:state.mathPoolRecycled, mathPoolLastEntryMultiplier:state.mathPoolLastEntryMultiplier,

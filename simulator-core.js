@@ -299,6 +299,14 @@
         throw new Error(`模擬控制流程停滯：seed ${seed}，wave ${stalled.wave}，choices ${!!stalled.choicesOpen}，idle ${!stalled.waveActive && !stalled.spawning && stalled.monsters === 0}`);
       }
       let state = liteSnapshot();
+      if (Number(state.displayInvariantError) > 0) {
+        throw new Error(`得分顯示不同步：seed ${seed}，wave ${state.wave}，error ${state.displayInvariantError}`);
+      }
+      const settledForCollect = !state.waveActive && !state.spawning && !state.bossRolling && state.monsters === 0
+        && !state.choicesOpen && state.hp > 0;
+      if (settledForCollect && Math.round(Number(state.displayPayout) || 0) !== Math.round(Number(state.payout) || 0)) {
+        throw new Error(`結算得分不同步：seed ${seed}，wave ${state.wave}，display ${state.displayPayout}，payout ${state.payout}`);
+      }
       const diagnosticNow = Date.now();
       if (diagnosticNow - runStartedAt > 5000 && diagnosticNow - lastDiagnosticAt > 5000) {
         lastDiagnosticAt = diagnosticNow;

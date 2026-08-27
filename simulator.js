@@ -928,7 +928,7 @@ function runWorkerPool(config, params, strategySet, requestedWorkers, onProgress
     activeWorkers = localWorkers;
     activeParallelCancel = () => finish(true);
     buckets.forEach(bucket => {
-    const worker = new Worker("simulator-worker.js?headless=1&v=deep-carry208");
+    const worker = new Worker("simulator-worker.js?headless=1&v=score-state-sync209");
       localWorkers.push(worker);
       worker.onmessage = event => {
         if (settled) return;
