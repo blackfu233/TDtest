@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "score-display207";
+const BUILD_VERSION = "deep-carry208";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1167,13 +1167,13 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 206,
+  balanceRevision: 208,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
   mathGeneralRtpShare: .52,
   mathBossRtpShare: .43,
-  mathPostBossIncrementBossShare: .65,
+  mathPostBossIncrementBossShare: .70,
   mathPoolEntryTier1Mul: .2,
   mathPoolEntryTier1Weight: 10,
   mathPoolEntryTier2Mul: .5,
@@ -1190,7 +1190,7 @@ const DEFAULT_PARAMS = {
   mathPoolMaxPayoutMul: 500,
   mathPoolTemporaryDeficitEnabled: 1,
   mathCarryShapeEnabled: 1,
-  mathCarryAnchorChance: .60,
+  mathCarryAnchorChance: .72,
   mathCarryMinReturn: 1,
   mathPoolBaseOutcomeCapMul: 1.2,
   mathPoolDeepOutcomeCapMul: 500,
@@ -1204,7 +1204,7 @@ const DEFAULT_PARAMS = {
   mathPoolDepthRampWaves: 8,
   mathPoolBossReleaseRate: 1,
   mathPoolFirstBossReleaseRate: .45,
-  mathPoolLaterBossReleaseRate: .95,
+  mathPoolLaterBossReleaseRate: 1,
   mathPoolReleaseCapMul: 500,
   mathPoolMeaningfulWinTriggerMul: .75,
   mathPoolMeaningfulWinFloorMul: 1.5,
@@ -2740,6 +2740,14 @@ function migrateBossParams(input={}) {
       "mathPoolLaterBossReleaseRate",
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 206;
+  }
+  if ((Number(input.balanceRevision) || 0) < 208) {
+    [
+      "mathCarryAnchorChance",
+      "mathPostBossIncrementBossShare",
+      "mathPoolLaterBossReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 208;
   }
   return next;
 }

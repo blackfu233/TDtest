@@ -436,10 +436,10 @@ bossFirstMinWave:1,bossFirstChance:8,bossFirstChanceInc:12,bossFirstChanceCap:68
   modelBossKillRate:.70,modelClearRate10:.63,modelClearRate20:.18,modelClearRate30:.06,
   upgradeDamage40:1.4,upgradeDamage35:1.35,upgradeDamage30:1.3,upgradeRate25:1.25,upgradeRate20:1.2,upgradeRange25:1.25,upgradeDuration50:1.5,upgradeDotDamage100:2,upgradeExtraChain:3,upgradePathDamage:50,upgradeVulnerable15:.15,upgradeSlow25:.25,
 };
-DEFAULT_PARAMS.balanceRevision = 206;
+DEFAULT_PARAMS.balanceRevision = 208;
 DEFAULT_PARAMS.mathGeneralRtpShare = .52;
 DEFAULT_PARAMS.mathBossRtpShare = .43;
-DEFAULT_PARAMS.mathPostBossIncrementBossShare = .65;
+DEFAULT_PARAMS.mathPostBossIncrementBossShare = .70;
 DEFAULT_PARAMS.mathPoolEntryTier1Mul = .2;
 DEFAULT_PARAMS.mathPoolEntryTier1Weight = 10;
 DEFAULT_PARAMS.mathPoolEntryTier2Mul = .5;
@@ -492,7 +492,7 @@ DEFAULT_PARAMS.mathPoolSeedBetUnits = 0;
 DEFAULT_PARAMS.mathPoolMaxPayoutMul = 500;
 DEFAULT_PARAMS.mathPoolTemporaryDeficitEnabled = 1;
 DEFAULT_PARAMS.mathCarryShapeEnabled = 1;
-DEFAULT_PARAMS.mathCarryAnchorChance = .60;
+DEFAULT_PARAMS.mathCarryAnchorChance = .72;
 DEFAULT_PARAMS.mathCarryMinReturn = 1;
 DEFAULT_PARAMS.mathPoolBaseOutcomeCapMul = 1.2;
 DEFAULT_PARAMS.mathPoolDeepOutcomeCapMul = 500;
@@ -506,7 +506,7 @@ DEFAULT_PARAMS.mathPoolDeepReleaseRate = .15;
 DEFAULT_PARAMS.mathPoolDepthRampWaves = 8;
 DEFAULT_PARAMS.mathPoolBossReleaseRate = 1;
 DEFAULT_PARAMS.mathPoolFirstBossReleaseRate = .45;
-DEFAULT_PARAMS.mathPoolLaterBossReleaseRate = .95;
+DEFAULT_PARAMS.mathPoolLaterBossReleaseRate = 1;
 DEFAULT_PARAMS.mathPoolReleaseCapMul = 500;
 DEFAULT_PARAMS.mathPoolMeaningfulWinTriggerMul = .75;
 DEFAULT_PARAMS.mathPoolMeaningfulWinFloorMul = 1.5;
@@ -762,7 +762,7 @@ PARAM_GROUPS.unshift([
   "economy-group",
   [
     ["mathCarryShapeEnabled", "啟用等期望重排", "0/1", 0, 1, 1, "先算出原水池可配置平均彩金，再重排成倍率維持、上升與下降；不增加平均RTP。"],
-    ["mathCarryAnchorChance", "維持原倍率機率", "通關分支比例", .05, .95, .01, "符合門檻時，通關後落在進場前回收倍率附近的基礎機率；其餘機率依公平平均自動形成上升或下降。"],
+    ["mathCarryAnchorChance", "維持原倍率機率", "通關分支比例", .05, .95, .01, "回收倍率達門檻後，下一波通關時維持原倍率的機率；因總BET增加，倍率持平時實際獲利仍會增加，其餘結果依公平平均形成上升或下降。"],
     ["mathCarryMinReturn", "啟用回收倍率門檻", "總回收 / 總BET", 0, 10, .05, "進場前回收倍率達到此值才做倍率重排；預設1x，前期仍可能直接贏到高倍。"],
     ["mathPoolTemporaryDeficitEnabled", "允許重排暫時責任", "0/1", 0, 1, 1, "只為支付同一平均值內的上升分支建立暫時責任；下降分支與後續入水回收，長期配置RTP不變。"],
   ],
@@ -2019,6 +2019,14 @@ function migrateBossParams(input={}) {
       "mathPoolLaterBossReleaseRate",
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 206;
+  }
+  if ((Number(input.balanceRevision) || 0) < 208) {
+    [
+      "mathCarryAnchorChance",
+      "mathPostBossIncrementBossShare",
+      "mathPoolLaterBossReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 208;
   }
   return next;
 }

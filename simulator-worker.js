@@ -102,7 +102,7 @@ function installHeadlessDom() {
 }
 
 installHeadlessDom();
-importScripts("simulator-core.js?v=postboss-reserve206", "game.js?v=postboss-reserve206");
+importScripts("simulator-core.js?v=deep-carry208", "game.js?v=deep-carry208");
 
 const engine = self.__tdHeadless;
 if (!engine?.ready) throw new Error("Worker 戰鬥引擎載入失敗");
