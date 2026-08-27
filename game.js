@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "postboss-reserve206";
+const BUILD_VERSION = "score-display207";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -3254,6 +3254,23 @@ function payout() {
   return certifiedMathEnabled()
     ? Math.max(0, Math.round(state.certifiedPayout || 0))
     : Math.round(state.pot * (1 + state.bossAdd));
+}
+
+function scoreDisplaySnapshot() {
+  const multiplier = Math.max(.1, Number(state.bossRoll?.value) || 1 + state.bossAdd);
+  const total = state.bossRoll
+    ? Math.max(0, Math.round(state.pot * multiplier))
+    : payout();
+  const exactPot = total / multiplier;
+  let potText = exactPot.toFixed(4);
+  for (let decimals=0; decimals<=4; decimals+=1) {
+    const candidate = exactPot.toFixed(decimals);
+    if (Math.round(Number(candidate) * multiplier) === total) {
+      potText = candidate;
+      break;
+    }
+  }
+  return { multiplier, total, potText };
 }
 
 function mathUniform(wave, lane) {
@@ -8165,10 +8182,11 @@ function updateUi() {
   if (HEADLESS_SIM) return;
   const maxHp = Math.max(1, Math.round(params.baseHp));
   const hpPct = clamp(state.hp / maxHp, 0, 1);
+  const scoreDisplay = scoreDisplaySnapshot();
   ui.wallet.textContent = Math.floor(state.wallet);
   ui.entryWallet.textContent = Math.floor(state.wallet);
-  ui.pot.textContent = Math.floor(state.pot);
-  ui.payout.textContent = payout();
+  ui.pot.textContent = scoreDisplay.potText;
+  ui.payout.textContent = scoreDisplay.total;
   ui.wave.textContent = state.wave;
   ui.hp.textContent = `HP ${Math.ceil(state.hp)} / ${maxHp}`;
   ui.hpFill.style.width = `${Math.round(hpPct * 100)}%`;
@@ -8191,7 +8209,7 @@ function updateUi() {
   ui.waveChip.classList.toggle("boss-risk", bossDanger > 0);
   [1,2,3].forEach(level => ui.waveChip.classList.toggle(`danger-${level}`, bossDanger === level));
   updateAttributeIndicators(bossDanger);
-  const rollingMult = state.bossRoll ? state.bossRoll.value : null;
+  const rollingMult = state.bossRoll ? scoreDisplay.multiplier : null;
   ui.bossMult.textContent = rollingMult
     ? `x${rollingMult.toFixed(1)}`
     : state.bossSeen
@@ -8201,7 +8219,7 @@ function updateUi() {
   ui.bossMult.classList.toggle("rolling", !!state.bossRoll);
   ui.bossMult.classList.toggle("rolling-high", state.bossRoll?.tier === "high");
   ui.bossMult.classList.toggle("rolling-jackpot", state.bossRoll?.tier === "jackpot");
-  ui.collectText.textContent = payout();
+  ui.collectText.textContent = scoreDisplay.total;
   const waveCleared = state.started && state.wave > 0 && !state.over && !state.choicesOpen && !state.waveActive && !state.monsters.length && !state.spawn && !state.bossRoll;
   ui.message.textContent = state.choicesOpen
       ? "請選擇一個項目。"
@@ -8217,7 +8235,7 @@ function updateUi() {
   ui.waveDecision.classList.toggle("boss-risk", waveCleared && bossDanger > 0);
   [1,2,3].forEach(level => ui.waveDecision.classList.toggle(`danger-${level}`, waveCleared && bossDanger === level));
   ui.decisionWave.textContent = `第 ${state.wave} 波完成`;
-  ui.decisionPayout.textContent = payout();
+  ui.decisionPayout.textContent = scoreDisplay.total;
   ui.decisionDanger.classList.toggle("hidden", bossDanger <= 0);
   ui.decisionDanger.textContent = "!".repeat(Math.max(1, bossDanger));
   ui.decisionDanger.setAttribute?.("aria-label", `危險程度 ${bossDanger}`);
