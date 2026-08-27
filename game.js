@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-clear213";
+const BUILD_VERSION = "encounter-visual214";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
@@ -4312,10 +4312,6 @@ function encounterImageHtml(choice) {
   return Array.from({ length:count }, (_, index) => `<img src="${src}" alt="" style="--unit-index:${index};--unit-count:${count}">`).join("");
 }
 
-function encounterPips(count, className) {
-  return Array.from({ length:count }, () => `<i class="${className}"></i>`).join("");
-}
-
 function encounterMatchupLabel(choice) {
   const attribute = choice.matchup?.attributeState === "good" ? "屬性有利" : choice.matchup?.attributeState === "bad" ? "屬性不利" : "屬性均衡";
   const role = choice.matchup?.roleState === "good" ? "陣型有利" : choice.matchup?.roleState === "bad" ? "陣型不利" : "陣型均衡";
@@ -4333,26 +4329,21 @@ function renderEncounterDraft(choices, boss) {
     const display = ATTRIBUTE_DISPLAY[choice.attr] || ATTRIBUTE_DISPLAY.neutral;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} attr-${choice.attr} matchup-${choice.matchup?.attributeState || "even"}${choice.boss ? " boss-card" : ""}`;
+    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} formation-${choice.formation} attr-${choice.attr} matchup-${choice.matchup?.attributeState || "even"}${choice.boss ? " boss-card" : ""}`;
     button.style.setProperty("--encounter-color", display.color);
     button.style.setProperty("--deal-index", index);
     const cardName = choice.boss ? `${display.label}屬 BOSS` : `${display.label}屬 ${choice.formationLabel}`;
     const formationHint = choice.boss ? choice.art?.name || ENCOUNTER_FORMATION_HINTS.boss : ENCOUNTER_FORMATION_HINTS[choice.formation] || choice.art?.name || "敵軍來襲";
     button.innerHTML = `
+      <span class="encounter-danger-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
       <span class="encounter-emblem" aria-hidden="true">
         <span class="encounter-art">${encounterImageHtml(choice)}</span>
         <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
       </span>
-      <span class="encounter-copy">
-        <span class="encounter-name">${cardName}</span>
-        <span class="encounter-sub">${formationHint}</span>
-      </span>
-      <span class="encounter-readout" aria-hidden="true">
-        <span class="encounter-metric danger-metric"><small>危險</small><span class="encounter-threat">${encounterPips(choice.threat, "threat-mark")}</span></span>
-        <span class="encounter-metric reward-metric"><small>獎勵</small><span class="encounter-bounty">${encounterPips(choice.reward, "reward-core")}</span></span>
+      <span class="encounter-loot" aria-hidden="true">
+        <span class="loot-core"><i class="loot-gem"></i><i class="loot-wing loot-wing-left"></i><i class="loot-wing loot-wing-right"></i></span>
       </span>`;
-    button.setAttribute("aria-label", `${display.label}屬性 ${choice.formationLabel}，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}，${encounterMatchupLabel(choice)}`);
-    button.title = encounterMatchupLabel(choice);
+    button.setAttribute("aria-label", `${cardName}，${formationHint}，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}，${encounterMatchupLabel(choice)}`);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
     ui.encounterList.appendChild(button);
   });
