@@ -436,10 +436,10 @@ bossFirstMinWave:1,bossFirstChance:8,bossFirstChanceInc:12,bossFirstChanceCap:68
   modelBossKillRate:.70,modelClearRate10:.63,modelClearRate20:.18,modelClearRate30:.06,
   upgradeDamage40:1.4,upgradeDamage35:1.35,upgradeDamage30:1.3,upgradeRate25:1.25,upgradeRate20:1.2,upgradeRange25:1.25,upgradeDuration50:1.5,upgradeDotDamage100:2,upgradeExtraChain:3,upgradePathDamage:50,upgradeVulnerable15:.15,upgradeSlow25:.25,
 };
-DEFAULT_PARAMS.balanceRevision = 208;
+DEFAULT_PARAMS.balanceRevision = 210;
 DEFAULT_PARAMS.mathGeneralRtpShare = .52;
 DEFAULT_PARAMS.mathBossRtpShare = .43;
-DEFAULT_PARAMS.mathPostBossIncrementBossShare = .70;
+DEFAULT_PARAMS.mathPostBossIncrementBossShare = .90;
 DEFAULT_PARAMS.mathPoolEntryTier1Mul = .2;
 DEFAULT_PARAMS.mathPoolEntryTier1Weight = 10;
 DEFAULT_PARAMS.mathPoolEntryTier2Mul = .5;
@@ -505,7 +505,7 @@ DEFAULT_PARAMS.mathPoolReleaseRate = .08;
 DEFAULT_PARAMS.mathPoolDeepReleaseRate = .15;
 DEFAULT_PARAMS.mathPoolDepthRampWaves = 8;
 DEFAULT_PARAMS.mathPoolBossReleaseRate = 1;
-DEFAULT_PARAMS.mathPoolFirstBossReleaseRate = .45;
+DEFAULT_PARAMS.mathPoolFirstBossReleaseRate = .38;
 DEFAULT_PARAMS.mathPoolLaterBossReleaseRate = 1;
 DEFAULT_PARAMS.mathPoolReleaseCapMul = 500;
 DEFAULT_PARAMS.mathPoolMeaningfulWinTriggerMul = .75;
@@ -518,8 +518,8 @@ DEFAULT_PARAMS.mathPoolWeakBossCapMul = .95;
 DEFAULT_PARAMS.mathPoolWeakBossReleaseRate = .20;
 DEFAULT_PARAMS.mathPoolHotWaveEarlyFloorMul = 1.02;
 DEFAULT_PARAMS.mathPoolHotWaveFloorMul = 6;
-DEFAULT_PARAMS.mathPoolHotWaveDeepWeight = 8;
-DEFAULT_PARAMS.mathPoolHotWaveEarlyReleaseRate = .25;
+DEFAULT_PARAMS.mathPoolHotWaveDeepWeight = 14;
+DEFAULT_PARAMS.mathPoolHotWaveEarlyReleaseRate = .30;
 DEFAULT_PARAMS.mathPoolHotWaveReleaseRate = 1;
 DEFAULT_PARAMS.mathCheckpointRepriceEnabled = 1;
 DEFAULT_PARAMS.mathCheckpointMinChance = .05;
@@ -579,9 +579,9 @@ DEFAULT_PARAMS.waveRewardHotMul = 20;
 DEFAULT_PARAMS.bossFirstHpMul = 1.23;
 DEFAULT_PARAMS.bossHpMul = 1.32;
 DEFAULT_PARAMS.bossHpPerOrdinalMul = 1.06;
-DEFAULT_PARAMS.minionHpMul = 1.30;
-DEFAULT_PARAMS.minionAtkMul = 1.34;
-DEFAULT_PARAMS.minionSpeedMul = 1.04;
+DEFAULT_PARAMS.minionHpMul = 1.44;
+DEFAULT_PARAMS.minionAtkMul = 1.50;
+DEFAULT_PARAMS.minionSpeedMul = 1.06;
 DEFAULT_PARAMS.wave1MinionAtkMul = .42;
 DEFAULT_PARAMS.bossAtkMul = .95;
 DEFAULT_PARAMS.waveAttrBiasEarly = .90;
@@ -762,8 +762,8 @@ PARAM_GROUPS.unshift([
   "economy-group",
   [
     ["mathCarryShapeEnabled", "啟用等期望重排", "0/1", 0, 1, 1, "先算出原水池可配置平均彩金，再重排成倍率維持、上升與下降；不增加平均RTP。"],
-    ["mathCarryAnchorChance", "維持原倍率機率", "通關分支比例", .05, .95, .01, "回收倍率達門檻後，下一波通關時維持原倍率的機率；因總BET增加，倍率持平時實際獲利仍會增加，其餘結果依公平平均形成上升或下降。"],
-    ["mathCarryMinReturn", "啟用回收倍率門檻", "總回收 / 總BET", 0, 10, .05, "進場前回收倍率達到此值才做倍率重排；預設1x，前期仍可能直接贏到高倍。"],
+    ["mathCarryAnchorChance", "維持總回收比機率", "通關分支比例", .05, .95, .01, "總回收比達門檻後，下一波通關時維持 Cashout ÷ 累積總BET 的機率；BOSS 顯示倍率仍會累加，總BET增加時即使總回收比持平，實際獲利金額仍會增加。"],
+    ["mathCarryMinReturn", "啟用總回收比門檻", "Cashout / 累積總BET", 0, 10, .05, "進場前總回收比達到此值才做等期望分布重排；預設1x，前期仍可能直接贏到高倍。"],
     ["mathPoolTemporaryDeficitEnabled", "允許重排暫時責任", "0/1", 0, 1, 1, "只為支付同一平均值內的上升分支建立暫時責任；下降分支與後續入水回收，長期配置RTP不變。"],
   ],
 ]);
@@ -2027,6 +2027,14 @@ function migrateBossParams(input={}) {
       "mathPoolLaterBossReleaseRate",
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 208;
+  }
+  if ((Number(input.balanceRevision) || 0) < 210) {
+    [
+      "mathPostBossIncrementBossShare", "mathPoolFirstBossReleaseRate",
+      "mathPoolHotWaveDeepWeight", "mathPoolHotWaveEarlyReleaseRate",
+      "minionHpMul", "minionAtkMul", "minionSpeedMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 210;
   }
   return next;
 }

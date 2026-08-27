@@ -337,7 +337,7 @@ function buildChaseAnalysis(rows, maxWave=30) {
     twoXStartRatio:0,twoXNextRatio:0,twoXStartBet:0,twoXNextBet:0,twoXStartPayout:0,twoXNextPayout:0,
   }));
   let hadProfit=0,had2x=0,had5x=0,diedAfterProfit=0,diedAfter2x=0,diedAfter5x=0;
-  let deepPeak2x=0,deepPeak5x=0,deepFinal2x=0,deepFinal5x=0;
+  let deepReached=0,deepTerminal=0,deepPeak2x=0,deepPeak5x=0,deepFinal2x=0,deepFinal5x=0;
   let peakReturnSum=0,peakReturnMax=0,peakWaveSum=0,lostPeakPayout=0;
   let twoXTransitions=0,twoXNextClears=0,twoXNextDeaths=0,twoXUp=0,twoXFlat=0,twoXDown=0,twoXRetained=0;
   let twoXProfitUp=0,twoXProfitFlat=0,twoXProfitDown=0;
@@ -451,6 +451,8 @@ function buildChaseAnalysis(rows, maxWave=30) {
     hadProfit += runHadProfit ? 1 : 0;
     had2x += runHad2x ? 1 : 0;
     had5x += runHad5x ? 1 : 0;
+    deepReached += records.some(record => record.wave >= 6) ? 1 : 0;
+    deepTerminal += row.wave >= 6 ? 1 : 0;
     deepPeak2x += runDeep2x ? 1 : 0;
     deepPeak5x += runDeep5x ? 1 : 0;
     deepFinal2x += row.wave >= 6 && finalReturn >= 2 ? 1 : 0;
@@ -470,8 +472,12 @@ function buildChaseAnalysis(rows, maxWave=30) {
       samples,hadProfitRate:samples?hadProfit/samples:0,had2xRate:samples?had2x/samples:0,had5xRate:samples?had5x/samples:0,
       diedAfterProfitRate:samples?diedAfterProfit/samples:0,diedAfter2xRate:samples?diedAfter2x/samples:0,diedAfter5xRate:samples?diedAfter5x/samples:0,
       profitRiskDeathRate:hadProfit?diedAfterProfit/hadProfit:0,twoXRiskDeathRate:had2x?diedAfter2x/had2x:0,
+      deepReachedCount:deepReached,deepTerminalCount:deepTerminal,
+      deepReachRate:samples?deepReached/samples:0,deepTerminalRate:samples?deepTerminal/samples:0,
       deepPeak2xRate:samples?deepPeak2x/samples:0,deepPeak5xRate:samples?deepPeak5x/samples:0,
       deepFinal2xRate:samples?deepFinal2x/samples:0,deepFinal5xRate:samples?deepFinal5x/samples:0,
+      deepPeak2xConditionalRate:deepReached?deepPeak2x/deepReached:0,deepPeak5xConditionalRate:deepReached?deepPeak5x/deepReached:0,
+      deepFinal2xConditionalRate:deepTerminal?deepFinal2x/deepTerminal:0,deepFinal5xConditionalRate:deepTerminal?deepFinal5x/deepTerminal:0,
       avgPeakReturn:samples?peakReturnSum/samples:0,peakReturnMax,avgPeakWave:samples?peakWaveSum/samples:0,lostPeakPayout,
       twoXTransitionCount:twoXTransitions,
       twoXNextClearCount:twoXNextClears,twoXNextDeathCount:twoXNextDeaths,
@@ -556,6 +562,14 @@ function mergeChaseReports(reports, samples) {
     peakReturnMax:reports.reduce((max,report)=>Math.max(max,Number(report.chase?.summary?.peakReturnMax)||0),0),
     lostPeakPayout:reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.lostPeakPayout)||0),0),
   };
+  summary.deepReachedCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.deepReachedCount)||0),0);
+  summary.deepTerminalCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.deepTerminalCount)||0),0);
+  summary.deepReachRate = samples ? summary.deepReachedCount/samples : 0;
+  summary.deepTerminalRate = samples ? summary.deepTerminalCount/samples : 0;
+  summary.deepPeak2xConditionalRate = summary.deepReachedCount ? summary.deepPeak2xRate*samples/summary.deepReachedCount : 0;
+  summary.deepPeak5xConditionalRate = summary.deepReachedCount ? summary.deepPeak5xRate*samples/summary.deepReachedCount : 0;
+  summary.deepFinal2xConditionalRate = summary.deepTerminalCount ? summary.deepFinal2xRate*samples/summary.deepTerminalCount : 0;
+  summary.deepFinal5xConditionalRate = summary.deepTerminalCount ? summary.deepFinal5xRate*samples/summary.deepTerminalCount : 0;
   summary.profitRiskDeathRate = summary.hadProfitRate ? summary.diedAfterProfitRate/summary.hadProfitRate : 0;
   summary.twoXRiskDeathRate = summary.had2xRate ? summary.diedAfter2xRate/summary.had2xRate : 0;
   summary.twoXTransitionCount = reports.reduce((sum,report)=>sum+(Number(report.chase?.summary?.twoXTransitionCount)||0),0);
@@ -734,6 +748,7 @@ function buildReport(results, config, paramRecord, startedAt, elapsedMs, request
     survivorAvgHpPct:item.clears ? item.hp/(item.clears*baseHp) : 0,
     avgHpPct:item.samples ? item.hp/(item.samples*baseHp) : 0,
     avgPot:item.clears ? item.pot/item.clears : 0,
+    avgPotMultiplier:item.pot ? item.checkpointPayout/item.pot : 0,
     avgTotalBet:item.samples ? item.totalBet/item.samples : 0,
     checkpointRtp:item.totalBet ? item.checkpointPayout/item.totalBet : 0,
     cashoutCi95,
@@ -928,7 +943,7 @@ function runWorkerPool(config, params, strategySet, requestedWorkers, onProgress
     activeWorkers = localWorkers;
     activeParallelCancel = () => finish(true);
     buckets.forEach(bucket => {
-    const worker = new Worker("simulator-worker.js?headless=1&v=score-state-sync209");
+    const worker = new Worker("simulator-worker.js?headless=1&v=deep-chase-minion210");
       localWorkers.push(worker);
       worker.onmessage = event => {
         if (settled) return;
@@ -1147,7 +1162,7 @@ function mergeFormalReports(reports, returns, config, paramRecord, startedAt, el
     cumulativeSurvival:item.samples ? item.clears/item.samples : 0,avgHp:item.clears ? item.hp/item.clears : 0,
     survivorAvgHpPct:item.clears ? item.hp/(item.clears*baseHp) : 0,
     avgHpPct:item.samples ? item.hp/(item.samples*baseHp) : 0,
-    avgPot:item.clears ? item.pot/item.clears : 0,avgTotalBet:item.samples ? item.totalBet/item.samples : 0,
+    avgPot:item.clears ? item.pot/item.clears : 0,avgPotMultiplier:item.pot ? item.checkpointPayout/item.pot : 0,avgTotalBet:item.samples ? item.totalBet/item.samples : 0,
     checkpointRtp:item.totalBet ? item.checkpointPayout/item.totalBet : 0,
     cashoutCi95:item.samples && averageCashoutBet ? 1.96*Math.sqrt(residualVariance/item.samples)/averageCashoutBet : 0,
     baseRtp:item.totalBet ? item.basePayout/item.totalBet : 0,bossRtp:item.totalBet ? item.bossPayout/item.totalBet : 0,
@@ -1415,7 +1430,9 @@ function renderReport(report) {
     ["2x+ 大獎率",pct(s.win2xRate || 0,3),`5x+ ${pct(s.win5xRate || 0,3)}｜10x+ ${pct(s.win10xRate || 0,3)}`],
     ["20x+ 高倍率",pct(s.win20xRate || 0,4),`50x+ ${pct(s.win50xRate || 0,4)}｜單局最大 ${mult(s.max || 0,2)}`],
     ["曾持有帳面 2x+",pct(chase.had2xRate || 0,2),`曾持有 5x+ ${pct(chase.had5xRate || 0,2)}｜最高帳面 ${mult(chase.peakReturnMax || 0,2)}`],
-    ["深追後才達 2x+",pct(chase.deepPeak2xRate || 0,2),`第 6 波後曾達 5x+ ${pct(chase.deepPeak5xRate || 0,2)}`],
+    ["進入深追樣本",pct(chase.deepReachRate || 0,2),`完成第 6 波並有可 Collect 帳面；終局在第 6 波後 ${pct(chase.deepTerminalRate || 0,2)}`],
+    ["深追玩家曾達 2x+",pct(chase.deepPeak2xConditionalRate || 0,2),`以進入深追者為分母｜5x+ ${pct(chase.deepPeak5xConditionalRate || 0,2)}`],
+    ["深追終局實領 2x+",pct(chase.deepFinal2xConditionalRate || 0,2),`以第 6 波後終局者為分母｜5x+ ${pct(chase.deepFinal5xConditionalRate || 0,2)}`],
     ["帶著 2x 續追後死亡",pct(chase.twoXRiskDeathRate || 0,2),`所有曾達 2x 的玩家中，最後因續追死亡的比例`],
     ["平均最高帳面倍率",mult(chase.avgPeakReturn || 0,2),`平均在第 ${number(chase.avgPeakWave || 0,1)} 波達到最高帳面`],
     ["歸零率",pct(s.zeroRate,1),"未 Collect 且賠付為 0"],
@@ -1437,7 +1454,7 @@ function renderReport(report) {
   ui.waveBody.innerHTML = report.waves.map(row => `<tr>
     <td>第 ${row.wave} 波</td><td>${row.samples}</td><td>${row.entrants}</td><td>${row.clears}</td>
     <td class="bar-cell"><div class="bar-track"><span style="width:${clamp(row.conditionalSurvival*100,0,100)}%"></span><b>${pct(row.conditionalSurvival,1)}</b></div></td>
-    <td>${pct(row.cumulativeSurvival,1)}</td><td>${pct(row.profitRate || 0,1)}</td><td>${pct(row.survivorProfitRate || 0,1)}</td><td>${pct(row.return2xRate || 0,1)}</td><td>${pct(row.return5xRate || 0,1)}</td><td>${number(row.returnMax || 0,2)}x</td><td>${number(row.avgHp,0)}</td><td>${pct(waveBaseHpPct(report,row),1)}</td><td>${number(row.avgPot,1)}</td><td>${number(row.avgTotalBet,1)}</td><td>${pct(row.baseRtp || 0,2)}</td><td>${pct(row.bossRtp || 0,2)}</td><td>${pct(row.checkpointRtp,2)}</td><td>${pct(Math.max(0,row.checkpointRtp-row.cashoutCi95),2)} ～ ${pct(row.checkpointRtp+row.cashoutCi95,2)}</td><td>${pct(row.bossRate,1)}</td>
+    <td>${pct(row.cumulativeSurvival,1)}</td><td>${pct(row.profitRate || 0,1)}</td><td>${pct(row.survivorProfitRate || 0,1)}</td><td>${pct(row.return2xRate || 0,1)}</td><td>${pct(row.return5xRate || 0,1)}</td><td>${number(row.returnMax || 0,2)}x</td><td>${number(row.avgHp,0)}</td><td>${pct(waveBaseHpPct(report,row),1)}</td><td>${number(row.avgPot,1)}</td><td>${number(row.avgPotMultiplier || 0,2)}x</td><td>${number(row.avgTotalBet,1)}</td><td>${pct(row.baseRtp || 0,2)}</td><td>${pct(row.bossRtp || 0,2)}</td><td>${pct(row.checkpointRtp,2)}</td><td>${pct(Math.max(0,row.checkpointRtp-row.cashoutCi95),2)} ～ ${pct(row.checkpointRtp+row.cashoutCi95,2)}</td><td>${pct(row.bossRate,1)}</td>
   </tr>`).join("");
   ui.chaseWaveBody.innerHTML = (report.chase?.waves || []).map(row => `<tr>
     <td>第 ${row.wave} 波</td><td>${Math.round(row.clears || 0).toLocaleString()}</td><td>${pct(row.checkpointRtp || 0,2)}</td>
@@ -1513,7 +1530,9 @@ function reportSections(report) {
       ["成功結算率",sheetPercent(s.collectedRate,1),"Collect 或 30 波通關"],["30 波通關率",sheetPercent(s.completed30Rate,1),"完成第 30 波"],
       ["平均到達波次",sheetNumber(s.avgWave,1),"所有樣本平均"],["波動 VI",sheetNumber(s.volatility,3),"每場回收倍數標準差"],
       ["曾持有帳面 2x+",sheetPercent(chase.had2xRate || 0,2),`曾持有 5x+ ${sheetPercent(chase.had5xRate || 0,2)}`],
-      ["深追後才達 2x+",sheetPercent(chase.deepPeak2xRate || 0,2),`第 6 波後曾達 5x+ ${sheetPercent(chase.deepPeak5xRate || 0,2)}`],
+      ["進入深追樣本",sheetPercent(chase.deepReachRate || 0,2),`完成第 6 波並有可 Collect 帳面；終局在第 6 波後 ${sheetPercent(chase.deepTerminalRate || 0,2)}`],
+      ["深追玩家曾達 2x+",sheetPercent(chase.deepPeak2xConditionalRate || 0,2),`以進入深追者為分母｜5x+ ${sheetPercent(chase.deepPeak5xConditionalRate || 0,2)}`],
+      ["深追終局實領 2x+",sheetPercent(chase.deepFinal2xConditionalRate || 0,2),`以第 6 波後終局者為分母｜5x+ ${sheetPercent(chase.deepFinal5xConditionalRate || 0,2)}`],
       ["帶著 2x 續追後死亡",sheetPercent(chase.twoXRiskDeathRate || 0,2),"所有曾達 2x 的玩家中，最後因續追死亡的比例"],
       ["平均最高帳面倍率",`${sheetNumber(chase.avgPeakReturn || 0,2)}x`,`平均在第 ${sheetNumber(chase.avgPeakWave || 0,1)} 波達到峰值`],
     ]},
@@ -1532,23 +1551,26 @@ function reportSections(report) {
     ]},
     {id:"strategies",title:"策略比較",headers:["策略","樣本","Cash Out RTP","配置 RTP","期末責任","95% 區間","平均波次","一般通過率","一般預估","一般強度","BOSS 擊殺率","BOSS 預估","BOSS 強度","VI"],rows:strategyRows},
     {id:"distribution",title:"賠付分布",headers:["P50","P75","P90","P95","P99","最高"],rows:[[sheetNumber(s.p50,2),sheetNumber(s.p75,2),sheetNumber(s.p90,2),sheetNumber(s.p95,2),sheetNumber(s.p99,2),sheetNumber(s.max,2)]]},
-    {id:"waves",title:depth.applicable===false?"真人 Collect 行為切片（不作固定波 RTP 驗證）":"固定於第 N 波 Collect 的長期 RTP（Crash 報表）",headers:["波次","全部樣本","進入波次","成功 Collect","條件通過率",depth.applicable===false?"該條件樣本成功率":"固定收手成功率","獲利局率（含死亡）","存活獲利率","2x+","5x+","最大倍數","存活者平均 HP","基地 HP%（含死亡）","平均 POT","平均已付 BET","一般波 RTP","BOSS RTP",depth.applicable===false?"條件樣本回收率（非固定波 RTP）":"固定收手 RTP","95% 區間","BOSS 波比例"],rows:report.waves.map(row=>[
-      `第 ${row.wave} 波`,row.samples,row.entrants,row.clears,sheetPercent(row.conditionalSurvival,1),sheetPercent(row.cumulativeSurvival,1),sheetPercent(row.profitRate || 0,1),sheetPercent(row.survivorProfitRate || 0,1),sheetPercent(row.return2xRate || 0,1),sheetPercent(row.return5xRate || 0,1),`${sheetNumber(row.returnMax || 0,2)}x`,sheetNumber(row.avgHp,0),sheetPercent(waveBaseHpPct(report,row),1),sheetNumber(row.avgPot,1),sheetNumber(row.avgTotalBet,1),sheetPercent(row.baseRtp || 0,2),sheetPercent(row.bossRtp || 0,2),sheetPercent(row.checkpointRtp,2),`${sheetPercent(Math.max(0,row.checkpointRtp-row.cashoutCi95),2)} ～ ${sheetPercent(row.checkpointRtp+row.cashoutCi95,2)}`,sheetPercent(row.bossRate,1),
+    {id:"waves",title:depth.applicable===false?"真人 Collect 行為切片（不作固定波 RTP 驗證）":"固定於第 N 波 Collect 的長期 RTP（Crash 報表）",headers:["波次","全部樣本","進入波次","成功 Collect","條件通過率",depth.applicable===false?"該條件樣本成功率":"固定收手成功率","獲利局率（含死亡）","存活獲利率","2x+","5x+","最大倍數","存活者平均 HP","基地 HP%（含死亡）","平均 POT","POT 加權平均倍率","平均已付 BET","一般波 RTP","BOSS RTP",depth.applicable===false?"條件樣本回收率（非固定波 RTP）":"固定收手 RTP","95% 區間","BOSS 波比例"],rows:report.waves.map(row=>[
+      `第 ${row.wave} 波`,row.samples,row.entrants,row.clears,sheetPercent(row.conditionalSurvival,1),sheetPercent(row.cumulativeSurvival,1),sheetPercent(row.profitRate || 0,1),sheetPercent(row.survivorProfitRate || 0,1),sheetPercent(row.return2xRate || 0,1),sheetPercent(row.return5xRate || 0,1),`${sheetNumber(row.returnMax || 0,2)}x`,sheetNumber(row.avgHp,0),sheetPercent(waveBaseHpPct(report,row),1),sheetNumber(row.avgPot,1),`${sheetNumber(row.avgPotMultiplier || 0,2)}x`,sheetNumber(row.avgTotalBet,1),sheetPercent(row.baseRtp || 0,2),sheetPercent(row.bossRtp || 0,2),sheetPercent(row.checkpointRtp,2),`${sheetPercent(Math.max(0,row.checkpointRtp-row.cashoutCi95),2)} ～ ${sheetPercent(row.checkpointRtp+row.cashoutCi95,2)}`,sheetPercent(row.bossRate,1),
     ])},
     {id:"chaseSummary",title:"POT 深追風險摘要",headers:["指標","結果","說明"],rows:[
       ["曾經帳面獲利",sheetPercent(chase.hadProfitRate || 0,2),"任一清場節點的可 Collect 金額高於累計 BET"],
       ["曾經帳面 2x+",sheetPercent(chase.had2xRate || 0,2),`其中最後死亡 ${sheetPercent(chase.twoXRiskDeathRate || 0,2)}`],
       ["曾經帳面 5x+",sheetPercent(chase.had5xRate || 0,2),`最後死亡占全部樣本 ${sheetPercent(chase.diedAfter5xRate || 0,2)}`],
-      ["第 6 波後曾達 2x+",sheetPercent(chase.deepPeak2xRate || 0,2),`最後實領 2x+ ${sheetPercent(chase.deepFinal2xRate || 0,2)}`],
-      ["第 6 波後曾達 5x+",sheetPercent(chase.deepPeak5xRate || 0,2),`最後實領 5x+ ${sheetPercent(chase.deepFinal5xRate || 0,2)}`],
+      ["進入深追樣本",sheetPercent(chase.deepReachRate || 0,2),`終局在第 6 波後 ${sheetPercent(chase.deepTerminalRate || 0,2)}`],
+      ["深追玩家曾達 2x+",sheetPercent(chase.deepPeak2xConditionalRate || 0,2),`以進入深追者為分母｜占全部樣本 ${sheetPercent(chase.deepPeak2xRate || 0,2)}`],
+      ["深追玩家曾達 5x+",sheetPercent(chase.deepPeak5xConditionalRate || 0,2),`以進入深追者為分母｜占全部樣本 ${sheetPercent(chase.deepPeak5xRate || 0,2)}`],
+      ["深追終局實領 2x+",sheetPercent(chase.deepFinal2xConditionalRate || 0,2),`以第 6 波後終局者為分母｜占全部樣本 ${sheetPercent(chase.deepFinal2xRate || 0,2)}`],
+      ["深追終局實領 5x+",sheetPercent(chase.deepFinal5xConditionalRate || 0,2),`以第 6 波後終局者為分母｜占全部樣本 ${sheetPercent(chase.deepFinal5xRate || 0,2)}`],
       ["2x 深追下一波",`${chase.twoXTransitionCount || 0} 次`, `通過 ${sheetPercent(chase.twoXNextClearRate || 0,1)}｜死亡 ${sheetPercent(chase.twoXNextDeathRate || 0,1)}`],
-      ["2x 深追倍率走向",`同區間 ${sheetPercent(chase.twoXFlatRate || 0,1)}`,`上升>15% ${sheetPercent(chase.twoXUpRate || 0,1)}｜下降>15% ${sheetPercent(chase.twoXDownRate || 0,1)}｜仍≥2x ${sheetPercent(chase.twoXRetainRate || 0,1)}`],
+      ["2x 後總回收比走向",`同區間 ${sheetPercent(chase.twoXFlatRate || 0,1)}`,`Cashout ÷ 累積總BET：上升>15% ${sheetPercent(chase.twoXUpRate || 0,1)}｜下降>15% ${sheetPercent(chase.twoXDownRate || 0,1)}｜仍≥2x ${sheetPercent(chase.twoXRetainRate || 0,1)}；BOSS 顯示倍率另行累加`],
       ["2x 深追實際淨利",`增加 ${sheetPercent(chase.twoXProfitUpRate || 0,1)}`,`持平 ${sheetPercent(chase.twoXProfitFlatRate || 0,1)}｜減少 ${sheetPercent(chase.twoXProfitDownRate || 0,1)}`],
       ["2x 深追平均狀態",`${sheetNumber(chase.twoXAvgStartRatio || 0,2)}x → ${sheetNumber(chase.twoXAvgNextRatio || 0,2)}x`,`平均淨利 ${sheetNumber(chase.twoXAvgStartProfit || 0,0)} → ${sheetNumber(chase.twoXAvgNextProfit || 0,0)}`],
       ["第6波已2x的最終結果",`${chase.wave6TwoXCount || 0} 局`,`繼續 ${sheetPercent(chase.wave6ContinueRate || 0,1)}｜最終死亡 ${sheetPercent(chase.wave6FinalDeathRate || 0,1)}｜最終仍≥2x ${sheetPercent(chase.wave6Final2xRate || 0,1)}`],
       ["平均最高帳面倍率",`${sheetNumber(chase.avgPeakReturn || 0,2)}x`,`平均峰值波次 ${sheetNumber(chase.avgPeakWave || 0,1)}｜最高 ${sheetNumber(chase.peakReturnMax || 0,2)}x`],
     ]},
-    {id:"chaseWaves",title:"逐波 POT 深追風險",headers:["波次","清場檢查點","帳面 RTP","帳面獲利","帳面 2x+","帳面 5x+","獲利後繼續","2x 後繼續","續追後死亡","2x 續追後死亡","2x轉移樣本","下一波死亡","倍率上升>15%","倍率同區間","倍率下降>15%","仍≥2x","淨利增加","淨利持平","淨利減少","平均倍率變化","平均淨利變化","該波最高"],rows:(report.chase?.waves || []).map(row=>[
+    {id:"chaseWaves",title:"逐波 POT 深追風險",headers:["波次","清場檢查點","帳面 RTP","帳面獲利","帳面 2x+","帳面 5x+","獲利後繼續","2x 後繼續","續追後死亡","2x 續追後死亡","2x轉移樣本","下一波死亡","總回收比上升>15%","總回收比同區間","總回收比下降>15%","仍≥2x","淨利增加","淨利持平","淨利減少","平均總回收比變化","平均淨利變化","該波最高"],rows:(report.chase?.waves || []).map(row=>[
       `第 ${row.wave} 波`,row.clears,sheetPercent(row.checkpointRtp || 0,2),sheetPercent(row.profitStateRate || 0,1),sheetPercent(row.x2StateRate || 0,1),sheetPercent(row.x5StateRate || 0,1),sheetPercent(row.continueAfterProfitRate || 0,1),sheetPercent(row.continueAfter2xRate || 0,1),sheetPercent(row.deathAfterProfitRiskRate || 0,1),sheetPercent(row.deathAfter2xRiskRate || 0,1),row.twoXTransitions || 0,sheetPercent(row.twoXNextDeathRate || 0,1),sheetPercent(row.twoXUpRate || 0,1),sheetPercent(row.twoXFlatRate || 0,1),sheetPercent(row.twoXDownRate || 0,1),sheetPercent(row.twoXRetainRate || 0,1),sheetPercent(row.twoXProfitUpRate || 0,1),sheetPercent(row.twoXProfitFlatRate || 0,1),sheetPercent(row.twoXProfitDownRate || 0,1),`${sheetNumber(row.twoXAvgStartRatio || 0,2)}x → ${sheetNumber(row.twoXAvgNextRatio || 0,2)}x`,`${sheetNumber(row.twoXAvgStartProfit || 0,0)} → ${sheetNumber(row.twoXAvgNextProfit || 0,0)}`,`${sheetNumber(row.checkpointMax || 0,2)}x`,
     ])},
     {id:"bosses",title:"逐隻 BOSS 分析",headers:["BOSS 順序","遭遇次數","到達率","擊殺數","擊殺率","模型預估","平均出現波次","平均增加倍率","RTP 貢獻"],rows:report.bosses.length?report.bosses.map(row=>[

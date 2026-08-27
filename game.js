@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "score-state-sync209";
+const BUILD_VERSION = "deep-chase-minion210";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -1167,13 +1167,13 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 208,
+  balanceRevision: 210,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
   mathGeneralRtpShare: .52,
   mathBossRtpShare: .43,
-  mathPostBossIncrementBossShare: .70,
+  mathPostBossIncrementBossShare: .90,
   mathPoolEntryTier1Mul: .2,
   mathPoolEntryTier1Weight: 10,
   mathPoolEntryTier2Mul: .5,
@@ -1203,7 +1203,7 @@ const DEFAULT_PARAMS = {
   mathPoolDeepReleaseRate: .15,
   mathPoolDepthRampWaves: 8,
   mathPoolBossReleaseRate: 1,
-  mathPoolFirstBossReleaseRate: .45,
+  mathPoolFirstBossReleaseRate: .38,
   mathPoolLaterBossReleaseRate: 1,
   mathPoolReleaseCapMul: 500,
   mathPoolMeaningfulWinTriggerMul: .75,
@@ -1216,8 +1216,8 @@ const DEFAULT_PARAMS = {
   mathPoolWeakBossReleaseRate: .20,
   mathPoolHotWaveEarlyFloorMul: 1.02,
   mathPoolHotWaveFloorMul: 6,
-  mathPoolHotWaveDeepWeight: 8,
-  mathPoolHotWaveEarlyReleaseRate: .25,
+  mathPoolHotWaveDeepWeight: 14,
+  mathPoolHotWaveEarlyReleaseRate: .30,
   mathPoolHotWaveReleaseRate: 1,
   mathCheckpointRepriceEnabled: 1,
   mathCheckpointMinChance: .05,
@@ -1309,9 +1309,9 @@ const DEFAULT_PARAMS = {
   bossLaterRewardMul: .80,
   bossChanceMul: 1.0,
   bossChanceCap: 55,
-  minionHpMul: 1.30,
-  minionAtkMul: 1.34,
-  minionSpeedMul: 1.04,
+  minionHpMul: 1.44,
+  minionAtkMul: 1.50,
+  minionSpeedMul: 1.06,
   wave1MinionAtkMul: .42,
   eliteHpMul: 1.0,
   eliteAtkMul: 1.0,
@@ -2748,6 +2748,14 @@ function migrateBossParams(input={}) {
       "mathPoolLaterBossReleaseRate",
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 208;
+  }
+  if ((Number(input.balanceRevision) || 0) < 210) {
+    [
+      "mathPostBossIncrementBossShare", "mathPoolFirstBossReleaseRate",
+      "mathPoolHotWaveDeepWeight", "mathPoolHotWaveEarlyReleaseRate",
+      "minionHpMul", "minionAtkMul", "minionSpeedMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 210;
   }
   return next;
 }

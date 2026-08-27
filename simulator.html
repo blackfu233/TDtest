@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>塔防 RTP 模擬工具</title>
-  <link rel="stylesheet" href="simulator.css?v=score-state-sync209">
+  <link rel="stylesheet" href="simulator.css?v=deep-chase-minion210">
 </head>
 <body>
   <main class="sim-shell">
@@ -134,7 +134,7 @@
 
     <section id="wavesTab" class="result-panel">
       <div class="section-heading"><div><h2>固定波次 Collect RTP（Crash 報表）</h2><p>同一批玩家皆從第 1 波開始；每列代表所有玩家固定在該波 Collect，途中失敗則賠付為 0。</p></div></div>
-      <div class="table-wrap"><table class="wide-table"><thead><tr><th>波次</th><th>全部樣本</th><th>進入波次</th><th>成功 Collect</th><th>條件通過率</th><th>固定收手成功率</th><th>獲利局率（含死亡）</th><th>存活獲利率</th><th>2x+</th><th>5x+</th><th>最大倍數</th><th>存活者平均 HP</th><th>基地 HP%（含死亡）</th><th>平均 POT</th><th>平均已付 BET</th><th>一般波 RTP</th><th>BOSS RTP</th><th>Cash Out RTP</th><th>95% 區間</th><th>BOSS 波比例</th></tr></thead><tbody id="waveBody"></tbody></table></div>
+      <div class="table-wrap"><table class="wide-table"><thead><tr><th>波次</th><th>全部樣本</th><th>進入波次</th><th>成功 Collect</th><th>條件通過率</th><th>固定收手成功率</th><th>獲利局率（含死亡）</th><th>存活獲利率</th><th>2x+</th><th>5x+</th><th>最大倍數</th><th>存活者平均 HP</th><th>基地 HP%（含死亡）</th><th>平均 POT</th><th>POT 加權平均倍率</th><th>平均已付 BET</th><th>一般波 RTP</th><th>BOSS RTP</th><th>Cash Out RTP</th><th>95% 區間</th><th>BOSS 波比例</th></tr></thead><tbody id="waveBody"></tbody></table></div>
       <div class="section-heading compact"><div><h3>POT 深追風險</h3><p>追蹤每波清場當下的可 Collect 帳面倍率，以及玩家帶著獲利繼續後歸零的比例。</p></div></div>
       <div class="table-wrap"><table class="wide-table"><thead><tr><th>波次</th><th>清場檢查點</th><th>帳面 RTP</th><th>帳面獲利</th><th>帳面 2x+</th><th>帳面 5x+</th><th>獲利後繼續</th><th>2x 後繼續</th><th>續追後死亡</th><th>2x 續追後死亡</th><th>該波最高</th></tr></thead><tbody id="chaseWaveBody"></tbody></table></div>
     </section>
@@ -171,9 +171,9 @@
     </section>
 
     <p id="toast" class="toast" role="status" aria-live="polite"></p>
-  <iframe id="engineFrame" class="engine-frame" src="index.html?headless=1&amp;v=score-state-sync209" title="模擬戰鬥引擎"></iframe>
+  <iframe id="engineFrame" class="engine-frame" src="index.html?headless=1&amp;v=deep-chase-minion210" title="模擬戰鬥引擎"></iframe>
   </main>
-  <script src="simulator-core.js?v=score-state-sync209"></script>
-  <script src="simulator.js?v=score-state-sync209"></script>
+  <script src="simulator-core.js?v=deep-chase-minion210"></script>
+  <script src="simulator.js?v=return-ratio-label211"></script>
 </body>
 </html>

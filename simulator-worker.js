@@ -102,7 +102,7 @@ function installHeadlessDom() {
 }
 
 installHeadlessDom();
-importScripts("simulator-core.js?v=score-state-sync209", "game.js?v=score-state-sync209");
+importScripts("simulator-core.js?v=deep-chase-minion210", "game.js?v=deep-chase-minion210");
 
 const engine = self.__tdHeadless;
 if (!engine?.ready) throw new Error("Worker 戰鬥引擎載入失敗");
