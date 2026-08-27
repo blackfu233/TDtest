@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-draft211";
+const BUILD_VERSION = "encounter-risk212";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
@@ -822,8 +822,8 @@ const ENCOUNTER_FORMATIONS = [
   { id:"elite", label:"菁英", template:"mixed", role:"single", threat:3, countMul:.52, hpMul:1.14, atkMul:1.10, speedMul:1.00, eliteCount:1, artIndex:0, marks:1 },
 ];
 
-const ENCOUNTER_REWARD_FACTORS = { 1:.76, 2:1.00, 3:1.42 };
-const ENCOUNTER_EXP_FACTORS = { 1:.82, 2:1.00, 3:1.34 };
+const ENCOUNTER_REWARD_FACTORS = { 1:.72, 2:1.00, 3:1.42, 4:2.10 };
+const ENCOUNTER_EXP_FACTORS = { 1:.82, 2:1.00, 3:1.34, 4:1.72 };
 const ENCOUNTER_ATTR_MARKS = { fire:"▲", ice:"◆", electric:"ϟ", poison:"●", neutral:"◎" };
 const ENCOUNTER_ROLE_MARKS = { area:"•••", single:"◆", control:"≫", boss:"!" };
 
@@ -4124,14 +4124,84 @@ function encounterAttributeWeights(biomeAttr, excluded=new Set()) {
 }
 
 function rollEncounterReward(threat, boss=false) {
-  let reward = threat;
-  const roll = Math.random();
-  if (roll < (boss ? .24 : .16)) reward += 1;
-  else if (roll > .90) reward -= 1;
-  reward = clamp(reward, 1, 3);
-  if (threat >= 3) reward = Math.max(2, reward);
-  if (boss) reward = Math.max(2, reward);
-  return reward;
+  const tables = boss
+    ? {
+      1:{ 2:58, 3:34, 4:8 },
+      2:{ 2:42, 3:46, 4:12 },
+      3:{ 2:20, 3:58, 4:22 },
+    }
+    : {
+      1:{ 1:68, 2:27, 3:4, 4:1 },
+      2:{ 1:12, 2:61, 3:23, 4:4 },
+      3:{ 2:24, 3:63, 4:13 },
+    };
+  return Number(pickWeighted(tables[clamp(threat, 1, 3)] || tables[2])) || 2;
+}
+
+function encounterHeroRole() {
+  if (!state.hero) return "general";
+  if (["blast", "chain", "cloud"].includes(state.hero.attackMode)) return "area";
+  if (["pierce", "burst"].includes(state.hero.attackMode)) return "single";
+  return "general";
+}
+
+function encounterAttributeReadiness(enemyAttr) {
+  const profile = enemyAttributeProfile(enemyAttr);
+  const sources = [];
+  if (state.hero) {
+    sources.push({ attr:state.hero.attrKey || "neutral", weight:1.15 + Math.min(.8, (state.hero.upgrades?.length || 0) * .1) });
+  }
+  state.towers.forEach(tower => {
+    const upgrades = tower.upgrades?.length || 0;
+    sources.push({ attr:towerAttr(tower), weight:1.25 + Math.min(1.6, upgrades * .2) });
+  });
+  if (!sources.length) return 1;
+  const totalWeight = sources.reduce((sum, source) => sum + source.weight, 0) || 1;
+  return sources.reduce((sum, source) => sum + (Number(profile[source.attr]) || 1) * source.weight, 0) / totalWeight;
+}
+
+function encounterRoleReadiness(role) {
+  const targetRole = role === "boss" ? "single" : role;
+  const investments = { single:0, area:0, control:0, general:0 };
+  if (state.hero) investments[encounterHeroRole()] += 1.15 + Math.min(.65, (state.hero.upgrades?.length || 0) * .08);
+  state.towers.forEach(tower => {
+    const towerRole = TOWER_ROLE[tower.id] || "general";
+    investments[towerRole] += 1.25 + Math.min(1.5, (tower.upgrades?.length || 0) * .2);
+  });
+  const total = Object.values(investments).reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return 1 / 3;
+  const direct = investments[targetRole] || 0;
+  const flexible = investments.general * .55;
+  return clamp((direct + flexible) / total, 0, 1);
+}
+
+function assessEncounterThreat({ formation, attr, role, wave, boss=false, difficulty=null }) {
+  const attributePower = encounterAttributeReadiness(attr);
+  const roleReadiness = encounterRoleReadiness(role);
+  const hpRatio = clamp(state.hp / Math.max(1, params.baseHp), 0, 1);
+  const pressure = (formation.countMul - 1) * .72
+    + (formation.hpMul - 1) * .72
+    + (formation.atkMul - 1) * .92
+    + (formation.speedMul - 1) * .58
+    + (formation.eliteCount || 0) * .52;
+  const attributeRisk = clamp((1 - attributePower) * 1.18, -.78, .88);
+  const roleRisk = roleReadiness >= .56 ? -.48 : roleReadiness < .18 ? .56 : (.34 - roleReadiness) * 1.35;
+  const hpRisk = hpRatio < .35 ? .62 : hpRatio < .60 ? .36 : hpRatio < .80 ? .14 : 0;
+  const difficultyRisk = boss && difficulty
+    ? (Math.max(1, Number(difficulty.hpMul) || 1) - 1) * .7 + (Math.max(1, Number(difficulty.atkMul) || 1) - 1) * .8
+    : 0;
+  const depthRisk = wave >= 16 ? .18 : wave >= 8 ? .08 : 0;
+  const score = (boss ? 2.08 : 1.78) + pressure + attributeRisk + roleRisk + hpRisk + difficultyRisk + depthRisk;
+  const tier = score >= 2.50 ? 3 : score >= 1.62 ? 2 : 1;
+  return {
+    tier,
+    score,
+    attributePower,
+    roleReadiness,
+    hpRatio,
+    attributeState:attributePower >= 1.28 ? "good" : attributePower <= .72 ? "bad" : "even",
+    roleState:roleReadiness >= .56 ? "good" : roleReadiness < .18 ? "bad" : "even",
+  };
 }
 
 function encounterArtFor(attr, formation) {
@@ -4170,8 +4240,14 @@ function buildRegularEncounterChoices(wave) {
     const attr = pickWeighted(encounterAttributeWeights(biomeAttr, usedAttributes));
     usedFormations.add(formation.id);
     usedAttributes.add(attr);
-    const lateThreatLift = wave >= 16 && formation.threat < 3 && Math.random() < .24 ? 1 : 0;
-    const threat = clamp(formation.threat + lateThreatLift, 1, 3);
+    const lateThreatLift = wave >= 16 && Math.random() < .24 ? 1 : 0;
+    const tunedFormation = {
+      ...formation,
+      hpMul:formation.hpMul * (1 + lateThreatLift * .12),
+      atkMul:formation.atkMul * (1 + lateThreatLift * .08),
+    };
+    const matchup = assessEncounterThreat({ formation:tunedFormation, attr, role:formation.role, wave });
+    const threat = matchup.tier;
     const reward = rollEncounterReward(threat);
     const art = encounterArtFor(attr, formation);
     choices.push({
@@ -4179,12 +4255,13 @@ function buildRegularEncounterChoices(wave) {
       wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
       template:formation.template, attr, threat, reward,
       countMul:formation.countMul,
-      hpMul:formation.hpMul * (1 + lateThreatLift * .12),
-      atkMul:formation.atkMul * (1 + lateThreatLift * .08),
+      hpMul:tunedFormation.hpMul,
+      atkMul:tunedFormation.atkMul,
       speedMul:formation.speedMul,
       forcedElites:formation.eliteCount,
       rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
       expMul:ENCOUNTER_EXP_FACTORS[reward],
+      matchup,
       art,
       artCount:formation.marks,
     });
@@ -4196,10 +4273,14 @@ function buildBossEncounterChoices(wave) {
   const biomeAttr = wavePrimaryAttribute(wave);
   const usedAttributes = new Set();
   const firstBoss = state.bossSeen === 0;
-  const threatPattern = shuffled(firstBoss ? [2,2,3] : [2,3,3]);
-  return threatPattern.map((threat, index) => {
+  const difficultyPattern = shuffled(firstBoss ? [2,2,3] : [2,3,3]);
+  return difficultyPattern.map((difficultySeed, index) => {
     const attr = pickWeighted(encounterAttributeWeights(biomeAttr, usedAttributes));
     usedAttributes.add(attr);
+    const bossDifficulty = bossEncounterDifficulty(difficultySeed, firstBoss);
+    const formation = { countMul:.78, hpMul:bossDifficulty.hpMul, atkMul:bossDifficulty.atkMul, speedMul:bossDifficulty.speedMul, eliteCount:0 };
+    const matchup = assessEncounterThreat({ formation, attr, role:"boss", wave, boss:true, difficulty:bossDifficulty });
+    const threat = matchup.tier;
     const reward = rollEncounterReward(threat, true);
     const art = encounterArtFor(attr, { id:"boss" });
     return {
@@ -4208,9 +4289,10 @@ function buildBossEncounterChoices(wave) {
       template:{ fire:"fast", ice:"tank", electric:"disrupt", poison:"ranged", neutral:"mixed" }[attr] || "mixed",
       attr, threat, reward, countMul:.78, hpMul:1, atkMul:1, speedMul:1,
       forcedElites:0,
-      bossDifficulty:bossEncounterDifficulty(threat, firstBoss),
+      bossDifficulty,
       rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
       expMul:ENCOUNTER_EXP_FACTORS[reward],
+      matchup,
       art,
       artCount:1,
     };
@@ -4227,6 +4309,18 @@ function encounterPips(count, className) {
   return Array.from({ length:count }, () => `<i class="${className}"></i>`).join("");
 }
 
+function encounterMatchupVisual(choice) {
+  const attributeMark = choice.matchup?.attributeState === "good" ? "▲" : choice.matchup?.attributeState === "bad" ? "▼" : "◆";
+  const roleMark = choice.matchup?.roleState === "good" ? "✓" : choice.matchup?.roleState === "bad" ? "!" : "·";
+  return `<span class="encounter-fit fit-${choice.matchup?.attributeState || "even"}" aria-hidden="true"><i>${attributeMark}</i></span><span class="encounter-fit role-${choice.matchup?.roleState || "even"}" aria-hidden="true"><i>${roleMark}</i></span>`;
+}
+
+function encounterMatchupLabel(choice) {
+  const attribute = choice.matchup?.attributeState === "good" ? "屬性有利" : choice.matchup?.attributeState === "bad" ? "屬性不利" : "屬性均衡";
+  const role = choice.matchup?.roleState === "good" ? "陣型有利" : choice.matchup?.roleState === "bad" ? "陣型不利" : "陣型均衡";
+  return `${attribute}，${role}`;
+}
+
 function renderEncounterDraft(choices, boss) {
   if (HEADLESS_SIM) return;
   stopChannelAudio();
@@ -4238,20 +4332,26 @@ function renderEncounterDraft(choices, boss) {
     const display = ATTRIBUTE_DISPLAY[choice.attr] || ATTRIBUTE_DISPLAY.neutral;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} attr-${choice.attr}${choice.boss ? " boss-card" : ""}`;
+    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} attr-${choice.attr} matchup-${choice.matchup?.attributeState || "even"}${choice.boss ? " boss-card" : ""}`;
     button.style.setProperty("--encounter-color", display.color);
     button.style.setProperty("--deal-index", index);
     button.innerHTML = `
-      <span class="encounter-card-top">
-        <span class="encounter-threat" aria-hidden="true">${encounterPips(choice.threat, "threat-mark")}</span>
-        <span class="encounter-attr" aria-hidden="true">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
+      <span class="encounter-emblem" aria-hidden="true">
+        <span class="encounter-art">${encounterImageHtml(choice)}</span>
+        <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
       </span>
-      <span class="encounter-art" aria-hidden="true">${encounterImageHtml(choice)}</span>
-      <span class="encounter-role" aria-hidden="true">${ENCOUNTER_ROLE_MARKS[choice.role] || "◆"}</span>
-      <span class="encounter-card-bottom">
-        <span class="encounter-bounty" aria-hidden="true">${encounterPips(choice.reward, "reward-core")}</span>
+      <span class="encounter-copy">
+        <span class="encounter-category"><i>${ENCOUNTER_ROLE_MARKS[choice.role] || "◆"}</i>${choice.boss ? "BOSS" : "敵軍選擇"}</span>
+        <span class="encounter-name">${choice.formationLabel}</span>
+        <span class="encounter-sub">${display.label}屬 · ${choice.art?.name || "未知敵軍"}</span>
+        <span class="encounter-matchup">${encounterMatchupVisual(choice)}</span>
+      </span>
+      <span class="encounter-readout" aria-hidden="true">
+        <span class="encounter-threat">${encounterPips(choice.threat, "threat-mark")}</span>
+        <span class="encounter-bounty">${encounterPips(choice.reward, "reward-core")}</span>
       </span>`;
-    button.setAttribute("aria-label", `${display.label}屬性 ${choice.formationLabel}，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}`);
+    button.setAttribute("aria-label", `${display.label}屬性 ${choice.formationLabel}，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}，${encounterMatchupLabel(choice)}`);
+    button.title = encounterMatchupLabel(choice);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
     ui.encounterList.appendChild(button);
   });

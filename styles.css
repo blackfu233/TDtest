@@ -1536,6 +1536,385 @@ canvas {
   .choice-list[data-layout="heroes"] .choice-emblem img { width: 82px; height: 80px; }
 }
 
+/* Encounter cards now share the upgrade draft's horizontal card language. */
+.encounter-overlay {
+  padding: 12px;
+  background: rgba(2, 3, 5, .86);
+  backdrop-filter: blur(3px);
+}
+
+.encounter-panel {
+  width: min(404px, 100%);
+  max-height: calc(100% - 12px);
+  gap: 9px;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(242, 189, 79, .42);
+  border-radius: 7px;
+  background: linear-gradient(180deg, #24262c, #101115 70%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 22px 65px rgba(0, 0, 0, .72);
+}
+
+.encounter-header {
+  min-height: 0;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 0 1px 5px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  clip-path: none;
+}
+
+.encounter-header h2 {
+  grid-column: 1;
+  grid-row: 1;
+  color: #fff4c6;
+  font: 950 22px/1.1 Arial, "Noto Sans TC", sans-serif;
+  text-align: left;
+  text-shadow: 0 0 12px rgba(242, 189, 79, .28);
+}
+
+.encounter-wave {
+  grid-column: 2;
+  grid-row: 1;
+  color: #9fb0c3;
+  font-size: 11px;
+}
+
+.encounter-scan { display: none; }
+
+.encounter-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+  width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.encounter-card {
+  --danger-color: #8293a5;
+  --encounter-color: #d5dde8;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) 58px;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 100px;
+  aspect-ratio: auto;
+  align-items: center;
+  padding: 7px 8px 7px 6px;
+  overflow: hidden;
+  border: 2px solid var(--danger-color);
+  border-radius: 6px;
+  color: #fff;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--encounter-color) 18%, transparent), transparent 42%),
+    linear-gradient(112deg, #20242b, #0b0d12 68%);
+  box-shadow:
+    inset 5px 0 0 var(--danger-color),
+    inset 0 0 18px color-mix(in srgb, var(--danger-color) 12%, transparent),
+    0 5px 14px rgba(0, 0, 0, .42),
+    0 0 10px color-mix(in srgb, var(--danger-color) 16%, transparent);
+  opacity: 0;
+  transform: translateX(18px);
+  animation: encounterRowDeal .34s cubic-bezier(.18, .82, .22, 1.12) forwards;
+  animation-delay: calc(var(--deal-index) * 80ms);
+}
+
+.encounter-card::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(118deg, transparent 0 58%, rgba(255, 255, 255, .05) 59% 61%, transparent 62%);
+}
+
+.encounter-card::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 4px;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, .06);
+  border-radius: 3px;
+  clip-path: none;
+}
+
+.encounter-card.threat-1 { --danger-color: #7f94a6; }
+.encounter-card.threat-2 { --danger-color: #ff9f3d; }
+.encounter-card.threat-3 {
+  --danger-color: #ff4b42;
+  box-shadow:
+    inset 5px 0 0 #ff4b42,
+    inset 0 0 24px rgba(255, 63, 51, .16),
+    0 6px 16px rgba(0, 0, 0, .5),
+    0 0 19px rgba(255, 54, 43, .48);
+  animation-name: encounterRowDeal, encounterDangerPulse;
+  animation-duration: .34s, 1.05s;
+  animation-delay: calc(var(--deal-index) * 80ms), calc(.5s + var(--deal-index) * 80ms);
+  animation-fill-mode: forwards, none;
+  animation-iteration-count: 1, infinite;
+  animation-direction: normal, alternate;
+}
+
+.encounter-card.reward-3::after {
+  border-top-color: rgba(210, 140, 255, .72);
+  border-bottom-color: rgba(210, 140, 255, .48);
+  box-shadow: inset 0 1px rgba(223, 172, 255, .16);
+}
+
+.encounter-card.reward-4 {
+  border-color: #ffd75c;
+  background:
+    linear-gradient(90deg, rgba(255, 201, 61, .19), transparent 45%),
+    linear-gradient(112deg, #29251c, #0d0c0b 68%);
+  box-shadow:
+    inset 5px 0 0 var(--danger-color),
+    inset 0 0 28px rgba(255, 195, 45, .18),
+    0 7px 18px rgba(0, 0, 0, .55),
+    0 0 24px rgba(255, 202, 51, .72);
+  animation-name: encounterRowDeal, encounterGoldPulse;
+  animation-duration: .34s, 1.15s;
+  animation-delay: calc(var(--deal-index) * 80ms), calc(.45s + var(--deal-index) * 80ms);
+  animation-fill-mode: forwards, none;
+  animation-iteration-count: 1, infinite;
+  animation-direction: normal, alternate;
+}
+
+.encounter-card.reward-4::after {
+  border-color: rgba(255, 230, 143, .56);
+  box-shadow: inset 0 0 12px rgba(255, 218, 102, .12);
+}
+
+.encounter-emblem {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 88px;
+  height: 88px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--encounter-color) 62%, #d9f3ff);
+  border-radius: 3px;
+  background: radial-gradient(circle at 50% 62%, color-mix(in srgb, var(--encounter-color) 23%, #111822), #05080b 72%);
+  box-shadow: inset 0 0 14px rgba(255, 255, 255, .06), 0 3px 9px rgba(0, 0, 0, .5);
+}
+
+.encounter-art {
+  position: absolute;
+  inset: 5px 2px 2px;
+  overflow: hidden;
+  background: none;
+}
+
+.encounter-art::after {
+  left: 15%;
+  right: 15%;
+  bottom: 4%;
+  height: 9%;
+}
+
+.encounter-art img {
+  bottom: 1%;
+  width: 96%;
+  height: 94%;
+}
+
+.encounter-art img:nth-child(1):not(:only-child) { left: 26%; width: 67%; height: 68%; }
+.encounter-art img:nth-child(2):not(:only-child) { left: 50%; width: 82%; height: 84%; }
+.encounter-art img:nth-child(3) { left: 74%; width: 67%; height: 68%; }
+
+.encounter-attr {
+  position: absolute;
+  z-index: 5;
+  top: 4px;
+  right: 4px;
+  width: 23px;
+  height: 23px;
+  border-color: color-mix(in srgb, var(--encounter-color) 78%, #fff);
+  color: color-mix(in srgb, var(--encounter-color) 82%, #fff);
+  font-size: 14px;
+}
+
+.encounter-copy {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 3px;
+  text-align: left;
+}
+
+.encounter-category {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 5px;
+  color: color-mix(in srgb, var(--encounter-color) 72%, #fff);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.encounter-category i {
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.encounter-name {
+  overflow: hidden;
+  color: #fff;
+  font-size: 20px;
+  font-weight: 950;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.encounter-sub {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  min-height: 22px;
+  align-items: center;
+  padding: 3px 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--encounter-color) 52%, transparent);
+  border-radius: 4px;
+  color: #f4f7fa;
+  background: color-mix(in srgb, var(--encounter-color) 14%, rgba(2, 5, 8, .82));
+  font-size: 10px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.encounter-matchup {
+  display: flex;
+  gap: 5px;
+  margin-top: 1px;
+}
+
+.encounter-fit {
+  display: grid;
+  width: 22px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid #718193;
+  border-radius: 3px;
+  color: #aab7c3;
+  background: rgba(3, 7, 11, .82);
+}
+
+.encounter-fit i { font: 950 11px/1 Arial, sans-serif; }
+.encounter-fit.fit-good,
+.encounter-fit.role-good { border-color: #53d98b; color: #75f0a8; box-shadow: 0 0 7px rgba(64, 224, 134, .28); }
+.encounter-fit.fit-bad,
+.encounter-fit.role-bad { border-color: #ff5a4d; color: #ff7368; box-shadow: 0 0 7px rgba(255, 73, 61, .36); }
+
+.encounter-readout {
+  position: relative;
+  z-index: 3;
+  align-self: stretch;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 13px;
+  min-width: 0;
+  padding-left: 7px;
+  border-left: 1px solid color-mix(in srgb, var(--danger-color) 54%, transparent);
+  background: radial-gradient(circle at 50% 28%, color-mix(in srgb, var(--danger-color) 13%, transparent), transparent 70%);
+}
+
+.encounter-threat,
+.encounter-bounty {
+  display: flex;
+  max-width: 48px;
+  min-height: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+}
+
+.threat-mark { width: 12px; height: 10px; }
+.reward-core { width: 11px; height: 11px; }
+.reward-4 .reward-core { background: #ffe27a; filter: drop-shadow(0 0 5px rgba(255, 213, 75, .95)); }
+
+.encounter-card:hover,
+.encounter-card:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  transform: translateX(3px) scale(1.015);
+}
+
+.encounter-card.selected { animation: encounterRowSelect .42s ease forwards; }
+.encounter-card.rejected { animation: encounterRowReject .3s ease forwards; }
+
+.encounter-panel.boss-draft {
+  border-color: rgba(255, 78, 62, .55);
+  background: linear-gradient(180deg, #2b2020, #120d0e 70%);
+}
+
+.encounter-panel.boss-draft .encounter-header {
+  border: 0;
+  background: transparent;
+  animation: none;
+}
+
+.encounter-panel.boss-draft .encounter-header h2 { color: #ffe5dd; }
+.encounter-panel.boss-draft .encounter-wave { color: #ff8b80; }
+.encounter-card.boss-card {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--encounter-color) 12%, transparent), transparent 42%),
+    linear-gradient(112deg, #271719, #080709 68%);
+}
+.encounter-card.boss-card .encounter-art { inset: 1px; }
+.encounter-card.boss-card .encounter-art img { width: 108%; height: 100%; }
+
+@keyframes encounterRowDeal {
+  from { opacity: 0; transform: translateX(24px) scale(.96); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes encounterDangerPulse {
+  from { filter: brightness(.96); }
+  to { filter: brightness(1.12); }
+}
+@keyframes encounterGoldPulse {
+  from { filter: brightness(.98); }
+  to { filter: brightness(1.16); }
+}
+@keyframes encounterRowSelect { to { opacity: 1; transform: translateX(8px) scale(1.025); filter: brightness(1.24); } }
+@keyframes encounterRowReject { to { opacity: 0; transform: translateX(-18px) scale(.96); filter: grayscale(1) brightness(.35); } }
+
+@media (max-height: 700px) {
+  .encounter-panel { gap: 7px; padding: 9px; }
+  .encounter-header { padding-bottom: 2px; }
+  .encounter-header h2 { font-size: 20px; }
+  .encounter-card { min-height: 86px; grid-template-columns: 76px minmax(0, 1fr) 50px; padding: 5px 7px 5px 5px; }
+  .encounter-emblem { width: 74px; height: 74px; }
+  .encounter-name { font-size: 18px; }
+  .encounter-sub { min-height: 19px; padding: 2px 6px; }
+  .encounter-readout { gap: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .encounter-card,
+  .encounter-card.threat-3,
+  .encounter-card.reward-4 { animation: none; opacity: 1; transform: none; }
+}
+
 /* Combat identity pass: category silhouette, not only category color. */
 .choice-list:not([data-layout="heroes"]) .choice-card {
   position: relative;
