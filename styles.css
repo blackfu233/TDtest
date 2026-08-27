@@ -867,6 +867,313 @@ canvas {
   .collect-button { height: 46px; }
 }
 
+/* Encounter draft prototype: one visual decision after each committed BET. */
+.encounter-overlay {
+  position: absolute;
+  z-index: 38;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(12px, env(safe-area-inset-top)) 10px max(14px, env(safe-area-inset-bottom));
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(1, 4, 7, .68), rgba(1, 3, 6, .94)),
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(113, 226, 255, .025) 3px 4px);
+  backdrop-filter: blur(3px);
+}
+
+.encounter-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(82, 210, 255, .08), transparent 20% 80%, rgba(82, 210, 255, .08));
+  box-shadow: inset 0 0 80px rgba(0, 0, 0, .9);
+}
+
+.encounter-panel {
+  position: relative;
+  width: min(410px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.encounter-header {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: end;
+  gap: 6px 10px;
+  min-height: 48px;
+  padding: 7px 11px 8px;
+  overflow: hidden;
+  border: 1px solid rgba(104, 226, 255, .5);
+  border-left: 4px solid #59dcff;
+  background: linear-gradient(90deg, rgba(12, 48, 64, .98), rgba(5, 12, 19, .96));
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(255, 255, 255, .1);
+  clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 0 100%);
+}
+
+.encounter-wave {
+  grid-row: 1 / 3;
+  align-self: center;
+  color: #8eeaff;
+  font: 900 11px/1 Arial, sans-serif;
+  letter-spacing: 0;
+}
+
+.encounter-header h2 {
+  margin: 0;
+  color: #fff;
+  font: 1000 25px/.95 "Arial Black", "Noto Sans TC", sans-serif;
+  letter-spacing: 0;
+  text-align: right;
+  text-shadow: 0 0 13px rgba(105, 225, 255, .32);
+}
+
+.encounter-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 2px;
+  background: #9bf1ff;
+  box-shadow: 0 0 12px #71e6ff;
+  opacity: .7;
+  animation: encounterScan 2.3s linear infinite;
+}
+
+.encounter-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  width: 100%;
+}
+
+.encounter-card {
+  --encounter-color: #d5dde8;
+  position: relative;
+  isolation: isolate;
+  aspect-ratio: .64;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--encounter-color) 72%, #dff8ff);
+  border-top-width: 3px;
+  border-bottom: 4px solid #26313a;
+  border-radius: 4px;
+  color: #fff;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--encounter-color) 16%, #12202b), #080c11 54%, #030609),
+    #080b10;
+  box-shadow:
+    inset 0 0 0 2px rgba(0, 0, 0, .42),
+    inset 0 0 24px color-mix(in srgb, var(--encounter-color) 13%, transparent),
+    0 12px 25px rgba(0, 0, 0, .55);
+  transform: translateY(18px) rotateX(-18deg);
+  opacity: 0;
+  animation: encounterDeal .42s cubic-bezier(.18, .82, .22, 1.18) forwards;
+  animation-delay: calc(var(--deal-index) * 90ms);
+}
+
+.encounter-card::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, transparent 0 45%, rgba(255,255,255,.05) 46% 48%, transparent 49%),
+    repeating-linear-gradient(0deg, transparent 0 5px, rgba(255,255,255,.018) 5px 6px);
+}
+
+.encounter-card::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 5px;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--encounter-color) 28%, transparent);
+  clip-path: polygon(0 0, 70% 0, 70% 2px, 100% 2px, 100% 100%, 22% 100%, 22% calc(100% - 2px), 0 calc(100% - 2px));
+}
+
+.encounter-card:hover,
+.encounter-card:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  transform: translateY(-5px) scale(1.035);
+  box-shadow: inset 0 0 26px color-mix(in srgb, var(--encounter-color) 22%, transparent), 0 18px 36px rgba(0, 0, 0, .7), 0 0 22px color-mix(in srgb, var(--encounter-color) 34%, transparent);
+}
+
+.encounter-card:disabled { cursor: default; }
+.encounter-card.selected { animation: encounterSelect .46s ease forwards; }
+.encounter-card.rejected { animation: encounterReject .34s ease forwards; }
+
+.encounter-card-top,
+.encounter-card-bottom {
+  position: absolute;
+  z-index: 4;
+  left: 7px;
+  right: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.encounter-card-top { top: 7px; }
+.encounter-card-bottom { bottom: 8px; min-height: 24px; }
+
+.encounter-threat,
+.encounter-bounty {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 18px;
+}
+
+.threat-mark {
+  display: block;
+  width: 15px;
+  height: 12px;
+  background: #ff4a3f;
+  clip-path: polygon(0 0, 58% 0, 100% 50%, 58% 100%, 0 100%, 42% 50%);
+  filter: drop-shadow(0 0 5px rgba(255, 65, 50, .72));
+}
+
+.reward-core {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background: #ffd357;
+  clip-path: polygon(50% 0, 86% 22%, 100% 61%, 72% 100%, 28% 100%, 0 61%, 14% 22%);
+  box-shadow: 0 0 10px rgba(255, 203, 69, .86);
+  animation: bountyPulse 1.15s ease-in-out infinite alternate;
+}
+
+.encounter-attr {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--encounter-color) 75%, #fff);
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--encounter-color) 82%, #fff);
+  background: rgba(2, 5, 8, .86);
+  font: 1000 17px/1 Arial, sans-serif;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--encounter-color) 38%, transparent);
+}
+
+.encounter-art {
+  position: absolute;
+  z-index: 2;
+  inset: 35px 3px 35px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 62%, color-mix(in srgb, var(--encounter-color) 20%, transparent), transparent 58%);
+}
+
+.encounter-art::after {
+  content: "";
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  bottom: 7%;
+  height: 10%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .62);
+  filter: blur(4px);
+}
+
+.encounter-art img {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 4%;
+  width: 96%;
+  height: 94%;
+  object-fit: contain;
+  object-position: center bottom;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 7px 5px rgba(0,0,0,.72)) drop-shadow(0 0 7px color-mix(in srgb, var(--encounter-color) 28%, transparent));
+}
+
+.encounter-art img:nth-child(1):not(:only-child) { left: 27%; width: 70%; height: 76%; z-index: 1; opacity: .82; }
+.encounter-art img:nth-child(2):not(:only-child) { left: 50%; width: 88%; height: 92%; z-index: 3; }
+.encounter-art img:nth-child(3) { left: 73%; width: 70%; height: 76%; z-index: 1; opacity: .82; }
+
+.encounter-role {
+  position: absolute;
+  z-index: 5;
+  right: 8px;
+  bottom: 8px;
+  min-width: 27px;
+  color: #dff7ff;
+  font: 1000 16px/1 Arial, sans-serif;
+  text-align: right;
+  text-shadow: 0 0 8px rgba(114, 224, 255, .7);
+}
+
+.encounter-card.threat-2 { border-bottom-color: #b85f2d; }
+.encounter-card.threat-3 {
+  border-color: color-mix(in srgb, var(--encounter-color) 54%, #ff5948);
+  border-bottom-color: #e13f32;
+  box-shadow: inset 0 0 28px rgba(255, 55, 42, .08), 0 15px 30px rgba(0, 0, 0, .66);
+}
+.encounter-card.reward-3 .encounter-bounty { filter: drop-shadow(0 0 8px rgba(255, 199, 50, .65)); }
+
+.encounter-panel.boss-draft .encounter-header {
+  border-color: rgba(255, 75, 61, .72);
+  border-left-color: #ff4338;
+  background: linear-gradient(90deg, rgba(80, 10, 8, .98), rgba(8, 5, 7, .98));
+  animation: bossHeaderPulse .72s ease-in-out infinite alternate;
+}
+
+.encounter-panel.boss-draft .encounter-wave { color: #ff877d; }
+.encounter-panel.boss-draft .encounter-header h2 { color: #fff1e8; text-shadow: 0 0 14px rgba(255, 58, 43, .65); }
+.encounter-card.boss-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--encounter-color) 9%, #170708), #040405 58%, #000);
+  border-top-color: #ff4a3f;
+  border-bottom-color: #9d1716;
+  animation-name: bossCardReveal;
+  animation-duration: .58s;
+}
+.encounter-card.boss-card .encounter-art { inset: 35px 0 31px; }
+.encounter-card.boss-card .encounter-art img { width: 110%; height: 100%; }
+.encounter-card.boss-card .encounter-role { color: #ff655a; font-size: 22px; }
+
+@keyframes encounterDeal {
+  from { opacity: 0; transform: translateY(28px) rotateX(-24deg) scale(.9); }
+  to { opacity: 1; transform: translateY(0) rotateX(0) scale(1); }
+}
+@keyframes bossCardReveal {
+  0% { opacity: 0; transform: rotateY(88deg) scale(.92); filter: brightness(0); }
+  45% { opacity: 1; filter: brightness(0); }
+  100% { opacity: 1; transform: rotateY(0) scale(1); filter: brightness(1); }
+}
+@keyframes encounterScan { from { transform: translateY(0); } to { transform: translateY(46px); } }
+@keyframes bountyPulse { from { opacity: .74; transform: scale(.93); } to { opacity: 1; transform: scale(1.07); } }
+@keyframes bossHeaderPulse { from { box-shadow: 0 0 12px rgba(255,48,39,.15); } to { box-shadow: 0 0 28px rgba(255,48,39,.48); } }
+@keyframes encounterSelect { to { opacity: 1; transform: translateY(-8px) scale(1.12); filter: brightness(1.35); } }
+@keyframes encounterReject { to { opacity: 0; transform: translateY(20px) scale(.82); filter: grayscale(1) brightness(.3); } }
+
+@media (max-height: 700px) {
+  .encounter-panel { gap: 8px; }
+  .encounter-header { min-height: 40px; padding: 5px 9px; }
+  .encounter-header h2 { font-size: 21px; }
+  .encounter-card { aspect-ratio: .72; }
+  .encounter-art { inset: 31px 2px 30px; }
+  .encounter-attr { width: 23px; height: 23px; font-size: 14px; }
+  .threat-mark { width: 12px; height: 10px; }
+  .reward-core { width: 13px; height: 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .encounter-card,
+  .encounter-scan,
+  .reward-core,
+  .encounter-panel.boss-draft .encounter-header { animation: none; opacity: 1; transform: none; }
+}
+
 /* Enemy roster / card identity pass. */
 .slot:not(.hero-slot) .slot-icon {
   object-fit: contain;

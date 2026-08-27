@@ -1,7 +1,8 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "deep-chase-minion210";
+const BUILD_VERSION = "encounter-draft211";
+const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -98,6 +99,11 @@ const ui = {
   choiceList: document.getElementById("choiceList"),
   reroll: document.getElementById("rerollBtn"),
   rerollCost: document.getElementById("rerollCostText"),
+  encounterOverlay: document.getElementById("encounterOverlay"),
+  encounterPanel: document.getElementById("encounterPanel"),
+  encounterWave: document.getElementById("encounterWave"),
+  encounterTitle: document.getElementById("encounterTitle"),
+  encounterList: document.getElementById("encounterList"),
   resultOverlay: document.getElementById("resultOverlay"),
   resultTitle: document.getElementById("resultTitle"),
   resultBody: document.getElementById("resultBody"),
@@ -807,6 +813,19 @@ const BOSS_VARIANTS = {
   electric:{ id:"electric_boss_stormcore", name:"風暴核心", sprite:"electric-boss-stormcore.webp", enemyAttr:"electric", hp:16920, speed:30, range:80, atk:145, interval:1.35, exp:120, color:"#d89cff", size:45 },
   poison:{ id:"poison_boss_plaguemother", name:"疫病母體", sprite:"poison-boss-plaguemother.webp", enemyAttr:"poison", hp:24910, speed:17, range:165, atk:92, interval:1.15, exp:120, color:"#66d86f", size:48 },
 };
+
+const ENCOUNTER_FORMATIONS = [
+  { id:"swarm", label:"群襲", template:"standard", role:"area", threat:1, countMul:1.30, hpMul:.82, atkMul:.90, speedMul:1.00, eliteCount:0, artIndex:0, marks:3 },
+  { id:"rush", label:"突擊", template:"fast", role:"control", threat:2, countMul:1.08, hpMul:.88, atkMul:1.00, speedMul:1.14, eliteCount:0, artIndex:0, marks:2 },
+  { id:"armor", label:"重裝", template:"tank", role:"single", threat:2, countMul:.76, hpMul:1.18, atkMul:1.05, speedMul:.92, eliteCount:0, artIndex:2, marks:2 },
+  { id:"siege", label:"火力線", template:"ranged", role:"area", threat:2, countMul:.92, hpMul:1.00, atkMul:1.12, speedMul:.96, eliteCount:0, artIndex:1, marks:2 },
+  { id:"elite", label:"菁英", template:"mixed", role:"single", threat:3, countMul:.52, hpMul:1.14, atkMul:1.10, speedMul:1.00, eliteCount:1, artIndex:0, marks:1 },
+];
+
+const ENCOUNTER_REWARD_FACTORS = { 1:.76, 2:1.00, 3:1.42 };
+const ENCOUNTER_EXP_FACTORS = { 1:.82, 2:1.00, 3:1.34 };
+const ENCOUNTER_ATTR_MARKS = { fire:"▲", ice:"◆", electric:"ϟ", poison:"●", neutral:"◎" };
+const ENCOUNTER_ROLE_MARKS = { area:"•••", single:"◆", control:"≫", boss:"!" };
 
 const ALL_MINION_VARIANTS = Object.values(MINION_VARIANTS).flat();
 const ALL_ELITE_VARIANTS = Object.values(ELITE_VARIANTS).flat();
@@ -2803,7 +2822,7 @@ function reset() {
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, hpWarningStage:0, pot: 0, exp: 0, level: 1,
     hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, choiceKind:"", choiceRerollUsed:false, rerollSpent:0, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
-    spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, bossDanger: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", simBossSpawned:0,
+    spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, bossDanger: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", currentEncounter:null, pendingEncounter:null, encounterChoices:[], simBossSpawned:0,
     certifiedPayout:0, mathTicket:null, mathLedger:[], mathTotalStake:0, mathPendingStake:0, mathPendingCredit:0,
     mathReservedPayout:0, mathReservedBossAmount:0, mathPoolContribution:0, mathGeneralContribution:0, mathBossContribution:0,
     mathPoolCapHits:0, mathPoolRecycled:0, mathPoolLastEntryMultiplier:0,
@@ -2813,6 +2832,7 @@ function reset() {
   ui.phone?.classList.remove("boss-roll-active", "boss-roll-high", "boss-roll-jackpot", "boss-result-high", "boss-result-jackpot", "base-warning", "base-danger", "base-warning-pulse");
   ui.potChip?.classList.remove("boss-high-pop", "boss-jackpot-pop");
   hideChoices();
+  hideEncounterDraft();
   hideResult();
   updateUi();
 }
@@ -4081,6 +4101,237 @@ function hideChoices() {
   if (wasOpen) resumeChannelAudio();
 }
 
+function shuffled(values) {
+  const result = values.slice();
+  for (let index=result.length - 1; index>0; index-=1) {
+    const swapIndex = rand(0, index);
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function encounterFormationWeights(wave) {
+  if (wave <= 3) return { swarm:34, rush:24, armor:20, siege:12, elite:10 };
+  if (wave <= 10) return { swarm:25, rush:22, armor:21, siege:17, elite:15 };
+  return { swarm:20, rush:20, armor:21, siege:19, elite:20 };
+}
+
+function encounterAttributeWeights(biomeAttr, excluded=new Set()) {
+  const weights = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [attr, excluded.has(attr) ? 0 : 14]));
+  if (!excluded.has("neutral")) weights.neutral = 22;
+  if (biomeAttr && !excluded.has(biomeAttr)) weights[biomeAttr] = biomeAttr === "neutral" ? 44 : 52;
+  return weights;
+}
+
+function rollEncounterReward(threat, boss=false) {
+  let reward = threat;
+  const roll = Math.random();
+  if (roll < (boss ? .24 : .16)) reward += 1;
+  else if (roll > .90) reward -= 1;
+  reward = clamp(reward, 1, 3);
+  if (threat >= 3) reward = Math.max(2, reward);
+  if (boss) reward = Math.max(2, reward);
+  return reward;
+}
+
+function encounterArtFor(attr, formation) {
+  if (formation.id === "boss") return BOSS_VARIANTS[attr] || BOSS_VARIANTS.neutral;
+  if (formation.id === "elite") {
+    const variants = ELITE_VARIANTS[attr] || ELITE_VARIANTS.neutral;
+    return variants[rand(0, variants.length - 1)];
+  }
+  const variants = MINION_VARIANTS[attr] || MINION_VARIANTS.neutral;
+  return variants[Math.min(variants.length - 1, formation.artIndex || 0)];
+}
+
+function bossEncounterDifficulty(threat, firstBoss=false) {
+  const tier = BOSS_DIFFICULTY_TIERS[threat >= 3 ? 2 : threat >= 2 ? 1 : 0];
+  const compression = firstBoss ? clamp(paramNumber("bossFirstDifficultyCompression", .65), 0, 1) : 1;
+  const compressed = value => 1 + (value - 1) * compression;
+  return {
+    id:tier.id, label:tier.label, marks:tier.marks,
+    hpMul:compressed(paramNumber(tier.hpKey, 1)),
+    atkMul:compressed(paramNumber(tier.atkKey, 1)),
+    speedMul:compressed(paramNumber(tier.speedKey, 1)),
+    firstBoss,
+  };
+}
+
+function buildRegularEncounterChoices(wave) {
+  const biomeAttr = wavePrimaryAttribute(wave);
+  const formationWeights = encounterFormationWeights(wave);
+  const usedFormations = new Set();
+  const usedAttributes = new Set();
+  const choices = [];
+  for (let index=0; index<3; index+=1) {
+    const availableFormationWeights = Object.fromEntries(Object.entries(formationWeights).map(([id, weight]) => [id, usedFormations.has(id) ? 0 : weight]));
+    const formationId = pickWeighted(availableFormationWeights);
+    const formation = ENCOUNTER_FORMATIONS.find(item => item.id === formationId) || ENCOUNTER_FORMATIONS[0];
+    const attr = pickWeighted(encounterAttributeWeights(biomeAttr, usedAttributes));
+    usedFormations.add(formation.id);
+    usedAttributes.add(attr);
+    const lateThreatLift = wave >= 16 && formation.threat < 3 && Math.random() < .24 ? 1 : 0;
+    const threat = clamp(formation.threat + lateThreatLift, 1, 3);
+    const reward = rollEncounterReward(threat);
+    const art = encounterArtFor(attr, formation);
+    choices.push({
+      id:`${wave}-${formation.id}-${attr}-${index}`,
+      wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
+      template:formation.template, attr, threat, reward,
+      countMul:formation.countMul,
+      hpMul:formation.hpMul * (1 + lateThreatLift * .12),
+      atkMul:formation.atkMul * (1 + lateThreatLift * .08),
+      speedMul:formation.speedMul,
+      forcedElites:formation.eliteCount,
+      rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
+      expMul:ENCOUNTER_EXP_FACTORS[reward],
+      art,
+      artCount:formation.marks,
+    });
+  }
+  return shuffled(choices);
+}
+
+function buildBossEncounterChoices(wave) {
+  const biomeAttr = wavePrimaryAttribute(wave);
+  const usedAttributes = new Set();
+  const firstBoss = state.bossSeen === 0;
+  const threatPattern = shuffled(firstBoss ? [2,2,3] : [2,3,3]);
+  return threatPattern.map((threat, index) => {
+    const attr = pickWeighted(encounterAttributeWeights(biomeAttr, usedAttributes));
+    usedAttributes.add(attr);
+    const reward = rollEncounterReward(threat, true);
+    const art = encounterArtFor(attr, { id:"boss" });
+    return {
+      id:`${wave}-boss-${attr}-${index}`,
+      wave, boss:true, formation:"boss", formationLabel:"指揮官", role:"boss",
+      template:{ fire:"fast", ice:"tank", electric:"disrupt", poison:"ranged", neutral:"mixed" }[attr] || "mixed",
+      attr, threat, reward, countMul:.78, hpMul:1, atkMul:1, speedMul:1,
+      forcedElites:0,
+      bossDifficulty:bossEncounterDifficulty(threat, firstBoss),
+      rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
+      expMul:ENCOUNTER_EXP_FACTORS[reward],
+      art,
+      artCount:1,
+    };
+  });
+}
+
+function encounterImageHtml(choice) {
+  const count = choice.boss || choice.formation === "elite" ? 1 : Math.max(1, choice.artCount || 1);
+  const src = choice.art?.sprite ? `assets/enemies-v3/${choice.art.sprite}` : enemySpritePath(choice.art || {});
+  return Array.from({ length:count }, (_, index) => `<img src="${src}" alt="" style="--unit-index:${index};--unit-count:${count}">`).join("");
+}
+
+function encounterPips(count, className) {
+  return Array.from({ length:count }, () => `<i class="${className}"></i>`).join("");
+}
+
+function renderEncounterDraft(choices, boss) {
+  if (HEADLESS_SIM) return;
+  stopChannelAudio();
+  ui.encounterWave.textContent = `WAVE ${String(state.wave + 1).padStart(2, "0")}`;
+  ui.encounterTitle.textContent = boss ? "BOSS 遭遇" : "選擇目標";
+  ui.encounterPanel.classList.toggle("boss-draft", boss);
+  ui.encounterList.innerHTML = "";
+  choices.forEach((choice, index) => {
+    const display = ATTRIBUTE_DISPLAY[choice.attr] || ATTRIBUTE_DISPLAY.neutral;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} attr-${choice.attr}${choice.boss ? " boss-card" : ""}`;
+    button.style.setProperty("--encounter-color", display.color);
+    button.style.setProperty("--deal-index", index);
+    button.innerHTML = `
+      <span class="encounter-card-top">
+        <span class="encounter-threat" aria-hidden="true">${encounterPips(choice.threat, "threat-mark")}</span>
+        <span class="encounter-attr" aria-hidden="true">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
+      </span>
+      <span class="encounter-art" aria-hidden="true">${encounterImageHtml(choice)}</span>
+      <span class="encounter-role" aria-hidden="true">${ENCOUNTER_ROLE_MARKS[choice.role] || "◆"}</span>
+      <span class="encounter-card-bottom">
+        <span class="encounter-bounty" aria-hidden="true">${encounterPips(choice.reward, "reward-core")}</span>
+      </span>`;
+    button.setAttribute("aria-label", `${display.label}屬性 ${choice.formationLabel}，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}`);
+    button.addEventListener("click", () => selectEncounterChoice(choice, button));
+    ui.encounterList.appendChild(button);
+  });
+  ui.encounterOverlay.classList.remove("hidden");
+}
+
+function encounterAutoChoice(choices) {
+  const counterAttr = attr => ATTRIBUTE_COUNTER[attr] || "neutral";
+  const towerAttrs = [state.hero?.attrKey, ...state.towers.map(towerAttr)].filter(Boolean);
+  const roleCounts = state.towers.reduce((result, tower) => {
+    result[TOWER_ROLE[tower.id]] = (result[TOWER_ROLE[tower.id]] || 0) + 1;
+    return result;
+  }, {});
+  return choices.slice().sort((a,b) => {
+    const score = choice => towerAttrs.filter(attr => attr === counterAttr(choice.attr)).length * 4
+      + (roleCounts[choice.role] || 0) * 2 + choice.reward - choice.threat * .7;
+    return score(b) - score(a);
+  })[0];
+}
+
+function prepareEncounterDraft() {
+  if (!ENCOUNTER_DRAFT_PROTOTYPE) { startWave(); return; }
+  const wave = state.wave + 1;
+  if (wave > 30) { completeRun(); return; }
+  const info = waveInfoFor(wave);
+  const boss = consumeBossPreview(wave, info);
+  const choices = boss ? buildBossEncounterChoices(wave) : buildRegularEncounterChoices(wave);
+  state.pendingEncounter = { wave, boss, choices };
+  state.encounterChoices = choices;
+  state.choicesOpen = true;
+  state.choiceKind = "encounter";
+  state.message = boss ? "警報：選擇要迎戰的 BOSS。" : "選擇本波敵軍。";
+  if (HEADLESS_SIM) {
+    const choice = encounterAutoChoice(choices);
+    state.choicesOpen = false;
+    state.choiceKind = "";
+    startWave(choice);
+    return;
+  }
+  playSfx(boss ? "boss" : "ui");
+  renderEncounterDraft(choices, boss);
+  updateUi();
+}
+
+function hideEncounterDraft() {
+  const wasEncounter = state?.choiceKind === "encounter";
+  if (wasEncounter) {
+    state.choicesOpen = false;
+    state.choiceKind = "";
+  }
+  if (HEADLESS_SIM || !ui.encounterOverlay) return;
+  ui.encounterOverlay.classList.add("hidden");
+  ui.encounterPanel?.classList.remove("boss-draft");
+  if (ui.encounterList) ui.encounterList.innerHTML = "";
+  if (wasEncounter) resumeChannelAudio();
+}
+
+function selectEncounterChoice(choice, selectedButton=null) {
+  const pending = state.pendingEncounter;
+  if (!pending || pending.wave !== state.wave + 1 || !pending.choices.includes(choice)) return;
+  if (HEADLESS_SIM) {
+    state.choicesOpen = false;
+    state.choiceKind = "";
+    startWave(choice);
+    return;
+  }
+  ui.encounterList.querySelectorAll(".encounter-card").forEach(card => {
+    card.disabled = true;
+    card.classList.toggle("selected", card === selectedButton);
+    card.classList.toggle("rejected", card !== selectedButton);
+  });
+  playSfx(choice.boss ? "boss" : "upgrade");
+  setTimeout(() => {
+    if (state.pendingEncounter !== pending || state.over) return;
+    hideEncounterDraft();
+    state.pendingWaveStart = false;
+    startWave(choice);
+  }, 460);
+}
+
 function rerollUpgradeChoices() {
   if (!state.choicesOpen || state.choiceKind !== "upgrade" || state.choiceRerollUsed) return;
   const factory = currentChoiceOptions?.rerollFactory;
@@ -4117,7 +4368,7 @@ function startBet() {
     if (!state.hero) showHeroDraft();
     else {
       state.started = true;
-      startWave();
+      prepareEncounterDraft();
     }
     return;
   }
@@ -4126,7 +4377,7 @@ function startBet() {
     state.pendingWaveStart = true;
     showUpgradeChoices();
   } else {
-    startWave();
+    prepareEncounterDraft();
   }
 }
 
@@ -4145,7 +4396,7 @@ function showHeroDraft() {
       addHero(hero);
       hideChoices();
       state.started = true;
-      startWave();
+      prepareEncounterDraft();
     }
   }));
   showChoices("選擇出戰角色", "選定角色後直接開始第一波。", choices);
@@ -4375,24 +4626,53 @@ function addTower(def) {
   });
 }
 
-function startWave() {
+function applyEncounterRewardToTicket(ticket, encounter) {
+  if (!ticket || !encounter) return ticket;
+  const factor = Math.max(.1, Number(encounter.rewardFactor) || 1);
+  const before = Math.max(0, Number(ticket.before) || 0);
+  const scaledTarget = before + Math.max(0, Number(ticket.targetPayout) - before) * factor;
+  const scaledFundedMean = before + Math.max(0, Number(ticket.fundedMeanTargetPayout) - before) * factor;
+  ticket.encounterId = encounter.id;
+  ticket.encounterThreat = encounter.threat;
+  ticket.encounterReward = encounter.reward;
+  ticket.encounterRewardFactor = factor;
+  ticket.targetPayout = Math.max(before, Math.round(scaledTarget));
+  ticket.fundedMeanTargetPayout = Math.max(before, scaledFundedMean);
+  ticket.expectedAfter = before + Math.max(0, Number(ticket.expectedAfter) - before) * factor;
+  ticket.fairValue = ticket.expectedAfter;
+  ticket.rewardFactor *= factor;
+  ticket.targetPot = Math.max(0, ticket.targetPayout / Math.max(.1, ticket.targetMultiplier));
+  ticket.rewardBudget = Math.max(0, ticket.targetPot - state.pot);
+  return ticket;
+}
+
+function startWave(encounterChoice=null) {
   if (state.wave >= 30) { completeRun(); return; }
+  const encounter = encounterChoice || state.pendingEncounter?.choices?.[0] || null;
+  state.pendingEncounter = null;
+  state.encounterChoices = [];
+  state.currentEncounter = encounter;
   state.wave += 1;
   const info = waveInfo();
   const band = tunedBand(bandFor(state.wave), state.wave);
-  const template = pickWeighted(band.templates);
+  const template = encounter?.template || pickWeighted(band.templates);
   state.selectedTemplate = template;
-  const primaryAttr = wavePrimaryAttribute(state.wave);
+  const primaryAttr = encounter?.attr || wavePrimaryAttribute(state.wave);
   state.currentWaveAttr = primaryAttr;
-  const boss = consumeBossPreview(state.wave, info);
-  const bossDifficulty = boss ? rollBossDifficulty(state.bossSeen === 0) : null;
+  const boss = encounter ? !!encounter.boss : consumeBossPreview(state.wave, info);
+  const bossDifficulty = boss ? encounter?.bossDifficulty || rollBossDifficulty(state.bossSeen === 0) : null;
   const rolledCount = rand(band.count[0], band.count[1]);
-  const count = boss
+  const baseCount = boss
     ? Math.max(4, Math.round(rolledCount * clamp(paramNumber("bossPreludeCountMul", .55), .1, 1)))
     : rolledCount;
-  const mathTicket = certifiedMathEnabled() ? createMathTicket(state.wave, betForWave(state.wave), boss, bossDifficulty) : null;
+  const count = Math.max(boss ? 3 : 6, Math.round(baseCount * Math.max(.25, encounter?.countMul || 1)));
+  const mathTicket = certifiedMathEnabled()
+    ? applyEncounterRewardToTicket(createMathTicket(state.wave, betForWave(state.wave), boss, bossDifficulty), encounter)
+    : null;
   const rolledElites = eliteCount(info);
-  const elites = boss ? Math.min(1, rolledElites) : rolledElites;
+  const elites = boss
+    ? Math.min(1, rolledElites)
+    : encounter ? Math.max(0, Math.round(encounter.forcedElites || 0)) : rolledElites;
   const normalQueue = Array.from({ length:count }, () => {
     const kind = pickWaveMonster(template);
     return { kind, rewardWeight:normalRewardWeight(kind, band) };
@@ -4404,16 +4684,21 @@ function startWave() {
   const reward = mathTicket
     ? { id:"certified", label:"驗證預算", multiplier:mathTicket.rewardBudget / Math.max(1, betForWave(state.wave)), budget:mathTicket.rewardBudget, remaining:mathTicket.rewardBudget, weightRemaining:0 }
     : rollWaveReward(state.wave, rewardFundingBet(state.wave));
+  if (!mathTicket && encounter) {
+    reward.budget = balancedRewardRound(reward.budget * encounter.rewardFactor);
+    reward.remaining = reward.budget;
+    reward.multiplier *= encounter.rewardFactor;
+  }
   reward.weightRemaining = [...normalQueue, ...eliteQueue].reduce((sum, entry) => sum + entry.rewardWeight, 0);
   state.waveReward = reward;
   state.spawn = {
     remain:normalQueue.length, normalQueue, eliteQueue, timer:0, every:params.spawnInterval,
-    template, hpMul:info.hpMul, band, elites:eliteQueue.length, boss,
+    template, hpMul:info.hpMul * Math.max(.4, encounter?.hpMul || 1), band, elites:eliteQueue.length, boss,
     bossDifficulty, primaryAttr, wave:state.wave
   };
   if (mathTicket) mathTicket.initialUnits = count + elites + (boss ? 1 : 0);
   state.waveActive = true;
-  state.message = `戰鬥開始：${count} 隻怪${elites ? `，菁英 ${elites}` : ""}${boss ? "，Boss 接近" : ""}`;
+  state.message = boss ? "BOSS 進入戰區" : `${encounter?.formationLabel || "敵軍"}進入戰區`;
   updateUi();
 }
 
@@ -4430,7 +4715,7 @@ function eliteCount(info) {
 }
 
 function spawnMonster(kind, hpMul, band, primaryAttr, wave, rewardWeight=0) {
-  const enemyAttr = pickWaveAttribute(primaryAttr, wave);
+  const enemyAttr = pickWaveAttribute(primaryAttr, wave, !!state.currentEncounter);
   const variants = MINION_VARIANTS[enemyAttr] || MINION_VARIANTS.neutral;
   const variantIndex = kind === "tank" ? 2 : kind === "ranged" || kind === "special" ? 1 : kind === "fast" && Math.random() < .42 ? 1 : 0;
   const base = variants[variantIndex];
@@ -4440,7 +4725,7 @@ function spawnMonster(kind, hpMul, band, primaryAttr, wave, rewardWeight=0) {
   state.monsters.push(makeEnemy(base, hpMul, x, curve, kind, band.drop[kind], false, false, base.special ? "sway" : "straight", base.id, enemyAttr, 0, rewardWeight));
 }
 function spawnElite(hpMul, primaryAttr, wave, index=rand(0, ELITES.length - 1), rewardWeight=0) {
-  const enemyAttr = pickWaveAttribute(primaryAttr, wave);
+  const enemyAttr = pickWaveAttribute(primaryAttr, wave, !!state.currentEncounter);
   const variants = ELITE_VARIANTS[enemyAttr] || ELITE_VARIANTS.neutral;
   const base = variants[index % variants.length];
   state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX + pick([-54, -18, 18, 54]) + rand(-4, 4), 0, "elite", 1, true, false, "straight", base.id, enemyAttr, 0, rewardWeight));
@@ -4482,9 +4767,11 @@ function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=fa
   const hp = Math.round(tunedBase.hp * hpMul * classHpMul * difficultyHpMul);
   const legacyAtkMul = base.enemyAttr ? 1 : ({ normal:.25, fast:.27, tank:.28, ranged:.30, special:.33 }[kind] || .3);
   const openingAtkMul = !elite && !boss && state.wave === 1 ? paramNumber("wave1MinionAtkMul", .55) : 1;
-  const atk = Math.max(1, Math.round(tunedBase.atk * legacyAtkMul * classAtkMul * difficultyAtkMul * bossOrdinalAtkMul * openingAtkMul));
+  const encounterAtkMul = Math.max(.5, Number(state.currentEncounter?.atkMul) || 1);
+  const encounterSpeedMul = Math.max(.5, Number(state.currentEncounter?.speedMul) || 1);
+  const atk = Math.max(1, Math.round(tunedBase.atk * legacyAtkMul * classAtkMul * difficultyAtkMul * bossOrdinalAtkMul * openingAtkMul * encounterAtkMul));
   const legacySpeedMul = base.enemyAttr ? 1 : ({ normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 }[kind] || .72);
-  const rawSpeed = tunedBase.speed * legacySpeedMul * classSpeedMul * difficultySpeedMul;
+  const rawSpeed = tunedBase.speed * legacySpeedMul * classSpeedMul * difficultySpeedMul * encounterSpeedMul;
   const speedCap = boss ? (primaryAttr === "electric" ? 34 : 30) : elite ? (primaryAttr === "electric" ? 48 : 40) : (primaryAttr === "electric" ? 54 : 46);
   const speed = Math.max(1, Math.round(Math.min(rawSpeed, speedCap)));
   const attributeDefaults = base.enemyAttr ? enemyAttributeProfile(base.enemyAttr) : ENEMY_ATTRIBUTE_DEFAULTS[tuneId] || {};
@@ -5729,11 +6016,11 @@ function kill(m) {
     }
     state.bossSeen += 1;
     const nextBet = betForWave(nextWave, state.bossSeen);
-    state.exp += (m.exp || 120) * params.expMul;
+    state.exp += (m.exp || 120) * params.expMul * Math.max(.5, Number(state.currentEncounter?.expMul) || 1);
     showBossReward(add, previousBet, nextBet);
     return;
   }
-  state.exp += (m.exp || 0) * params.expMul;
+  state.exp += (m.exp || 0) * params.expMul * Math.max(.5, Number(state.currentEncounter?.expMul) || 1);
   const amount = claimWaveReward(m);
   if (amount > 0) {
     state.pot += amount;
@@ -5955,7 +6242,7 @@ function finishUpgradeSelection(applySelection) {
     return;
   }
   state.pendingWaveStart = false;
-  startWave();
+  prepareEncounterDraft();
 }
 
 function openUpgradeChoices(choiceCount, rerollUsed) {
@@ -8180,7 +8467,7 @@ function updateAttributeIndicators(bossDanger) {
     ui.nextAttrHint.classList.toggle("boss", bossDanger > 0);
     ui.nextAttrHint.style.borderColor = (ATTRIBUTE_DISPLAY[nextAttr] || ATTRIBUTE_DISPLAY.neutral).color;
     ui.nextAttrHint.style.color = bossDanger > 0 ? "#ff5b52" : (ATTRIBUTE_DISPLAY[nextAttr] || ATTRIBUTE_DISPLAY.neutral).color;
-    ui.nextAttrHint.setAttribute?.("aria-label", `下一波主要為${ATTRIBUTE_DISPLAY[nextAttr]?.label || "無"}屬性弱點`);
+    ui.nextAttrHint.setAttribute?.("aria-label", `${ATTRIBUTE_DISPLAY[nextAttr]?.label || "無"}屬性戰區傾向`);
   }
   if (showNext) renderAttributeCanvas(ui.nextAttrCanvas, nextAttr, bossDanger > 0);
 

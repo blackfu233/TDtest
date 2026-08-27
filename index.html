@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防深追 Demo</title>
-  <link rel="stylesheet" href="styles.css?v=deep-chase-minion210">
+  <link rel="stylesheet" href="styles.css?v=encounter-draft211">
 </head>
 <body>
   <main class="phone">
@@ -113,6 +113,17 @@
       </div>
     </section>
 
+    <section id="encounterOverlay" class="encounter-overlay hidden" aria-live="polite">
+      <div id="encounterPanel" class="encounter-panel">
+        <header class="encounter-header">
+          <span id="encounterWave" class="encounter-wave">WAVE 01</span>
+          <h2 id="encounterTitle">選擇目標</h2>
+          <span class="encounter-scan" aria-hidden="true"></span>
+        </header>
+        <div id="encounterList" class="encounter-list" role="group" aria-label="本波敵軍選擇"></div>
+      </div>
+    </section>
+
     <section id="resultOverlay" class="result-overlay hidden">
       <div class="result-panel">
         <h2 id="resultTitle">結算</h2>
@@ -121,6 +132,6 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=deep-chase-minion210" charset="utf-8"></script>
+  <script src="game.js?v=encounter-draft211" charset="utf-8"></script>
 </body>
 </html>
