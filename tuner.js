@@ -51,13 +51,15 @@ const MONSTER_ATTRIBUTE_FIELDS = [
 ];
 const MONSTER_ALL_FIELDS = [...MONSTER_FIELDS, ...MONSTER_ATTRIBUTE_FIELDS];
 const MONSTER_ATTRIBUTE_BASE = {};
-const ATTRIBUTE_COUNTER_FIELD = { fire:"iceMul", ice:"fireMul", electric:"poisonMul", poison:"electricMul" };
+const ATTRIBUTE_COUNTER_FIELD = { fire:"iceMul", ice:"electricMul", electric:"poisonMul", poison:"fireMul" };
+const ATTRIBUTE_SAME_MUL = .70;
+const ATTRIBUTE_COUNTER_MUL = 1.50;
 [...MONSTER_TYPES, ...ELITE_TYPES, ...BOSS_TYPES].forEach(([id]) => {
   const attr = id.split("_")[0];
   const profile = { fireMul:1, iceMul:1, electricMul:1, poisonMul:1, neutralMul:1 };
   if (attr !== "neutral") {
-    profile[`${attr}Mul`] = .35;
-    profile[ATTRIBUTE_COUNTER_FIELD[attr]] = 2.00;
+    profile[`${attr}Mul`] = ATTRIBUTE_SAME_MUL;
+    profile[ATTRIBUTE_COUNTER_FIELD[attr]] = ATTRIBUTE_COUNTER_MUL;
   }
   MONSTER_ATTRIBUTE_BASE[id] = profile;
 });
@@ -436,7 +438,7 @@ bossFirstMinWave:1,bossFirstChance:8,bossFirstChanceInc:12,bossFirstChanceCap:68
   modelBossKillRate:.70,modelClearRate10:.63,modelClearRate20:.18,modelClearRate30:.06,
   upgradeDamage40:1.4,upgradeDamage35:1.35,upgradeDamage30:1.3,upgradeRate25:1.25,upgradeRate20:1.2,upgradeRange25:1.25,upgradeDuration50:1.5,upgradeDotDamage100:2,upgradeExtraChain:3,upgradePathDamage:50,upgradeVulnerable15:.15,upgradeSlow25:.25,
 };
-DEFAULT_PARAMS.balanceRevision = 210;
+DEFAULT_PARAMS.balanceRevision = 211;
 DEFAULT_PARAMS.mathGeneralRtpShare = .52;
 DEFAULT_PARAMS.mathBossRtpShare = .43;
 DEFAULT_PARAMS.mathPostBossIncrementBossShare = .90;
@@ -2036,6 +2038,15 @@ function migrateBossParams(input={}) {
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 210;
   }
+  if ((Number(input.balanceRevision) || 0) < 211) {
+    [...MONSTER_TYPES, ...ELITE_TYPES, ...BOSS_TYPES].forEach(([id]) => {
+      MONSTER_ATTRIBUTE_FIELDS.forEach(([field]) => {
+        const key = `monster_${id}_${field}`;
+        next[key] = DEFAULT_PARAMS[key];
+      });
+    });
+    next.balanceRevision = 211;
+  }
   return next;
 }
 function cleanParams(input={}) {
@@ -3418,7 +3429,7 @@ function logicFormulaRows() {
     ["一般波彩金", "彩金層權重、倍率、本波BET、深追熱波權重", "熱波權重隨深度移向深追值；P(層)=當波權重÷當波總權重；rewardFactor=抽中倍率÷當波五層加權平均", "前段保留高倍機會；深追結果較集中、熱波較少但更大", "rollWaveReward / mathWaveRewardRoll", "每波的加權期望仍正規化為1，只改VI、不增加RTP"],
     ["怪物組成", "波段數量、模板、怪種權重", "數量=randomInt(countMin,countMax)；模板機率=模板權重÷總權重；怪種占比=怪種權重÷模板總權重", "本波怪物清單", "waveInfoFor / spawnWave", "抽樣分布應收斂至設定權重"],
     ["怪物戰鬥", "類型基礎值、波次倍率、難度", "HP=類型HP×waveHpMul×菁英/BOSS難度；攻擊間隔=interval；進入range後攻擊基地", "死亡、存活或基地受傷", "makeMonster / updateMonsters", "HP≤0 必須立即進入死亡結算"],
-    ["角色／砲塔傷害", "傷害、攻速、冷卻、Tick、屬性倍率", "命中傷害=基礎傷害×升級倍率×目標類型倍率×屬性克制；持續型DPS=每Tick傷害÷tick並受duration/cooldown週期限制", "目標HP扣除、控場狀態", "attackHero / attackTower / damageMonster", "BOSS不吃硬控；屬性乘區只能套一次"],
+    ["角色／砲塔傷害", "傷害、攻速、冷卻、Tick、屬性倍率", "命中傷害=基礎傷害×升級倍率×目標類型倍率×屬性克制（循環克制1.5x／同屬抗性0.7x／其餘1x）；持續型DPS=每Tick傷害÷tick並受duration/cooldown週期限制", "目標HP扣除、控場狀態", "attackHero / attackTower / damageMonster", "BOSS不吃硬控；屬性乘區只能套一次"],
     ["EXP與升級", "擊殺EXP、等級門檻、前置條件", "累積EXP≥exp_level 時升級；候選池先驗證擁有塔、核心與跨塔前置，再依新鮮度權重抽選", "3選1／Reroll 4選1", "grantExp / collectUpgradeCandidates", "每個候選必須當下可生效"],
     ["BOSS難度", "首/後王難度權重與三維倍率", "P(難度)=權重÷總權重；首王三維=1+(抽中倍率-1)×firstDifficultyCompression", "BOSS HP、攻擊、速度", "rollBossDifficulty", "首王與後王必須使用不同權重池"],
     ["BOSS倍率", "低中高倍權重、區間、首/後王係數", "層內uniform(min,max)；加成=round(max(1,抽中值×rewardMul),0.1)；總倍率=1+所有BOSS加成相加", "POT旁倍率與主要VI", "bossMultiplier / createMathTicket", "首王較保守、後王高倍尾端較長；多隻BOSS加成相加，不相乘"],

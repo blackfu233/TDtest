@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "biome-core222";
+const BUILD_VERSION = "attr-cycle224";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
 const MAX_EFFECTS = 240;
@@ -750,16 +750,18 @@ const ENEMY_ATTRIBUTE_DEFAULTS = {
 
 const ATTRIBUTE_COUNTER = {
   fire:"ice",
-  ice:"fire",
+  ice:"electric",
   electric:"poison",
-  poison:"electric",
+  poison:"fire",
 };
+const ATTRIBUTE_SAME_MUL = .70;
+const ATTRIBUTE_COUNTER_MUL = 1.50;
 
 function enemyAttributeProfile(enemyAttr) {
   const result = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [attr, 1]));
   if (!enemyAttr || enemyAttr === "neutral") return result;
-  result[enemyAttr] = .35;
-  result[ATTRIBUTE_COUNTER[enemyAttr]] = 2.00;
+  result[enemyAttr] = ATTRIBUTE_SAME_MUL;
+  result[ATTRIBUTE_COUNTER[enemyAttr]] = ATTRIBUTE_COUNTER_MUL;
   return result;
 }
 
@@ -1222,7 +1224,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 }
 
 const DEFAULT_PARAMS = {
-  balanceRevision: 210,
+  balanceRevision: 211,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
@@ -2811,6 +2813,15 @@ function migrateBossParams(input={}) {
       "minionHpMul", "minionAtkMul", "minionSpeedMul",
     ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
     next.balanceRevision = 210;
+  }
+  if ((Number(input.balanceRevision) || 0) < 211) {
+    [...ALL_MINION_VARIANTS, ...ALL_ELITE_VARIANTS, ...ALL_BOSS_VARIANTS].forEach(base => {
+      ATTRIBUTE_KEYS.forEach(attr => {
+        const key = `monster_${base.id}_${attr}Mul`;
+        next[key] = DEFAULT_PARAMS[key];
+      });
+    });
+    next.balanceRevision = 211;
   }
   return next;
 }
