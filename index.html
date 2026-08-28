@@ -7,7 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防深追 Demo</title>
-  <link rel="stylesheet" href="styles.css?v=encounter-thin-frame220">
+  <link rel="stylesheet" href="styles.css?v=biome-core222">
 </head>
 <body>
   <main class="phone">
@@ -42,10 +42,21 @@
     </section>
 
     <section class="battlefield">
+      <div id="biomeHud" class="biome-hud" aria-label="目前戰區與 BOSS 進度">
+        <canvas id="biomeAttrIcon" width="30" height="30" aria-hidden="true"></canvas>
+        <strong id="biomeName">戰區</strong>
+        <span id="biomeRoute" class="biome-route"></span>
+      </div>
       <span id="nextAttrHint" class="next-attr-hint" role="img"><canvas id="nextAttrIcon" width="44" height="44"></canvas></span>
       <canvas id="game" width="350" height="760" aria-label="塔防戰場"></canvas>
       <div id="messageText" class="message">選擇 BET 與角色後開始戰鬥。</div>
     </section>
+
+    <div id="biomeTransition" class="biome-transition hidden" aria-live="polite">
+      <canvas id="biomeTransitionIcon" width="78" height="78" aria-hidden="true"></canvas>
+      <span>NEW ZONE</span>
+      <strong id="biomeTransitionName">戰區轉移</strong>
+    </div>
 
     <section id="towerSlots" class="tower-slots"></section>
 
@@ -132,6 +143,6 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=encounter-thin-frame220" charset="utf-8"></script>
+  <script src="game.js?v=biome-core222" charset="utf-8"></script>
 </body>
 </html>

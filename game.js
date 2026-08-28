@@ -1,8 +1,9 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-thin-frame220";
+const BUILD_VERSION = "biome-core222";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
+const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -104,6 +105,13 @@ const ui = {
   encounterWave: document.getElementById("encounterWave"),
   encounterTitle: document.getElementById("encounterTitle"),
   encounterList: document.getElementById("encounterList"),
+  biomeHud: document.getElementById("biomeHud"),
+  biomeName: document.getElementById("biomeName"),
+  biomeAttrCanvas: document.getElementById("biomeAttrIcon"),
+  biomeRoute: document.getElementById("biomeRoute"),
+  biomeTransition: document.getElementById("biomeTransition"),
+  biomeTransitionName: document.getElementById("biomeTransitionName"),
+  biomeTransitionCanvas: document.getElementById("biomeTransitionIcon"),
   resultOverlay: document.getElementById("resultOverlay"),
   resultTitle: document.getElementById("resultTitle"),
   resultBody: document.getElementById("resultBody"),
@@ -822,8 +830,8 @@ const ENCOUNTER_FORMATIONS = [
   { id:"elite", label:"菁英", template:"mixed", role:"single", threat:3, countMul:.52, hpMul:1.14, atkMul:1.10, speedMul:1.00, eliteCount:1, artIndex:0, marks:1 },
 ];
 
-const ENCOUNTER_REWARD_FACTORS = { 1:.72, 2:1.00, 3:1.42, 4:2.10 };
-const ENCOUNTER_EXP_FACTORS = { 1:.82, 2:1.00, 3:1.34, 4:1.72 };
+const ENCOUNTER_REWARD_FACTORS = { 1:.70, 2:1.15, 3:1.85, 4:2.85 };
+const ENCOUNTER_EXP_FACTORS = { 1:.80, 2:1.05, 3:1.42, 4:1.90 };
 const ENCOUNTER_ATTR_MARKS = { fire:"火", ice:"冰", electric:"電", poison:"毒", neutral:"無" };
 const ENCOUNTER_FORMATION_HINTS = {
   swarm:"大量小怪",
@@ -833,6 +841,27 @@ const ENCOUNTER_FORMATION_HINTS = {
   elite:"單隻菁英",
   boss:"強敵來襲",
 };
+
+const PROTOTYPE_BIOMES = [
+  { id:"fire", attr:"fire", name:"熔火戰區", short:"熔火", rgb:"255,84,42", accent:"#ff6b3d" },
+  { id:"ice", attr:"ice", name:"永凍戰區", short:"永凍", rgb:"79,191,255", accent:"#72d4ff" },
+  { id:"electric", attr:"electric", name:"雷暴戰區", short:"雷暴", rgb:"193,121,255", accent:"#d89cff" },
+  { id:"poison", attr:"poison", name:"瘴毒戰區", short:"瘴毒", rgb:"86,214,111", accent:"#66d86f" },
+  { id:"neutral", attr:"neutral", name:"鋼鐵戰區", short:"鋼鐵", rgb:"189,204,224", accent:"#d5dde8" },
+];
+const PROTOTYPE_BOSS_MIN_ENCOUNTER = 7;
+const PROTOTYPE_BOSS_MAX_ENCOUNTER = 14;
+const PROTOTYPE_BOSS_TOTAL = PROTOTYPE_BIOMES.length;
+const ENCOUNTER_LANES = [
+  { id:"steady", label:"穩健", baseClear:90, clearRange:[82,96], reward:1, countMul:.82, hpMul:.76, atkMul:.78, speedMul:.92, formations:["swarm","rush","siege"] },
+  { id:"tactical", label:"戰術", baseClear:71, clearRange:[62,79], reward:2, countMul:1.00, hpMul:1.00, atkMul:1.00, speedMul:1.00, formations:["rush","armor","siege","swarm"] },
+  { id:"greedy", label:"高風險", baseClear:48, clearRange:[36,58], reward:3, countMul:1.16, hpMul:1.20, atkMul:1.24, speedMul:1.08, formations:["elite","armor","rush","siege"] },
+];
+const BOSS_COMBAT_ARCHETYPES = [
+  { id:"armored", label:"重甲型", hpMul:1.38, atkMul:.92, speedMul:.82, preludeMul:.72, eliteCount:0, clearShift:-7, reward:4 },
+  { id:"summoner", label:"召集型", hpMul:.96, atkMul:1.00, speedMul:1.00, preludeMul:1.48, eliteCount:1, clearShift:-5, reward:3 },
+  { id:"berserker", label:"狂襲型", hpMul:.88, atkMul:1.34, speedMul:1.20, preludeMul:.88, eliteCount:0, clearShift:-9, reward:4 },
+];
 
 const ALL_MINION_VARIANTS = Object.values(MINION_VARIANTS).flat();
 const ALL_ELITE_VARIANTS = Object.values(ELITE_VARIANTS).flat();
@@ -2819,28 +2848,35 @@ let lastDebugFrame = 0;
 let lastDebugSnapshot = "";
 let mathRunSeed = 1;
 let mathPoolLedger = null;
+let biomeTransitionTimer = null;
 const slotViews = [];
 
 function reset() {
   stopChannelAudio();
+  clearTimeout(biomeTransitionTimer);
   if (state?.mathReservedPayout > 0) releaseMathReservation();
   const wallet = state && Number.isFinite(state.wallet) ? state.wallet : INITIAL_WALLET;
+  const biomeOrder = shuffled(PROTOTYPE_BIOMES.map(biome => biome.id));
   mathRunSeed = ((Math.random() * 4294967296) >>> 0) || 1;
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, hpWarningStage:0, pot: 0, exp: 0, level: 1,
     hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, choiceKind:"", choiceRerollUsed:false, rerollSpent:0, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
     spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, bossDanger: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", currentEncounter:null, pendingEncounter:null, encounterChoices:[], simBossSpawned:0,
+    biomeOrder, biomeIndex:0, biomeWave:0, biomeBossAt:FORCE_FIRST_BOSS ? 1 : rollPrototypeBossEncounter(), biomeTransitionToken:0,
     certifiedPayout:0, mathTicket:null, mathLedger:[], mathTotalStake:0, mathPendingStake:0, mathPendingCredit:0,
     mathReservedPayout:0, mathReservedBossAmount:0, mathPoolContribution:0, mathGeneralContribution:0, mathBossContribution:0,
     mathPoolCapHits:0, mathPoolRecycled:0, mathPoolLastEntryMultiplier:0,
     pendingWaveStart:false,
   };
   ui.betRaise?.classList.add("hidden");
+  ui.biomeTransition?.classList.add("hidden");
+  ui.biomeTransition?.classList.remove("play");
   ui.phone?.classList.remove("boss-roll-active", "boss-roll-high", "boss-roll-jackpot", "boss-result-high", "boss-result-jackpot", "base-warning", "base-danger", "base-warning-pulse");
   ui.potChip?.classList.remove("boss-high-pop", "boss-jackpot-pop");
   hideChoices();
   hideEncounterDraft();
   hideResult();
+  applyBiomePresentation(false);
   updateUi();
 }
 
@@ -2900,7 +2936,18 @@ function tunedTemplate(templateId) {
   Object.keys(base).forEach(monsterId => weights[monsterId] = paramNumber(`template_${templateId}_${monsterId}`, base[monsterId]));
   return weights;
 }
+function currentBiomeConfig() {
+  const id = state?.biomeOrder?.[state.biomeIndex] || PROTOTYPE_BIOMES[0].id;
+  return PROTOTYPE_BIOMES.find(biome => biome.id === id) || PROTOTYPE_BIOMES[0];
+}
+function rollPrototypeBossEncounter() {
+  return rand(PROTOTYPE_BOSS_MIN_ENCOUNTER, PROTOTYPE_BOSS_MAX_ENCOUNTER);
+}
+function prototypeRunComplete() {
+  return ENCOUNTER_DRAFT_PROTOTYPE && (state?.bossSeen || 0) >= PROTOTYPE_BOSS_TOTAL;
+}
 function wavePrimaryAttribute(wave) {
+  if (ENCOUNTER_DRAFT_PROTOTYPE && state?.biomeOrder?.length) return currentBiomeConfig().attr;
   if (wave <= 2) return "neutral";
   return WAVE_ATTRIBUTE_CYCLE[(wave - 3) % WAVE_ATTRIBUTE_CYCLE.length];
 }
@@ -3841,6 +3888,18 @@ function eliteRewardWeight(index) {
 
 function prepareNextBossPreview() {
   const nextWave = state.wave + 1;
+  if (ENCOUNTER_DRAFT_PROTOTYPE) {
+    if (prototypeRunComplete() || state.nextBossWave === nextWave) return;
+    const remaining = state.biomeBossAt - state.biomeWave;
+    state.nextBoss = remaining <= 1;
+    state.nextBossWave = nextWave;
+    state.bossDanger = remaining <= 1
+      ? Number(pickWeighted({ 1:20, 2:50, 3:30 }))
+      : remaining <= 3
+        ? Number(pickWeighted({ 1:48, 2:37, 3:15 }))
+        : remaining <= 5 && Math.random() < .42 ? rand(1, 2) : 0;
+    return;
+  }
   if (nextWave > 30 || state.nextBossWave === nextWave) return;
   const info = waveInfoFor(nextWave);
   state.bossDanger = rollBossDangerLevel(nextWave, info);
@@ -3849,6 +3908,14 @@ function prepareNextBossPreview() {
 }
 
 function consumeBossPreview(wave, info) {
+  if (ENCOUNTER_DRAFT_PROTOTYPE) {
+    const planned = state.nextBossWave === wave ? state.nextBoss : state.biomeWave + 1 >= state.biomeBossAt;
+    state.nextBoss = false;
+    state.nextBossWave = 0;
+    state.bossDanger = 0;
+    if (planned) state.bossRolled = Math.max(state.bossRolled, state.bossSeen + 1);
+    return planned;
+  }
   if (state.nextBossWave === wave) {
     const planned = state.nextBoss;
     state.nextBoss = false;
@@ -3857,6 +3924,52 @@ function consumeBossPreview(wave, info) {
     return planned;
   }
   return rollBossForWave(wave, info);
+}
+
+function applyBiomePresentation(showTransition=false) {
+  if (HEADLESS_SIM || !state) return;
+  const biome = currentBiomeConfig();
+  ui.phone.dataset.biome = biome.id;
+  ui.phone.style.setProperty("--biome-rgb", biome.rgb);
+  ui.phone.style.setProperty("--biome-accent", biome.accent);
+  if (ui.biomeName) ui.biomeName.textContent = biome.short;
+  if (ui.biomeAttrCanvas) renderAttributeCanvas(ui.biomeAttrCanvas, biome.attr, false);
+  if (ui.biomeRoute) {
+    ui.biomeRoute.innerHTML = PROTOTYPE_BIOMES.map((_, index) => {
+      const status = index < state.bossSeen ? "cleared" : index === state.biomeIndex ? "current" : "locked";
+      return `<span class="${status}" aria-hidden="true"></span>`;
+    }).join("");
+    ui.biomeRoute.setAttribute("aria-label", `已擊破 ${state.bossSeen} / ${PROTOTYPE_BOSS_TOTAL} 名 BOSS`);
+  }
+  if (!showTransition || !ui.biomeTransition) return;
+  clearTimeout(biomeTransitionTimer);
+  state.biomeTransitionToken += 1;
+  if (ui.biomeTransitionName) ui.biomeTransitionName.textContent = biome.name;
+  if (ui.biomeTransitionCanvas) renderAttributeCanvas(ui.biomeTransitionCanvas, biome.attr, false);
+  ui.biomeTransition.classList.remove("hidden", "play");
+  void ui.biomeTransition.offsetWidth;
+  ui.biomeTransition.classList.add("play");
+  const token = state.biomeTransitionToken;
+  biomeTransitionTimer = setTimeout(() => {
+    if (!state || token !== state.biomeTransitionToken) return;
+    ui.biomeTransition.classList.add("hidden");
+    ui.biomeTransition.classList.remove("play");
+  }, 1700);
+}
+
+function advancePrototypeBiome() {
+  if (!ENCOUNTER_DRAFT_PROTOTYPE || prototypeRunComplete()) return false;
+  state.biomeIndex = Math.min(PROTOTYPE_BOSS_TOTAL - 1, state.bossSeen);
+  state.biomeWave = 0;
+  state.biomeBossAt = rollPrototypeBossEncounter();
+  state.currentEncounter = null;
+  state.currentWaveAttr = currentBiomeConfig().attr;
+  state.nextBoss = false;
+  state.nextBossWave = 0;
+  state.bossDanger = 0;
+  applyBiomePresentation(true);
+  prepareNextBossPreview();
+  return true;
 }
 
 function bossChanceForWave(wave, info) {
@@ -4234,84 +4347,116 @@ function bossEncounterDifficulty(threat, firstBoss=false) {
   };
 }
 
+function rollBiomeEncounterAttribute(biomeAttr) {
+  const weights = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [attr, 7]));
+  weights.neutral = biomeAttr === "neutral" ? 60 : 12;
+  weights[biomeAttr] = 60;
+  return pickWeighted(weights);
+}
+
+function encounterFormationForLane(lane, usedFormations) {
+  const candidates = lane.formations
+    .map(id => ENCOUNTER_FORMATIONS.find(formation => formation.id === id))
+    .filter(Boolean);
+  const available = candidates.filter(formation => !usedFormations.has(formation.id));
+  const pool = available.length ? available : candidates;
+  if (lane.id !== "steady") return pick(pool);
+  return pool.slice().sort((a, b) => encounterRoleReadiness(b.role) - encounterRoleReadiness(a.role))[0];
+}
+
+function estimatedEncounterClearChance(lane, matchup) {
+  const attributeShift = clamp((matchup.attributePower - 1) * 14, -8, 8);
+  const roleShift = clamp((matchup.roleReadiness - .34) * 18, -5, 5);
+  const hpShift = clamp((matchup.hpRatio - .65) * 10, -6, 3);
+  const depthShift = -Math.min(3, state.biomeIndex);
+  return Math.round(clamp(lane.baseClear + attributeShift + roleShift + hpShift + depthShift, lane.clearRange[0], lane.clearRange[1]));
+}
+
+function threatForEstimatedClear(chance) {
+  return chance >= 80 ? 1 : chance >= 60 ? 2 : 3;
+}
+
 function buildRegularEncounterChoices(wave) {
-  const biomeAttr = wavePrimaryAttribute(wave);
+  const biomeAttr = currentBiomeConfig().attr;
   const band = tunedBand(bandFor(wave), wave);
   const baseEnemyCount = rand(band.count[0], band.count[1]);
-  const formationWeights = encounterFormationWeights(wave);
   const usedFormations = new Set();
-  const usedAttributes = new Set();
-  const choices = [];
-  for (let index=0; index<3; index+=1) {
-    const availableFormationWeights = Object.fromEntries(Object.entries(formationWeights).map(([id, weight]) => [id, usedFormations.has(id) ? 0 : weight]));
-    const formationId = pickWeighted(availableFormationWeights);
-    const formation = ENCOUNTER_FORMATIONS.find(item => item.id === formationId) || ENCOUNTER_FORMATIONS[0];
-    const attr = pickWeighted(encounterAttributeWeights(biomeAttr, usedAttributes));
+  const choices = ENCOUNTER_LANES.map((lane, index) => {
+    const formation = encounterFormationForLane(lane, usedFormations) || ENCOUNTER_FORMATIONS[0];
+    const attr = rollBiomeEncounterAttribute(biomeAttr);
     usedFormations.add(formation.id);
-    usedAttributes.add(attr);
-    const lateThreatLift = wave >= 16 && Math.random() < .24 ? 1 : 0;
     const tunedFormation = {
       ...formation,
-      hpMul:formation.hpMul * (1 + lateThreatLift * .12),
-      atkMul:formation.atkMul * (1 + lateThreatLift * .08),
+      countMul:formation.countMul * lane.countMul,
+      hpMul:formation.hpMul * lane.hpMul,
+      atkMul:formation.atkMul * lane.atkMul,
+      speedMul:formation.speedMul * lane.speedMul,
+      eliteCount:(formation.eliteCount || 0) + (lane.id === "greedy" && formation.id !== "elite" && Math.random() < .35 ? 1 : 0),
     };
     const matchup = assessEncounterThreat({ formation:tunedFormation, attr, role:formation.role, wave });
-    const threat = matchup.tier;
-    const reward = rollEncounterReward(threat);
+    const estimatedClear = estimatedEncounterClearChance(lane, matchup);
+    const threat = threatForEstimatedClear(estimatedClear);
+    const reward = lane.id === "greedy" && Math.random() < .32 ? 4 : lane.reward;
     const art = encounterArtFor(attr, formation);
-    const enemyCount = Math.max(6, Math.round(baseEnemyCount * Math.max(.25, formation.countMul)));
-    choices.push({
-      id:`${wave}-${formation.id}-${attr}-${index}`,
+    const enemyCount = Math.max(5, Math.round(baseEnemyCount * Math.max(.25, tunedFormation.countMul)));
+    return {
+      id:`${wave}-${lane.id}-${formation.id}-${attr}-${index}`,
       wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
-      template:formation.template, attr, threat, reward,
-      countMul:formation.countMul,
+      lane:lane.id, laneLabel:lane.label, template:formation.template, attr, threat, reward, estimatedClear,
+      countMul:tunedFormation.countMul,
       hpMul:tunedFormation.hpMul,
       atkMul:tunedFormation.atkMul,
-      speedMul:formation.speedMul,
-      forcedElites:formation.eliteCount,
+      speedMul:tunedFormation.speedMul,
+      forcedElites:tunedFormation.eliteCount,
       enemyCount,
       rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
       expMul:ENCOUNTER_EXP_FACTORS[reward],
       matchup,
       art,
       artCount:formation.marks,
-    });
-  }
+    };
+  });
   return shuffled(choices);
 }
 
 function buildBossEncounterChoices(wave) {
-  const biomeAttr = wavePrimaryAttribute(wave);
+  const biomeAttr = currentBiomeConfig().attr;
   const band = tunedBand(bandFor(wave), wave);
   const rolledCount = rand(band.count[0], band.count[1]);
-  const preludeCount = Math.max(4, Math.round(rolledCount * clamp(paramNumber("bossPreludeCountMul", .55), .1, 1)));
-  const usedAttributes = new Set();
+  const archetype = pick(BOSS_COMBAT_ARCHETYPES);
   const firstBoss = state.bossSeen === 0;
-  const difficultyPattern = shuffled(firstBoss ? [2,2,3] : [2,3,3]);
-  return difficultyPattern.map((difficultySeed, index) => {
-    const attr = pickWeighted(encounterAttributeWeights(biomeAttr, usedAttributes));
-    usedAttributes.add(attr);
-    const bossDifficulty = bossEncounterDifficulty(difficultySeed, firstBoss);
-    const formation = { countMul:.78, hpMul:bossDifficulty.hpMul, atkMul:bossDifficulty.atkMul, speedMul:bossDifficulty.speedMul, eliteCount:0 };
-    const matchup = assessEncounterThreat({ formation, attr, role:"boss", wave, boss:true, difficulty:bossDifficulty });
-    const threat = matchup.tier;
-    const reward = rollEncounterReward(threat, true);
-    const art = encounterArtFor(attr, { id:"boss" });
-    return {
-      id:`${wave}-boss-${attr}-${index}`,
-      wave, boss:true, formation:"boss", formationLabel:"指揮官", role:"boss",
-      template:{ fire:"fast", ice:"tank", electric:"disrupt", poison:"ranged", neutral:"mixed" }[attr] || "mixed",
-      attr, threat, reward, countMul:.78, hpMul:1, atkMul:1, speedMul:1,
-      forcedElites:0,
-      enemyCount:Math.max(3, Math.round(preludeCount * .78)),
-      bossDifficulty,
-      rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
-      expMul:ENCOUNTER_EXP_FACTORS[reward],
-      matchup,
-      art,
-      artCount:1,
-    };
-  });
+  const baseDifficulty = bossEncounterDifficulty(firstBoss ? 2 : rand(2, 3), firstBoss);
+  const bossDifficulty = {
+    ...baseDifficulty,
+    id:`${baseDifficulty.id}-${archetype.id}`,
+    label:archetype.label,
+    hpMul:baseDifficulty.hpMul * archetype.hpMul,
+    atkMul:baseDifficulty.atkMul * archetype.atkMul,
+    speedMul:baseDifficulty.speedMul * archetype.speedMul,
+  };
+  const formation = { countMul:archetype.preludeMul, hpMul:bossDifficulty.hpMul, atkMul:bossDifficulty.atkMul, speedMul:bossDifficulty.speedMul, eliteCount:archetype.eliteCount };
+  const matchup = assessEncounterThreat({ formation, attr:biomeAttr, role:"boss", wave, boss:true, difficulty:bossDifficulty });
+  const attributeShift = clamp((matchup.attributePower - 1) * 18, -14, 14);
+  const roleShift = clamp((matchup.roleReadiness - .34) * 24, -8, 8);
+  const hpShift = clamp((matchup.hpRatio - .65) * 12, -9, 4);
+  const estimatedClear = Math.round(clamp(75 - state.biomeIndex * 7 + archetype.clearShift + attributeShift + roleShift + hpShift, 28, 82));
+  const threat = threatForEstimatedClear(estimatedClear);
+  const preludeCount = Math.max(3, Math.round(rolledCount * clamp(paramNumber("bossPreludeCountMul", .55), .1, 1) * archetype.preludeMul));
+  const art = encounterArtFor(biomeAttr, { id:"boss" });
+  return [{
+    id:`${wave}-boss-${biomeAttr}-${archetype.id}`,
+    wave, boss:true, formation:"boss", formationLabel:archetype.label, role:"boss", bossArchetype:archetype.id,
+    template:{ fire:"fast", ice:"tank", electric:"disrupt", poison:"ranged", neutral:"mixed" }[biomeAttr] || "mixed",
+    attr:biomeAttr, threat, reward:archetype.reward, estimatedClear, countMul:archetype.preludeMul, hpMul:1, atkMul:1, speedMul:1,
+    forcedElites:archetype.eliteCount,
+    enemyCount:preludeCount,
+    bossDifficulty,
+    rewardFactor:ENCOUNTER_REWARD_FACTORS[archetype.reward],
+    expMul:ENCOUNTER_EXP_FACTORS[archetype.reward],
+    matchup,
+    art,
+    artCount:1,
+  }];
 }
 
 function encounterImageHtml(choice) {
@@ -4334,19 +4479,22 @@ function encounterMatchupLabel(choice) {
 function renderEncounterDraft(choices, boss) {
   if (HEADLESS_SIM) return;
   stopChannelAudio();
-  ui.encounterWave.textContent = `WAVE ${String(state.wave + 1).padStart(2, "0")}`;
-  ui.encounterTitle.textContent = boss ? "BOSS 遭遇" : "選擇目標";
+  const biome = currentBiomeConfig();
+  ui.encounterWave.textContent = boss
+    ? `BOSS ${state.bossSeen + 1} / ${PROTOTYPE_BOSS_TOTAL}`
+    : `${biome.short} · WAVE ${String(state.wave + 1).padStart(2, "0")}`;
+  ui.encounterTitle.textContent = boss ? `${biome.name} BOSS` : "選擇目標";
   ui.encounterPanel.classList.toggle("boss-draft", boss);
   ui.encounterList.innerHTML = "";
   choices.forEach((choice, index) => {
     const display = ATTRIBUTE_DISPLAY[choice.attr] || ATTRIBUTE_DISPLAY.neutral;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} formation-${choice.formation} attr-${choice.attr} matchup-${choice.matchup?.attributeState || "even"}${choice.boss ? " boss-card" : ""}`;
+    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} formation-${choice.formation} lane-${choice.lane || "boss"} attr-${choice.attr} matchup-${choice.matchup?.attributeState || "even"}${choice.boss ? " boss-card" : ""}`;
     button.style.setProperty("--encounter-color", display.color);
     button.style.setProperty("--deal-index", index);
     const cardName = choice.boss ? `${display.label}屬 BOSS` : `${display.label}屬 ${choice.formationLabel}`;
-    const formationHint = choice.boss ? choice.art?.name || ENCOUNTER_FORMATION_HINTS.boss : ENCOUNTER_FORMATION_HINTS[choice.formation] || choice.art?.name || "敵軍來襲";
+    const formationHint = choice.boss ? `${choice.art?.name || ENCOUNTER_FORMATION_HINTS.boss}，${choice.formationLabel}` : ENCOUNTER_FORMATION_HINTS[choice.formation] || choice.art?.name || "敵軍來襲";
     const displayCount = choice.boss ? 1 : Math.max(1, Math.round((choice.enemyCount || 0) + (choice.forcedElites || 0)));
     const dangerArt = choice.boss
       ? "danger-boss-v2"
@@ -4357,12 +4505,14 @@ function renderEncounterDraft(choices, boss) {
       <span class="encounter-emblem" aria-hidden="true">
         <span class="encounter-art">${encounterImageHtml(choice)}</span>
         <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
+        <span class="encounter-odds">${choice.estimatedClear}%</span>
         <span class="encounter-count">×${displayCount}</span>
+        ${choice.boss ? `<span class="encounter-boss-type">${choice.formationLabel}</span>` : ""}
       </span>
       <span class="encounter-loot" aria-hidden="true">
         <img class="encounter-reward-art" src="assets/ui/encounter/${rewardArt}.webp" alt="">
       </span>`;
-    button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}，${encounterMatchupLabel(choice)}`);
+    button.setAttribute("aria-label", `${cardName}，${formationHint}，預估通關率 ${choice.estimatedClear}%，敵軍 ${displayCount} 隻，獎勵等級 ${choice.reward}，${encounterMatchupLabel(choice)}`);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
     ui.encounterList.appendChild(button);
   });
@@ -4378,7 +4528,7 @@ function encounterAutoChoice(choices) {
   }, {});
   return choices.slice().sort((a,b) => {
     const score = choice => towerAttrs.filter(attr => attr === counterAttr(choice.attr)).length * 4
-      + (roleCounts[choice.role] || 0) * 2 + choice.reward - choice.threat * .7;
+      + (roleCounts[choice.role] || 0) * 2 + choice.reward * 1.2 + (choice.estimatedClear || 50) / 12;
     return score(b) - score(a);
   })[0];
 }
@@ -4386,7 +4536,7 @@ function encounterAutoChoice(choices) {
 function prepareEncounterDraft() {
   if (!ENCOUNTER_DRAFT_PROTOTYPE) { startWave(); return; }
   const wave = state.wave + 1;
-  if (wave > 30) { completeRun(); return; }
+  if (prototypeRunComplete()) { completeRun(); return; }
   const info = waveInfoFor(wave);
   const boss = consumeBossPreview(wave, info);
   const choices = boss ? buildBossEncounterChoices(wave) : buildRegularEncounterChoices(wave);
@@ -4394,7 +4544,7 @@ function prepareEncounterDraft() {
   state.encounterChoices = choices;
   state.choicesOpen = true;
   state.choiceKind = "encounter";
-  state.message = boss ? "警報：選擇要迎戰的 BOSS。" : "選擇本波敵軍。";
+  state.message = boss ? "BOSS 已鎖定戰區。" : "選擇本波敵軍。";
   if (HEADLESS_SIM) {
     const choice = encounterAutoChoice(choices);
     state.choicesOpen = false;
@@ -4467,7 +4617,7 @@ function hideResult() { ui.resultOverlay.classList.add("hidden"); }
 
 function startBet() {
   if (state.over || state.choicesOpen || state.waveActive || state.monsters.length) return;
-  if (state.started && state.wave >= 30) { completeRun(); return; }
+  if (state.started && prototypeRunComplete()) { completeRun(); return; }
   const bet = currentBet();
   if (state.wallet < bet) { showResult("錢包不足", "沒有足夠餘額下注。"); return; }
   playSfx("bet");
@@ -4758,7 +4908,7 @@ function applyEncounterRewardToTicket(ticket, encounter) {
 }
 
 function startWave(encounterChoice=null) {
-  if (state.wave >= 30) { completeRun(); return; }
+  if (prototypeRunComplete()) { completeRun(); return; }
   const encounter = encounterChoice || state.pendingEncounter?.choices?.[0] || null;
   state.pendingEncounter = null;
   state.encounterChoices = [];
@@ -4785,7 +4935,7 @@ function startWave(encounterChoice=null) {
     : null;
   const rolledElites = eliteCount(info);
   const elites = boss
-    ? Math.min(1, rolledElites)
+    ? Math.max(Math.min(1, rolledElites), Math.max(0, Math.round(encounter?.forcedElites || 0)))
     : encounter ? Math.max(0, Math.round(encounter.forcedElites || 0)) : rolledElites;
   const normalQueue = Array.from({ length:count }, () => {
     const kind = pickWaveMonster(template);
@@ -4812,7 +4962,7 @@ function startWave(encounterChoice=null) {
   };
   if (mathTicket) mathTicket.initialUnits = count + elites + (boss ? 1 : 0);
   state.waveActive = true;
-  state.message = boss ? "BOSS 進入戰區" : `${encounter?.formationLabel || "敵軍"}進入戰區`;
+  state.message = boss ? `${encounter?.formationLabel || "BOSS"}進入戰區` : `${encounter?.formationLabel || "敵軍"}進入戰區`;
   updateUi();
 }
 
@@ -6118,7 +6268,7 @@ function defeatRun() {
 
 function kill(m) {
   if (m.boss) {
-    const nextWave = Math.min(30, state.wave + 1);
+    const nextWave = state.wave + 1;
     const previousBet = betForWave(nextWave, state.bossSeen);
     let add;
     if (certifiedMathEnabled() && state.mathTicket?.boss) {
@@ -6270,7 +6420,7 @@ function updateBossRoll(dt) {
     try {
       navigator.vibrate?.(roll.tier === "jackpot" ? [80,40,120,35,180] : roll.tier === "high" ? [60,35,110] : [35,30,55]);
     } catch {}
-    if (state.wave < 30 && roll.nextBet > roll.previousBet) showBetIncrease(roll.previousBet, roll.nextBet);
+    if (!prototypeRunComplete() && roll.nextBet > roll.previousBet) showBetIncrease(roll.previousBet, roll.nextBet);
   }
 }
 
@@ -6325,13 +6475,23 @@ function bossMultiplier() {
 function checkWaveClear() {
   if (state.bossRoll) return;
   if (!state.spawn && !state.monsters.length && state.waveActive) {
+    const clearedEncounter = state.currentEncounter;
     settleMathTicket();
     state.waveActive = false;
+    if (ENCOUNTER_DRAFT_PROTOTYPE) state.biomeWave += 1;
     playSfx("waveClear");
     effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, { text:"波次完成", life:.9 });
-    prepareNextBossPreview();
-    if (state.wave >= 30) completeRun();
-    else state.message = "場上無怪，可以 Collect 或繼續 BET。";
+    if (ENCOUNTER_DRAFT_PROTOTYPE && clearedEncounter?.boss) {
+      applyBiomePresentation(false);
+      if (prototypeRunComplete()) completeRun();
+      else {
+        advancePrototypeBiome();
+        state.message = `${currentBiomeConfig().name}開啟，可以 Collect 或繼續 BET。`;
+      }
+    } else {
+      prepareNextBossPreview();
+      state.message = "場上無怪，可以 Collect 或繼續 BET。";
+    }
   } else if (state.waveActive && canLevelUp() && !state.choicesOpen) {
     showUpgradeChoices();
   }
@@ -7029,7 +7189,7 @@ function completeRun() {
   payMathReservation();
   state.wallet += win;
   playSfx("collect");
-  showResult("30 波通關", `通關結算 ${win}。錢包餘額 ${state.wallet}。`);
+  showResult(ENCOUNTER_DRAFT_PROTOTYPE ? "五戰區制霸" : "30 波通關", `通關結算 ${win}。錢包餘額 ${state.wallet}。`);
 }
 function canCollect() { return state.started && !state.over && !state.waveActive && !state.monsters.length && !state.spawn && !state.choicesOpen && state.pot > 0; }
 
@@ -7368,10 +7528,69 @@ function drawField() {
     shade.addColorStop(1, "rgba(2,4,8,.20)");
     ctx.fillStyle = shade;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    return;
+  } else {
+    if (!fieldLayer) fieldLayer = buildFieldLayer();
+    ctx.drawImage(fieldLayer, 0, 0);
   }
-  if (!fieldLayer) fieldLayer = buildFieldLayer();
-  ctx.drawImage(fieldLayer, 0, 0);
+  drawBiomeFieldOverlay();
+}
+
+function drawBiomeFieldOverlay() {
+  if (!ENCOUNTER_DRAFT_PROTOTYPE || !state?.biomeOrder?.length) return;
+  const biome = currentBiomeConfig();
+  const time = performance.now() / 1000;
+  ctx.save();
+  ctx.fillStyle = `rgba(${biome.rgb},.105)`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = "screen";
+  ctx.strokeStyle = `rgba(${biome.rgb},.24)`;
+  ctx.lineWidth = 1.2;
+  if (biome.id === "fire") {
+    for (let index=0; index<10; index+=1) {
+      const x = (index * 71 + 29) % canvas.width;
+      const y = canvas.height - ((time * (32 + index % 4 * 8) + index * 93) % canvas.height);
+      ctx.beginPath();
+      ctx.moveTo(x, y + 9);
+      ctx.lineTo(x + Math.sin(time + index) * 3, y);
+      ctx.stroke();
+    }
+  } else if (biome.id === "ice") {
+    for (let index=0; index<12; index+=1) {
+      const x = (index * 83 + time * (7 + index % 3)) % (canvas.width + 30) - 15;
+      const y = (index * 61 + time * (20 + index % 4 * 4)) % canvas.height;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 4, y + 8);
+      ctx.stroke();
+    }
+  } else if (biome.id === "electric" && Math.floor(time * 2.4) % 9 === 0) {
+    const x = 44 + (Math.floor(time * 5) * 67) % 250;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, 70);
+    ctx.lineTo(x - 12, 126);
+    ctx.lineTo(x + 5, 166);
+    ctx.lineTo(x - 8, 222);
+    ctx.stroke();
+  } else if (biome.id === "poison") {
+    ctx.lineWidth = 5;
+    for (let index=0; index<7; index+=1) {
+      const y = 90 + index * 88 + Math.sin(time * .7 + index) * 18;
+      ctx.beginPath();
+      ctx.moveTo(-20, y);
+      ctx.bezierCurveTo(80, y - 18, 230, y + 22, 370, y - 8);
+      ctx.stroke();
+    }
+  } else if (biome.id === "neutral") {
+    ctx.globalAlpha = .55;
+    for (let y=86; y<canvas.height; y+=72) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 function drawDefenseStage() {
@@ -8575,7 +8794,7 @@ function jag(a,b,phase=0) {
 function updateAttributeIndicators(bossDanger) {
   const previewWave = state.wave + 1;
   const nextAttr = wavePrimaryAttribute(previewWave);
-  const showNext = previewWave <= 30 && nextAttr !== "neutral" && !state.waveActive && !state.choicesOpen && !state.over;
+  const showNext = !prototypeRunComplete() && nextAttr !== "neutral" && !state.waveActive && !state.choicesOpen && !state.over;
   if (ui.nextAttrHint) {
     ui.nextAttrHint.hidden = !showNext;
     ui.nextAttrHint.classList.toggle("boss", bossDanger > 0);
@@ -8757,7 +8976,7 @@ function heroCooldownProgress(hero) {
 function updateDebugSnapshot(now = performance.now()) {
   if (now - lastDebugFrame < DEBUG_FRAME_MS) return;
   lastDebugFrame = now;
-  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, hero:state.hero?.heroId || null, towers:state.towers.length, collect:canCollect(), upgrade:state.lastUpgradeDebug || null, audio:{ state:audioState.ctx?.state || "none", bgm:audioState.bgmTimer !== null, voices:audioState.bgmSources.size } });
+  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, biome:currentBiomeConfig().id, biomeIndex:state.biomeIndex, biomeWave:state.biomeWave, bossAt:state.biomeBossAt, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, hero:state.hero?.heroId || null, towers:state.towers.length, encounter:state.currentEncounter ? { lane:state.currentEncounter.lane || "boss", estimatedClear:state.currentEncounter.estimatedClear, reward:state.currentEncounter.reward } : null, collect:canCollect(), upgrade:state.lastUpgradeDebug || null, audio:{ state:audioState.ctx?.state || "none", bgm:audioState.bgmTimer !== null, voices:audioState.bgmSources.size } });
   if (snapshot === lastDebugSnapshot) return;
   lastDebugSnapshot = snapshot;
   document.body.dataset.debug = snapshot;
@@ -8898,6 +9117,7 @@ if (HEADLESS_SIM) {
       projectiles:state.projectiles.length, zones:state.zones.length,
       bossAlive:state.monsters.some(monster => monster.boss), bossSpawned:state.simBossSpawned || 0, bossSeen:state.bossSeen, bossRolled:state.bossRolled,
       bossAdd:state.bossAdd, bossRolling:!!state.bossRoll, bossDanger:Number(state.bossDanger) || 0,
+      biome:currentBiomeConfig().id, biomeIndex:state.biomeIndex, biomeWave:state.biomeWave, biomeBossAt:state.biomeBossAt,
       selectedTemplate:state.selectedTemplate, currentWaveAttr:state.currentWaveAttr,
       currentBet:currentBet(), payout:payout(),
       displayPot:Number(display.potText), displayPayout:display.total, displayMultiplier:display.multiplier,
