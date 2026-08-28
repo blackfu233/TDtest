@@ -1607,14 +1607,8 @@ canvas {
   align-items: center;
   padding: 0;
   overflow: hidden;
-  border-style: solid;
-  border-color: transparent;
-  border-width: 12px 18px;
-  border-image-source: var(--encounter-frame);
-  border-image-slice: 22% 14%;
-  border-image-width: 12px 18px;
-  border-image-repeat: stretch;
-  border-radius: 0;
+  border: 0;
+  border-radius: 7px;
   color: #fff;
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--encounter-color) 18%, transparent), transparent 42%),
@@ -1637,6 +1631,17 @@ canvas {
 
 .encounter-card::after {
   content: none;
+}
+
+.encounter-danger-art {
+  position: absolute;
+  z-index: 7;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
 }
 
 .encounter-card.threat-1 { --danger-color: #7f94a6; }
@@ -1662,7 +1667,7 @@ canvas {
 
 .encounter-art {
   position: absolute;
-  inset: 8px 130px 8px 36px;
+  inset: 12px 128px 12px 42px;
   overflow: hidden;
   background: none;
 }
@@ -1697,8 +1702,8 @@ canvas {
 .encounter-attr {
   position: absolute;
   z-index: 5;
-  top: 10px;
-  left: 10px;
+  top: 15px;
+  left: 17px;
   right: auto;
   width: 25px;
   height: 25px;
@@ -1712,8 +1717,8 @@ canvas {
 .encounter-count {
   position: absolute;
   z-index: 5;
-  right: 63px;
-  bottom: 14px;
+  right: 73px;
+  bottom: 18px;
   min-width: 42px;
   padding: 3px 6px 4px;
   border: 1px solid color-mix(in srgb, var(--encounter-color) 70%, #fff);
@@ -1729,7 +1734,7 @@ canvas {
   position: absolute;
   z-index: 6;
   top: 50%;
-  right: 7px;
+  right: 17px;
   display: grid;
   width: 48px;
   height: 58px;
@@ -1781,15 +1786,12 @@ canvas {
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--encounter-color) 12%, transparent), transparent 42%),
     linear-gradient(112deg, #271719, #080709 68%);
-  border-width: 14px 22px;
-  border-image-slice: 26% 12%;
-  border-image-width: 14px 22px;
 }
-.encounter-card.boss-card .encounter-art { inset: 8px 132px 8px 42px; }
+.encounter-card.boss-card .encounter-art { inset: 12px 132px 12px 45px; }
 .encounter-card.boss-card .encounter-art img { width: 96px; height: 84px; }
-.encounter-card.boss-card .encounter-attr { left: 12px; top: 11px; }
-.encounter-card.boss-card .encounter-count { right: 66px; }
-.encounter-card.boss-card .encounter-loot { right: 8px; }
+.encounter-card.boss-card .encounter-attr { left: 19px; top: 16px; }
+.encounter-card.boss-card .encounter-count { right: 76px; }
+.encounter-card.boss-card .encounter-loot { right: 19px; }
 
 @keyframes encounterRowDeal {
   from { opacity: 0; transform: translateX(24px) scale(.96); }
@@ -1810,15 +1812,13 @@ canvas {
   .encounter-card {
     min-height: 112px;
     padding: 0;
-    border-width: 10px 16px;
-    border-image-width: 10px 16px;
   }
   .encounter-emblem { height: auto; }
   .encounter-attr { width: 24px; height: 24px; font-size: 14px; }
   .encounter-count { min-width: 40px; padding: 3px 6px; font-size: 15px; }
-  .encounter-art { top: 7px; right: 122px; bottom: 7px; left: 32px; }
-  .encounter-loot { right: 5px; width: 44px; height: 52px; }
-  .encounter-count { right: 56px; bottom: 12px; }
+  .encounter-art { top: 12px; right: 120px; bottom: 12px; left: 40px; }
+  .encounter-loot { right: 15px; width: 44px; height: 52px; }
+  .encounter-count { right: 68px; bottom: 17px; }
   .encounter-reward-art { width: 39px; height: 39px; }
   .reward-2 .encounter-reward-art { width: 41px; height: 41px; }
   .reward-3 .encounter-reward-art { width: 43px; height: 43px; }
