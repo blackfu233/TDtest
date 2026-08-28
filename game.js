@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-readable215";
+const BUILD_VERSION = "encounter-art216";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
@@ -4348,8 +4348,12 @@ function renderEncounterDraft(choices, boss) {
     const cardName = choice.boss ? `${display.label}屬 BOSS` : `${display.label}屬 ${choice.formationLabel}`;
     const formationHint = choice.boss ? choice.art?.name || ENCOUNTER_FORMATION_HINTS.boss : ENCOUNTER_FORMATION_HINTS[choice.formation] || choice.art?.name || "敵軍來襲";
     const displayCount = choice.boss ? 1 : Math.max(1, Math.round((choice.enemyCount || 0) + (choice.forcedElites || 0)));
+    const dangerArt = choice.boss
+      ? "danger-boss"
+      : ["", "danger-simple", "danger-warning", "danger-critical"][clamp(choice.threat, 1, 3)];
+    const rewardArt = ["", "reward-normal", "reward-rare", "reward-epic", "reward-legendary"][clamp(choice.reward, 1, 4)];
     button.innerHTML = `
-      <span class="encounter-danger-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <img class="encounter-danger-art" src="assets/ui/encounter/${dangerArt}.webp" alt="" aria-hidden="true">
       <span class="encounter-emblem" aria-hidden="true">
         <span class="encounter-art">${encounterImageHtml(choice)}</span>
         <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
@@ -4357,7 +4361,7 @@ function renderEncounterDraft(choices, boss) {
       </span>
       <span class="encounter-loot" aria-hidden="true">
         <small>獎勵</small>
-        <span class="loot-crate"><i class="loot-crate-core"></i><i class="loot-wing loot-wing-left"></i><i class="loot-wing loot-wing-right"></i></span>
+        <img class="encounter-reward-art" src="assets/ui/encounter/${rewardArt}.webp" alt="">
       </span>`;
     button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}，${encounterMatchupLabel(choice)}`);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
