@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-art216";
+const BUILD_VERSION = "encounter-spaced217";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
@@ -4360,7 +4360,6 @@ function renderEncounterDraft(choices, boss) {
         <span class="encounter-count">×${displayCount}</span>
       </span>
       <span class="encounter-loot" aria-hidden="true">
-        <small>獎勵</small>
         <img class="encounter-reward-art" src="assets/ui/encounter/${rewardArt}.webp" alt="">
       </span>`;
     button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，威脅 ${choice.threat}，獎勵潛力 ${choice.reward}，${encounterMatchupLabel(choice)}`);

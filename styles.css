@@ -1485,7 +1485,7 @@ canvas {
 
 /* Hero selection stays distinct, but uses the same readable mobile proportions. */
 .choice-list[data-layout="heroes"] {
-  gap: 9px;
+  gap: 12px;
   padding-right: 0;
   scrollbar-width: none;
 }
@@ -1600,14 +1600,14 @@ canvas {
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 78px;
+  grid-template-columns: minmax(0, 1fr) 68px;
   gap: 0;
   width: 100%;
   min-width: 0;
-  min-height: 100px;
+  min-height: 112px;
   aspect-ratio: auto;
   align-items: center;
-  padding: 5px 5px 5px 6px;
+  padding: 6px 6px 6px 7px;
   overflow: hidden;
   border: 0;
   border-radius: 7px;
@@ -1644,7 +1644,7 @@ canvas {
   z-index: 2;
   display: grid;
   width: 100%;
-  height: 94px;
+  height: 100px;
   place-items: center;
   overflow: hidden;
   border: 0;
@@ -1657,7 +1657,7 @@ canvas {
 
 .encounter-art {
   position: absolute;
-  inset: 1px 3px 1px 1px;
+  inset: 5px 64px 5px 5px;
   overflow: hidden;
   background: none;
 }
@@ -1670,24 +1670,24 @@ canvas {
 }
 
 .encounter-art img {
-  bottom: 1%;
-  width: 76%;
-  height: 100%;
+  bottom: 4%;
+  width: 68%;
+  height: 88%;
 }
 
-.encounter-art img:nth-child(1):not(:only-child) { left: 24%; width: 58%; height: 70%; z-index: 1; }
-.encounter-art img:nth-child(2):not(:only-child) { left: 50%; width: 72%; height: 94%; z-index: 3; }
-.encounter-art img:nth-child(3) { left: 77%; width: 58%; height: 70%; z-index: 1; }
-.formation-rush .encounter-art img:nth-child(1) { left: 34%; width: 66%; height: 80%; }
-.formation-rush .encounter-art img:nth-child(2) { left: 66%; width: 72%; height: 94%; }
+.encounter-art img:nth-child(1):not(:only-child) { left: 24%; width: 50%; height: 62%; z-index: 1; }
+.encounter-art img:nth-child(2):not(:only-child) { left: 50%; width: 62%; height: 80%; z-index: 3; }
+.encounter-art img:nth-child(3) { left: 76%; width: 50%; height: 62%; z-index: 1; }
+.formation-rush .encounter-art img:nth-child(1) { left: 34%; width: 56%; height: 70%; }
+.formation-rush .encounter-art img:nth-child(2) { left: 66%; width: 62%; height: 80%; }
 .formation-armor .encounter-art img:nth-child(1),
-.formation-siege .encounter-art img:nth-child(1) { left: 33%; width: 72%; height: 90%; }
+.formation-siege .encounter-art img:nth-child(1) { left: 33%; width: 60%; height: 76%; }
 .formation-armor .encounter-art img:nth-child(2),
-.formation-siege .encounter-art img:nth-child(2) { left: 68%; width: 72%; height: 90%; }
-.formation-elite .encounter-art img.encounter-support:nth-child(1) { left: 23%; width: 48%; height: 57%; z-index: 1; opacity: .72; }
-.formation-elite .encounter-art img.encounter-elite-lead:nth-child(2) { left: 50%; width: 75%; height: 102%; z-index: 3; opacity: 1; }
-.formation-elite .encounter-art img.encounter-support:nth-child(3) { left: 78%; width: 48%; height: 57%; z-index: 1; opacity: .72; }
-.boss-card .encounter-art img:only-child { width: 106%; height: 106%; }
+.formation-siege .encounter-art img:nth-child(2) { left: 67%; width: 60%; height: 76%; }
+.formation-elite .encounter-art img.encounter-support:nth-child(1) { left: 23%; width: 40%; height: 48%; z-index: 1; opacity: .72; }
+.formation-elite .encounter-art img.encounter-elite-lead:nth-child(2) { left: 50%; width: 64%; height: 88%; z-index: 3; opacity: 1; }
+.formation-elite .encounter-art img.encounter-support:nth-child(3) { left: 77%; width: 40%; height: 48%; z-index: 1; opacity: .72; }
+.boss-card .encounter-art img:only-child { width: 90%; height: 92%; }
 
 .encounter-attr {
   position: absolute;
@@ -1707,16 +1707,16 @@ canvas {
 .encounter-count {
   position: absolute;
   z-index: 5;
-  right: 13px;
-  bottom: 12px;
-  min-width: 46px;
-  padding: 3px 7px 4px;
+  right: 16px;
+  bottom: 14px;
+  min-width: 42px;
+  padding: 3px 6px 4px;
   border: 1px solid color-mix(in srgb, var(--encounter-color) 70%, #fff);
   border-radius: 3px;
   color: #fff;
   background: rgba(2, 5, 8, .88);
   box-shadow: 0 0 10px color-mix(in srgb, var(--encounter-color) 28%, transparent);
-  font: 950 17px/1 Arial, "Noto Sans TC", sans-serif;
+  font: 950 16px/1 Arial, "Noto Sans TC", sans-serif;
   text-align: center;
 }
 
@@ -1727,21 +1727,12 @@ canvas {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 5px;
   min-width: 0;
   border-left: 1px solid rgba(190, 211, 227, .17);
   background: radial-gradient(circle at 50% 50%, rgba(86, 191, 255, .11), transparent 68%);
 }
 
-.encounter-loot small {
-  color: #d7e3eb;
-  font-size: 9px;
-  font-weight: 950;
-  line-height: 1;
-}
-
 .reward-4 .encounter-loot { background: radial-gradient(circle, rgba(255, 211, 67, .21), transparent 68%); }
-.reward-4 .encounter-loot small { color: #fff0a6; text-shadow: 0 0 7px #ffcb36; }
 
 .encounter-danger-art {
   position: absolute;
@@ -1756,15 +1747,15 @@ canvas {
 
 .encounter-reward-art {
   display: block;
-  width: 62px;
-  height: 62px;
+  width: 50px;
+  height: 50px;
   object-fit: contain;
   filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .55));
 }
 
-.reward-2 .encounter-reward-art { width: 65px; height: 65px; }
-.reward-3 .encounter-reward-art { width: 68px; height: 68px; }
-.reward-4 .encounter-reward-art { width: 72px; height: 72px; }
+.reward-2 .encounter-reward-art { width: 52px; height: 52px; }
+.reward-3 .encounter-reward-art { width: 55px; height: 55px; }
+.reward-4 .encounter-reward-art { width: 59px; height: 59px; }
 
 .encounter-card:hover,
 .encounter-card:focus-visible {
@@ -1794,8 +1785,8 @@ canvas {
     linear-gradient(90deg, color-mix(in srgb, var(--encounter-color) 12%, transparent), transparent 42%),
     linear-gradient(112deg, #271719, #080709 68%);
 }
-.encounter-card.boss-card .encounter-art { inset: 1px; }
-.encounter-card.boss-card .encounter-art img { width: 108%; height: 100%; }
+.encounter-card.boss-card .encounter-art { inset: 6px 64px 6px 7px; }
+.encounter-card.boss-card .encounter-art img { width: 90%; height: 92%; }
 .encounter-card.boss-card .encounter-attr { left: 52px; top: 14px; }
 
 @keyframes encounterRowDeal {
@@ -1813,14 +1804,15 @@ canvas {
   .encounter-panel { gap: 7px; padding: 9px; }
   .encounter-header { padding-bottom: 2px; }
   .encounter-header h2 { font-size: 20px; }
-  .encounter-card { min-height: 86px; grid-template-columns: minmax(0, 1fr) 68px; padding: 4px; }
-  .encounter-emblem { height: 78px; }
+  .encounter-list { gap: 9px; }
+  .encounter-card { min-height: 94px; grid-template-columns: minmax(0, 1fr) 60px; padding: 4px; }
+  .encounter-emblem { height: 86px; }
   .encounter-attr { width: 24px; height: 24px; font-size: 14px; }
   .encounter-count { min-width: 40px; padding: 3px 6px; font-size: 15px; }
-  .encounter-reward-art { width: 52px; height: 52px; }
-  .reward-2 .encounter-reward-art { width: 55px; height: 55px; }
-  .reward-3 .encounter-reward-art { width: 58px; height: 58px; }
-  .reward-4 .encounter-reward-art { width: 61px; height: 61px; }
+  .encounter-reward-art { width: 45px; height: 45px; }
+  .reward-2 .encounter-reward-art { width: 47px; height: 47px; }
+  .reward-3 .encounter-reward-art { width: 49px; height: 49px; }
+  .reward-4 .encounter-reward-art { width: 52px; height: 52px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
