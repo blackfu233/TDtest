@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-safezone218";
+const BUILD_VERSION = "encounter-nine-slice219";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
@@ -4352,8 +4352,8 @@ function renderEncounterDraft(choices, boss) {
       ? "danger-boss"
       : ["", "danger-simple", "danger-warning", "danger-critical"][clamp(choice.threat, 1, 3)];
     const rewardArt = ["", "reward-normal", "reward-rare", "reward-epic", "reward-legendary"][clamp(choice.reward, 1, 4)];
+    button.style.setProperty("--encounter-frame", `url("assets/ui/encounter/${dangerArt}.webp")`);
     button.innerHTML = `
-      <img class="encounter-danger-art" src="assets/ui/encounter/${dangerArt}.webp" alt="" aria-hidden="true">
       <span class="encounter-emblem" aria-hidden="true">
         <span class="encounter-art">${encounterImageHtml(choice)}</span>
         <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>

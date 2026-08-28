@@ -1324,7 +1324,7 @@ canvas {
   position: relative;
   overflow: hidden;
   width: 100%;
-  min-height: 112px;
+  min-height: 128px;
   aspect-ratio: 3 / 1;
   grid-template-columns: 104px minmax(0, 1fr);
   gap: 12px;
@@ -1607,8 +1607,14 @@ canvas {
   align-items: center;
   padding: 0;
   overflow: hidden;
-  border: 0;
-  border-radius: 7px;
+  border-style: solid;
+  border-color: transparent;
+  border-width: 12px 18px;
+  border-image-source: var(--encounter-frame);
+  border-image-slice: 22% 14%;
+  border-image-width: 12px 18px;
+  border-image-repeat: stretch;
+  border-radius: 0;
   color: #fff;
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--encounter-color) 18%, transparent), transparent 42%),
@@ -1656,7 +1662,7 @@ canvas {
 
 .encounter-art {
   position: absolute;
-  inset: 10px 148px 10px 52px;
+  inset: 8px 130px 8px 36px;
   overflow: hidden;
   background: none;
 }
@@ -1670,29 +1676,29 @@ canvas {
 
 .encounter-art img {
   bottom: 4%;
-  width: 90px;
-  height: 82px;
+  width: 82px;
+  height: 76px;
 }
 
-.encounter-art img:nth-child(1):not(:only-child) { left: 22%; width: 58px; height: 54px; z-index: 1; }
-.encounter-art img:nth-child(2):not(:only-child) { left: 50%; width: 84px; height: 76px; z-index: 3; }
-.encounter-art img:nth-child(3) { left: 78%; width: 58px; height: 54px; z-index: 1; }
-.formation-rush .encounter-art img:nth-child(1) { left: 34%; width: 72px; height: 66px; }
-.formation-rush .encounter-art img:nth-child(2) { left: 66%; width: 76px; height: 70px; }
+.encounter-art img:nth-child(1):not(:only-child) { left: 22%; width: 52px; height: 48px; z-index: 1; }
+.encounter-art img:nth-child(2):not(:only-child) { left: 50%; width: 76px; height: 70px; z-index: 3; }
+.encounter-art img:nth-child(3) { left: 78%; width: 52px; height: 48px; z-index: 1; }
+.formation-rush .encounter-art img:nth-child(1) { left: 34%; width: 66px; height: 60px; }
+.formation-rush .encounter-art img:nth-child(2) { left: 66%; width: 70px; height: 64px; }
 .formation-armor .encounter-art img:nth-child(1),
-.formation-siege .encounter-art img:nth-child(1) { left: 34%; width: 80px; height: 74px; }
+.formation-siege .encounter-art img:nth-child(1) { left: 34%; width: 74px; height: 68px; }
 .formation-armor .encounter-art img:nth-child(2),
-.formation-siege .encounter-art img:nth-child(2) { left: 66%; width: 80px; height: 74px; }
-.formation-elite .encounter-art img.encounter-support:nth-child(1) { left: 21%; width: 46px; height: 44px; z-index: 1; opacity: .72; }
-.formation-elite .encounter-art img.encounter-elite-lead:nth-child(2) { left: 50%; width: 88px; height: 84px; z-index: 3; opacity: 1; }
-.formation-elite .encounter-art img.encounter-support:nth-child(3) { left: 79%; width: 46px; height: 44px; z-index: 1; opacity: .72; }
-.boss-card .encounter-art img:only-child { width: 104px; height: 90px; }
+.formation-siege .encounter-art img:nth-child(2) { left: 66%; width: 74px; height: 68px; }
+.formation-elite .encounter-art img.encounter-support:nth-child(1) { left: 21%; width: 42px; height: 40px; z-index: 1; opacity: .72; }
+.formation-elite .encounter-art img.encounter-elite-lead:nth-child(2) { left: 50%; width: 82px; height: 78px; z-index: 3; opacity: 1; }
+.formation-elite .encounter-art img.encounter-support:nth-child(3) { left: 79%; width: 42px; height: 40px; z-index: 1; opacity: .72; }
+.boss-card .encounter-art img:only-child { width: 96px; height: 84px; }
 
 .encounter-attr {
   position: absolute;
   z-index: 5;
-  top: 18px;
-  left: 48px;
+  top: 10px;
+  left: 10px;
   right: auto;
   width: 25px;
   height: 25px;
@@ -1706,8 +1712,8 @@ canvas {
 .encounter-count {
   position: absolute;
   z-index: 5;
-  right: 101px;
-  bottom: 18px;
+  right: 63px;
+  bottom: 14px;
   min-width: 42px;
   padding: 3px 6px 4px;
   border: 1px solid color-mix(in srgb, var(--encounter-color) 70%, #fff);
@@ -1723,10 +1729,10 @@ canvas {
   position: absolute;
   z-index: 6;
   top: 50%;
-  right: 48px;
+  right: 7px;
   display: grid;
-  width: 50px;
-  height: 62px;
+  width: 48px;
+  height: 58px;
   place-items: center;
   min-width: 0;
   border: 0;
@@ -1735,17 +1741,6 @@ canvas {
 }
 
 .reward-4 .encounter-loot { background: none; }
-
-.encounter-danger-art {
-  position: absolute;
-  z-index: 4;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
-  pointer-events: none;
-  user-select: none;
-}
 
 .encounter-reward-art {
   display: block;
@@ -1786,12 +1781,15 @@ canvas {
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--encounter-color) 12%, transparent), transparent 42%),
     linear-gradient(112deg, #271719, #080709 68%);
+  border-width: 14px 22px;
+  border-image-slice: 26% 12%;
+  border-image-width: 14px 22px;
 }
-.encounter-card.boss-card .encounter-art { inset: 12px 158px 12px 70px; }
-.encounter-card.boss-card .encounter-art img { width: 104px; height: 90px; }
-.encounter-card.boss-card .encounter-attr { left: 68px; top: 20px; }
-.encounter-card.boss-card .encounter-count { right: 116px; }
-.encounter-card.boss-card .encounter-loot { right: 66px; }
+.encounter-card.boss-card .encounter-art { inset: 8px 132px 8px 42px; }
+.encounter-card.boss-card .encounter-art img { width: 96px; height: 84px; }
+.encounter-card.boss-card .encounter-attr { left: 12px; top: 11px; }
+.encounter-card.boss-card .encounter-count { right: 66px; }
+.encounter-card.boss-card .encounter-loot { right: 8px; }
 
 @keyframes encounterRowDeal {
   from { opacity: 0; transform: translateX(24px) scale(.96); }
@@ -1809,13 +1807,18 @@ canvas {
   .encounter-header { padding-bottom: 2px; }
   .encounter-header h2 { font-size: 20px; }
   .encounter-list { gap: 9px; }
-  .encounter-card { min-height: 98px; padding: 0; }
+  .encounter-card {
+    min-height: 112px;
+    padding: 0;
+    border-width: 10px 16px;
+    border-image-width: 10px 16px;
+  }
   .encounter-emblem { height: auto; }
   .encounter-attr { width: 24px; height: 24px; font-size: 14px; }
   .encounter-count { min-width: 40px; padding: 3px 6px; font-size: 15px; }
-  .encounter-art { top: 8px; bottom: 8px; }
-  .encounter-loot { right: 46px; width: 46px; height: 54px; }
-  .encounter-count { right: 96px; bottom: 16px; }
+  .encounter-art { top: 7px; right: 122px; bottom: 7px; left: 32px; }
+  .encounter-loot { right: 5px; width: 44px; height: 52px; }
+  .encounter-count { right: 56px; bottom: 12px; }
   .encounter-reward-art { width: 39px; height: 39px; }
   .reward-2 .encounter-reward-art { width: 41px; height: 41px; }
   .reward-3 .encounter-reward-art { width: 43px; height: 43px; }
