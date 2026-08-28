@@ -2940,6 +2940,10 @@ function currentBiomeConfig() {
   const id = state?.biomeOrder?.[state.biomeIndex] || PROTOTYPE_BIOMES[0].id;
   return PROTOTYPE_BIOMES.find(biome => biome.id === id) || PROTOTYPE_BIOMES[0];
 }
+function biomeBossPressure() {
+  if (!ENCOUNTER_DRAFT_PROTOTYPE || !state?.biomeBossAt || prototypeRunComplete()) return 0;
+  return clamp((state.biomeWave + 1) / Math.max(1, state.biomeBossAt), 0, 1);
+}
 function rollPrototypeBossEncounter() {
   return rand(PROTOTYPE_BOSS_MIN_ENCOUNTER, PROTOTYPE_BOSS_MAX_ENCOUNTER);
 }
@@ -3935,9 +3939,10 @@ function applyBiomePresentation(showTransition=false) {
   if (ui.biomeName) ui.biomeName.textContent = biome.short;
   if (ui.biomeAttrCanvas) renderAttributeCanvas(ui.biomeAttrCanvas, biome.attr, false);
   if (ui.biomeRoute) {
-    ui.biomeRoute.innerHTML = PROTOTYPE_BIOMES.map((_, index) => {
+    ui.biomeRoute.innerHTML = state.biomeOrder.map((biomeId, index) => {
       const status = index < state.bossSeen ? "cleared" : index === state.biomeIndex ? "current" : "locked";
-      return `<span class="${status}" aria-hidden="true"></span>`;
+      const boss = BOSS_VARIANTS[biomeId] || BOSS_VARIANTS.neutral;
+      return `<span class="${status}" aria-hidden="true"><img src="assets/enemies-v3/${boss.sprite}" alt=""></span>`;
     }).join("");
     ui.biomeRoute.setAttribute("aria-label", `已擊破 ${state.bossSeen} / ${PROTOTYPE_BOSS_TOTAL} 名 BOSS`);
   }
@@ -4505,14 +4510,13 @@ function renderEncounterDraft(choices, boss) {
       <span class="encounter-emblem" aria-hidden="true">
         <span class="encounter-art">${encounterImageHtml(choice)}</span>
         <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
-        <span class="encounter-odds">${choice.estimatedClear}%</span>
         <span class="encounter-count">×${displayCount}</span>
         ${choice.boss ? `<span class="encounter-boss-type">${choice.formationLabel}</span>` : ""}
       </span>
       <span class="encounter-loot" aria-hidden="true">
         <img class="encounter-reward-art" src="assets/ui/encounter/${rewardArt}.webp" alt="">
       </span>`;
-    button.setAttribute("aria-label", `${cardName}，${formationHint}，預估通關率 ${choice.estimatedClear}%，敵軍 ${displayCount} 隻，獎勵等級 ${choice.reward}，${encounterMatchupLabel(choice)}`);
+    button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，獎勵等級 ${choice.reward}，${encounterMatchupLabel(choice)}`);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
     ui.encounterList.appendChild(button);
   });
@@ -7504,6 +7508,10 @@ function drawPersistentLaser(from, to, color, focused=false, secondary=false) {
 
 let fieldLayer = null;
 const battlefieldArt = artImage("assets/backgrounds/battlefield-v1.webp");
+const biomeBattlefieldArt = Object.fromEntries(PROTOTYPE_BIOMES.map(biome => [
+  biome.id,
+  artImage(`assets/backgrounds/biome-${biome.id}-v1.webp`),
+]));
 
 function drawArtCover(image, x, y, width, height) {
   const sourceRatio = image.naturalWidth / image.naturalHeight;
@@ -7520,8 +7528,10 @@ function drawArtCover(image, x, y, width, height) {
 }
 
 function drawField() {
-  if (battlefieldArt?.complete && battlefieldArt.naturalWidth) {
-    drawArtCover(battlefieldArt, 0, 0, canvas.width, canvas.height);
+  const biomeArt = ENCOUNTER_DRAFT_PROTOTYPE ? biomeBattlefieldArt[currentBiomeConfig().id] : null;
+  const activeArt = biomeArt?.complete && biomeArt.naturalWidth ? biomeArt : battlefieldArt;
+  if (activeArt?.complete && activeArt.naturalWidth) {
+    drawArtCover(activeArt, 0, 0, canvas.width, canvas.height);
     const shade = ctx.createLinearGradient(0, 0, 0, canvas.height);
     shade.addColorStop(0, "rgba(3,8,16,.10)");
     shade.addColorStop(.58, "rgba(2,5,10,.03)");
@@ -7539,33 +7549,37 @@ function drawBiomeFieldOverlay() {
   if (!ENCOUNTER_DRAFT_PROTOTYPE || !state?.biomeOrder?.length) return;
   const biome = currentBiomeConfig();
   const time = performance.now() / 1000;
+  const pressure = biomeBossPressure();
+  const intensity = .28 + pressure * 1.22;
   ctx.save();
-  ctx.fillStyle = `rgba(${biome.rgb},.105)`;
+  ctx.fillStyle = `rgba(${biome.rgb},${(.025 + pressure * .105).toFixed(3)})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.globalCompositeOperation = "screen";
-  ctx.strokeStyle = `rgba(${biome.rgb},.24)`;
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = `rgba(${biome.rgb},${(.13 + pressure * .31).toFixed(3)})`;
+  ctx.lineWidth = 1 + pressure * 1.3;
   if (biome.id === "fire") {
-    for (let index=0; index<10; index+=1) {
+    const count = 4 + Math.round(12 * pressure);
+    for (let index=0; index<count; index+=1) {
       const x = (index * 71 + 29) % canvas.width;
-      const y = canvas.height - ((time * (32 + index % 4 * 8) + index * 93) % canvas.height);
+      const y = canvas.height - ((time * (22 + intensity * 18 + index % 4 * 8) + index * 93) % canvas.height);
       ctx.beginPath();
       ctx.moveTo(x, y + 9);
       ctx.lineTo(x + Math.sin(time + index) * 3, y);
       ctx.stroke();
     }
   } else if (biome.id === "ice") {
-    for (let index=0; index<12; index+=1) {
+    const count = 5 + Math.round(14 * pressure);
+    for (let index=0; index<count; index+=1) {
       const x = (index * 83 + time * (7 + index % 3)) % (canvas.width + 30) - 15;
-      const y = (index * 61 + time * (20 + index % 4 * 4)) % canvas.height;
+      const y = (index * 61 + time * (15 + intensity * 13 + index % 4 * 4)) % canvas.height;
       ctx.beginPath();
       ctx.moveTo(x, y);
       ctx.lineTo(x - 4, y + 8);
       ctx.stroke();
     }
-  } else if (biome.id === "electric" && Math.floor(time * 2.4) % 9 === 0) {
+  } else if (biome.id === "electric" && Math.floor(time * (1.8 + pressure * 4.6)) % Math.max(2, 8 - Math.round(pressure * 5)) === 0) {
     const x = 44 + (Math.floor(time * 5) * 67) % 250;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.4 + pressure * 2.2;
     ctx.beginPath();
     ctx.moveTo(x, 70);
     ctx.lineTo(x - 12, 126);
@@ -7573,8 +7587,9 @@ function drawBiomeFieldOverlay() {
     ctx.lineTo(x - 8, 222);
     ctx.stroke();
   } else if (biome.id === "poison") {
-    ctx.lineWidth = 5;
-    for (let index=0; index<7; index+=1) {
+    ctx.lineWidth = 2.8 + pressure * 4;
+    const count = 3 + Math.round(8 * pressure);
+    for (let index=0; index<count; index+=1) {
       const y = 90 + index * 88 + Math.sin(time * .7 + index) * 18;
       ctx.beginPath();
       ctx.moveTo(-20, y);
@@ -7582,8 +7597,9 @@ function drawBiomeFieldOverlay() {
       ctx.stroke();
     }
   } else if (biome.id === "neutral") {
-    ctx.globalAlpha = .55;
-    for (let y=86; y<canvas.height; y+=72) {
+    ctx.globalAlpha = .22 + pressure * .5;
+    const spacing = 96 - Math.round(pressure * 36);
+    for (let y=86; y<canvas.height; y+=spacing) {
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(canvas.width, y);
@@ -8828,6 +8844,11 @@ function updateUi() {
   ui.hpFill.classList.toggle("danger", hpPct <= .2);
   ui.phone?.classList.toggle("base-warning", hpPct <= .5 && hpPct > .25);
   ui.phone?.classList.toggle("base-danger", hpPct <= .25);
+  if (ENCOUNTER_DRAFT_PROTOTYPE && ui.phone) {
+    const pressure = biomeBossPressure();
+    ui.phone.style.setProperty("--boss-pressure", pressure.toFixed(3));
+    ui.phone.dataset.bossPressure = String(pressure >= .88 ? 3 : pressure >= .62 ? 2 : pressure >= .34 ? 1 : 0);
+  }
   const nextExp = expRequired(state.level);
   const expPct = clamp(state.exp / nextExp, 0, 1);
   ui.level.textContent = state.level;

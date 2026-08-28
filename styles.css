@@ -1847,10 +1847,10 @@ canvas {
   left: 10px;
   display: grid;
   grid-template-columns: 30px auto;
-  grid-template-rows: 18px 11px;
+  grid-template-rows: 16px 20px;
   column-gap: 7px;
   width: 164px;
-  height: 38px;
+  height: 43px;
   align-items: center;
   padding: 3px 8px 3px 4px;
   border: 1px solid rgba(var(--biome-rgb), .58);
@@ -1872,25 +1872,47 @@ canvas {
 }
 .biome-route {
   display: grid;
-  grid-template-columns: repeat(5, 14px);
-  gap: 4px;
+  grid-template-columns: repeat(5, 19px);
+  gap: 3px;
   align-self: start;
 }
 .biome-route > span {
   position: relative;
-  display: block;
-  width: 14px;
-  height: 5px;
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, .22);
-  background: rgba(255, 255, 255, .06);
+  background: rgba(255, 255, 255, .055);
 }
-.biome-route > span.cleared { border-color: var(--biome-accent); background: var(--biome-accent); }
+.biome-route img {
+  width: 17px;
+  height: 17px;
+  object-fit: contain;
+  filter: grayscale(1) brightness(.46);
+}
+.biome-route > span.cleared { border-color: rgba(255, 89, 77, .72); background: rgba(74, 8, 9, .55); }
+.biome-route > span.cleared img { opacity: .38; filter: grayscale(1) brightness(.72); }
+.biome-route > span.cleared::before,
+.biome-route > span.cleared::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  width: 25px;
+  height: 2px;
+  background: #ff4d43;
+  box-shadow: 0 0 5px rgba(255, 55, 44, .85);
+  transform: rotate(45deg);
+}
+.biome-route > span.cleared::after { transform: rotate(-45deg); }
 .biome-route > span.current {
   border-color: #fff;
-  background: color-mix(in srgb, var(--biome-accent) 72%, #fff);
-  box-shadow: 0 0 7px var(--biome-accent);
+  background: rgba(var(--biome-rgb), .16);
+  box-shadow: inset 0 0 8px rgba(var(--biome-rgb), .34), 0 0 7px var(--biome-accent);
   animation: biomeRoutePulse 1.05s ease-in-out infinite alternate;
 }
+.biome-route > span.current img { filter: drop-shadow(0 0 3px var(--biome-accent)); }
 
 .biome-transition {
   position: absolute;
@@ -1922,26 +1944,6 @@ canvas {
 .biome-transition strong { color: color-mix(in srgb, var(--biome-accent) 68%, #fff); font: 950 26px/1.1 Arial, "Noto Sans TC", sans-serif; }
 .biome-transition.play { animation: biomeTransition 1.7s ease both; }
 
-.encounter-odds {
-  position: absolute;
-  z-index: 6;
-  top: 16px;
-  right: 72px;
-  min-width: 48px;
-  padding: 5px 5px 4px;
-  border: 1px solid rgba(255, 255, 255, .72);
-  border-radius: 3px;
-  color: #fff;
-  background: rgba(2, 5, 8, .88);
-  box-shadow: 0 0 10px rgba(255, 255, 255, .12);
-  font: 950 15px/1 Arial, sans-serif;
-  text-align: center;
-}
-.lane-steady .encounter-odds { border-color: #75e6ae; color: #a9ffd1; box-shadow: 0 0 10px rgba(70, 225, 147, .28); }
-.lane-tactical .encounter-odds { border-color: #ffd36a; color: #fff0ad; box-shadow: 0 0 10px rgba(255, 194, 74, .25); }
-.lane-greedy .encounter-odds,
-.boss-card .encounter-odds { border-color: #ff7168; color: #ffc0bb; box-shadow: 0 0 12px rgba(255, 70, 57, .34); }
-
 .encounter-boss-type {
   position: absolute;
   z-index: 6;
@@ -1958,7 +1960,6 @@ canvas {
 .encounter-panel.boss-draft .encounter-card .encounter-art { inset: 18px 132px 18px 44px; }
 .encounter-panel.boss-draft .encounter-card .encounter-art img { width: 132px; height: 132px; }
 .encounter-panel.boss-draft .encounter-card .encounter-count { display: none; }
-.encounter-panel.boss-draft .encounter-card .encounter-odds { top: 30px; right: 82px; }
 .encounter-panel.boss-draft .encounter-card .encounter-loot { right: 20px; width: 54px; height: 70px; }
 .encounter-panel.boss-draft .encounter-card .encounter-reward-art { width: 54px; height: 54px; }
 
@@ -1980,6 +1981,29 @@ canvas {
 @media (prefers-reduced-motion: reduce) {
   .biome-route > span.current,
   .biome-transition.play { animation: none; }
+}
+
+.phone { --boss-pressure: 0; }
+.battlefield::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  opacity: calc(var(--boss-pressure) * .44);
+  background:
+    linear-gradient(180deg, rgba(var(--biome-rgb), .24), transparent 27%, transparent 66%, rgba(var(--biome-rgb), .18)),
+    repeating-linear-gradient(0deg, transparent 0 7px, rgba(var(--biome-rgb), .065) 8px 9px);
+  box-shadow: inset 0 0 62px rgba(var(--biome-rgb), .38);
+  mix-blend-mode: screen;
+  transition: opacity .55s ease;
+}
+.phone[data-boss-pressure="2"] .battlefield::after,
+.phone[data-boss-pressure="3"] .battlefield::after { animation: biomePressure 1.5s ease-in-out infinite alternate; }
+.phone[data-boss-pressure="3"] .battlefield::after { animation-duration: .76s; }
+@keyframes biomePressure {
+  from { filter: brightness(.82); }
+  to { filter: brightness(1.28); }
 }
 
 /* Combat identity pass: category silhouette, not only category color. */
