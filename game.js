@@ -1,9 +1,19 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "attr-cycle224";
+const BUILD_VERSION = "monster-fit-boss-motion236";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
+const DEBUG_BIOME = (() => {
+  const biome = new URLSearchParams(window.location.search).get("debugBiome") || "";
+  return ["neutral", "fire", "ice", "electric", "poison"].includes(biome) ? biome : "";
+})();
+const BEHAVIOR_PREVIEW_PAGE = Math.max(0, Number(new URLSearchParams(window.location.search).get("behaviorPreview")) || 0);
+const BEHAVIOR_PREVIEW = BEHAVIOR_PREVIEW_PAGE > 0;
+const BEHAVIOR_PREVIEW_ATTR = (() => {
+  const attr = new URLSearchParams(window.location.search).get("previewAttr") || "neutral";
+  return ["neutral", "fire", "ice", "electric", "poison"].includes(attr) ? attr : "neutral";
+})();
 const MAX_EFFECTS = 240;
 const UI_FRAME_MS = 1000 / 30;
 const DEBUG_FRAME_MS = 250;
@@ -825,10 +835,10 @@ const BOSS_VARIANTS = {
 };
 
 const ENCOUNTER_FORMATIONS = [
-  { id:"swarm", label:"群襲", template:"standard", role:"area", threat:1, countMul:1.30, hpMul:.82, atkMul:.90, speedMul:1.00, eliteCount:0, artIndex:0, marks:3 },
-  { id:"rush", label:"突擊", template:"fast", role:"control", threat:2, countMul:1.08, hpMul:.88, atkMul:1.00, speedMul:1.14, eliteCount:0, artIndex:0, marks:2 },
-  { id:"armor", label:"重裝", template:"tank", role:"single", threat:2, countMul:.76, hpMul:1.18, atkMul:1.05, speedMul:.92, eliteCount:0, artIndex:2, marks:2 },
-  { id:"siege", label:"火力線", template:"ranged", role:"area", threat:2, countMul:.92, hpMul:1.00, atkMul:1.12, speedMul:.96, eliteCount:0, artIndex:1, marks:2 },
+  { id:"swarm", label:"群體", template:"standard", role:"area", threat:1, countMul:1.30, hpMul:.82, atkMul:.90, speedMul:1.00, eliteCount:0, artIndex:0, marks:3 },
+  { id:"rush", label:"高速", template:"fast", role:"control", threat:2, countMul:1.08, hpMul:.88, atkMul:1.00, speedMul:1.14, eliteCount:0, artIndex:0, marks:2 },
+  { id:"armor", label:"坦克", template:"tank", role:"single", threat:2, countMul:.76, hpMul:1.18, atkMul:1.05, speedMul:.92, eliteCount:0, artIndex:2, marks:2 },
+  { id:"siege", label:"特殊", template:"ranged", role:"area", threat:2, countMul:.92, hpMul:1.00, atkMul:1.12, speedMul:.96, eliteCount:0, artIndex:1, marks:2 },
   { id:"elite", label:"菁英", template:"mixed", role:"single", threat:3, countMul:.52, hpMul:1.14, atkMul:1.10, speedMul:1.00, eliteCount:1, artIndex:0, marks:1 },
 ];
 
@@ -836,10 +846,10 @@ const ENCOUNTER_REWARD_FACTORS = { 1:.70, 2:1.15, 3:1.85, 4:2.85 };
 const ENCOUNTER_EXP_FACTORS = { 1:.80, 2:1.05, 3:1.42, 4:1.90 };
 const ENCOUNTER_ATTR_MARKS = { fire:"火", ice:"冰", electric:"電", poison:"毒", neutral:"無" };
 const ENCOUNTER_FORMATION_HINTS = {
-  swarm:"大量小怪",
-  rush:"高速突進",
-  armor:"少量重甲",
-  siege:"遠程火力",
+  swarm:"大量普通怪",
+  rush:"高速怪物",
+  armor:"厚甲坦克",
+  siege:"特殊攻擊",
   elite:"單隻菁英",
   boss:"強敵來襲",
 };
@@ -2867,7 +2877,10 @@ function reset() {
   clearTimeout(biomeTransitionTimer);
   if (state?.mathReservedPayout > 0) releaseMathReservation();
   const wallet = state && Number.isFinite(state.wallet) ? state.wallet : INITIAL_WALLET;
-  const biomeOrder = shuffled(PROTOTYPE_BIOMES.map(biome => biome.id));
+  const randomizedBiomeOrder = shuffled(PROTOTYPE_BIOMES.map(biome => biome.id));
+  const biomeOrder = DEBUG_BIOME
+    ? [DEBUG_BIOME, ...randomizedBiomeOrder.filter(biomeId => biomeId !== DEBUG_BIOME)]
+    : randomizedBiomeOrder;
   mathRunSeed = ((Math.random() * 4294967296) >>> 0) || 1;
   state = {
     wallet, baseBetIndex: 3, started: false, over: false, wave: 0, hp: params.baseHp, hpWarningStage:0, pot: 0, exp: 0, level: 1,
@@ -4342,12 +4355,17 @@ function assessEncounterThreat({ formation, attr, role, wave, boss=false, diffic
 
 function encounterArtFor(attr, formation) {
   if (formation.id === "boss") return BOSS_VARIANTS[attr] || BOSS_VARIANTS.neutral;
-  if (formation.id === "elite") {
-    const variants = ELITE_VARIANTS[attr] || ELITE_VARIANTS.neutral;
-    return variants[rand(0, variants.length - 1)];
-  }
-  const variants = MINION_VARIANTS[attr] || MINION_VARIANTS.neutral;
-  return variants[Math.min(variants.length - 1, formation.artIndex || 0)];
+  const minions = MINION_VARIANTS[attr] || MINION_VARIANTS.neutral;
+  const elites = ELITE_VARIANTS[attr] || ELITE_VARIANTS.neutral;
+  const swarmIndex = { neutral:1, fire:1, ice:0, electric:1, poison:0 }[attr] ?? 0;
+  const rushIndex = { neutral:0, fire:0, ice:1, electric:0, poison:1 }[attr] ?? 0;
+  const specialEliteIndex = { neutral:1, fire:0, ice:0, electric:1, poison:0 }[attr] ?? 0;
+  if (formation.id === "swarm") return minions[swarmIndex] || minions[0];
+  if (formation.id === "rush") return minions[rushIndex] || minions[0];
+  if (formation.id === "armor") return minions[2] || minions[minions.length - 1];
+  if (formation.id === "siege") return elites[specialEliteIndex] || elites[0];
+  if (formation.id === "elite") return elites[specialEliteIndex === 0 ? 1 : 0] || elites[0];
+  return minions[Math.min(minions.length - 1, formation.artIndex || 0)];
 }
 
 function bossEncounterDifficulty(threat, firstBoss=false) {
@@ -4435,6 +4453,32 @@ function buildRegularEncounterChoices(wave) {
   return shuffled(choices);
 }
 
+function buildBehaviorPreviewChoices(wave) {
+  const attr = BEHAVIOR_PREVIEW_ATTR;
+  const previewCounts = { swarm:24, rush:12, armor:4, siege:8, elite:1 };
+  const previewIds = BEHAVIOR_PREVIEW_PAGE >= 2 ? ["siege", "elite", "swarm"] : ["swarm", "rush", "armor"];
+  return previewIds.map((formationId, index) => {
+    const formation = ENCOUNTER_FORMATIONS.find(item => item.id === formationId) || ENCOUNTER_FORMATIONS[index];
+    const matchup = assessEncounterThreat({ formation, attr, role:formation.role, wave });
+    return {
+      id:`${wave}-behavior-preview-${formation.id}-${index}`,
+      wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
+      lane:"preview", laneLabel:"", template:formation.template, attr, threat:1, reward:1, estimatedClear:88,
+      countMul:formation.countMul,
+      hpMul:formation.hpMul,
+      atkMul:formation.atkMul,
+      speedMul:formation.speedMul,
+      forcedElites:formation.eliteCount,
+      enemyCount:previewCounts[formation.id],
+      rewardFactor:ENCOUNTER_REWARD_FACTORS[1],
+      expMul:ENCOUNTER_EXP_FACTORS[1],
+      matchup,
+      art:encounterArtFor(attr, formation),
+      artCount:formation.marks,
+    };
+  });
+}
+
 function buildBossEncounterChoices(wave) {
   const biomeAttr = currentBiomeConfig().attr;
   const band = tunedBand(bandFor(wave), wave);
@@ -4477,13 +4521,24 @@ function buildBossEncounterChoices(wave) {
 
 function encounterImageHtml(choice) {
   const src = choice.art?.sprite ? `assets/enemies-v3/${choice.art.sprite}` : enemySpritePath(choice.art || {});
-  if (choice.formation === "elite") {
-    const supportArt = (MINION_VARIANTS[choice.attr] || MINION_VARIANTS.neutral)[0];
-    const supportSrc = supportArt?.sprite ? `assets/enemies-v3/${supportArt.sprite}` : enemySpritePath(supportArt || {});
-    return `<img class="encounter-support" src="${supportSrc}" alt=""><img class="encounter-elite-lead" src="${src}" alt=""><img class="encounter-support" src="${supportSrc}" alt="">`;
+  if (choice.boss) {
+    const sparks = Array.from({ length:5 }, (_, index) => `<span class="boss-spark boss-spark-${index + 1}"></span>`).join("");
+    return `<span class="boss-presence" aria-hidden="true"><span class="boss-aura"></span><span class="boss-ground"></span><span class="boss-energy-core"></span><img class="encounter-boss-art" src="${src}" alt="" decoding="async">${sparks}</span>`;
   }
-  const count = choice.boss ? 1 : Math.max(1, choice.artCount || 1);
-  return Array.from({ length:count }, (_, index) => `<img src="${src}" alt="" style="--unit-index:${index};--unit-count:${count}">`).join("");
+  const unit = (className, index=0) => `<img class="behavior-unit ${className}" style="--i:${index}" src="${src}" alt="" decoding="async">`;
+  if (choice.formation === "swarm") {
+    return `<span class="behavior-scene behavior-crowd" aria-hidden="true">${Array.from({ length:5 }, (_, index) => unit("", index)).join("")}<span class="behavior-dust"></span></span>`;
+  }
+  if (choice.formation === "rush") {
+    return `<span class="behavior-scene behavior-fast" aria-hidden="true"><span class="behavior-speed-lines"></span>${Array.from({ length:2 }, (_, index) => unit("", index)).join("")}</span>`;
+  }
+  if (choice.formation === "armor") {
+    return `<span class="behavior-scene behavior-tank" aria-hidden="true">${unit("")}<span class="behavior-projectile"></span><span class="behavior-block"></span></span>`;
+  }
+  if (choice.formation === "siege") {
+    return `<span class="behavior-scene behavior-special" aria-hidden="true">${unit("")}<span class="behavior-charge"></span><span class="behavior-beam"></span></span>`;
+  }
+  return `<span class="behavior-scene behavior-elite" aria-hidden="true"><span class="behavior-aura"></span>${unit("")}</span>`;
 }
 
 function encounterMatchupLabel(choice) {
@@ -4501,6 +4556,7 @@ function renderEncounterDraft(choices, boss) {
     : `${biome.short} · WAVE ${String(state.wave + 1).padStart(2, "0")}`;
   ui.encounterTitle.textContent = boss ? `${biome.name} BOSS` : "選擇目標";
   ui.encounterPanel.classList.toggle("boss-draft", boss);
+  ui.encounterPanel.classList.toggle("behavior-preview", BEHAVIOR_PREVIEW && !boss);
   ui.encounterList.innerHTML = "";
   choices.forEach((choice, index) => {
     const display = ATTRIBUTE_DISPLAY[choice.attr] || ATTRIBUTE_DISPLAY.neutral;
@@ -4511,13 +4567,10 @@ function renderEncounterDraft(choices, boss) {
     button.style.setProperty("--deal-index", index);
     const cardName = choice.boss ? `${display.label}屬 BOSS` : `${display.label}屬 ${choice.formationLabel}`;
     const formationHint = choice.boss ? `${choice.art?.name || ENCOUNTER_FORMATION_HINTS.boss}，${choice.formationLabel}` : ENCOUNTER_FORMATION_HINTS[choice.formation] || choice.art?.name || "敵軍來襲";
-    const displayCount = choice.boss ? 1 : Math.max(1, Math.round((choice.enemyCount || 0) + (choice.forcedElites || 0)));
-    const dangerArt = choice.boss
-      ? "danger-boss-v2"
-      : ["", "danger-simple-v2", "danger-warning-v2", "danger-critical-v2"][clamp(choice.threat, 1, 3)];
-    const rewardArt = ["", "reward-normal", "reward-rare", "reward-epic", "reward-legendary"][clamp(choice.reward, 1, 4)];
+    const displayCount = choice.boss || (BEHAVIOR_PREVIEW && choice.formation === "elite")
+      ? 1
+      : Math.max(1, Math.round((choice.enemyCount || 0) + (choice.forcedElites || 0)));
     button.innerHTML = `
-      <img class="encounter-danger-art" src="assets/ui/encounter/${dangerArt}.webp" alt="" aria-hidden="true">
       <span class="encounter-emblem" aria-hidden="true">
         <span class="encounter-art">${encounterImageHtml(choice)}</span>
         <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
@@ -4525,7 +4578,7 @@ function renderEncounterDraft(choices, boss) {
         ${choice.boss ? `<span class="encounter-boss-type">${choice.formationLabel}</span>` : ""}
       </span>
       <span class="encounter-loot" aria-hidden="true">
-        <img class="encounter-reward-art" src="assets/ui/encounter/${rewardArt}.webp" alt="">
+        <img class="encounter-reward-art" src="assets/ui/encounter/${["", "reward-normal", "reward-rare", "reward-epic", "reward-legendary"][clamp(choice.reward, 1, 4)]}.webp" alt="">
       </span>`;
     button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，獎勵等級 ${choice.reward}，${encounterMatchupLabel(choice)}`);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
@@ -4554,7 +4607,7 @@ function prepareEncounterDraft() {
   if (prototypeRunComplete()) { completeRun(); return; }
   const info = waveInfoFor(wave);
   const boss = consumeBossPreview(wave, info);
-  const choices = boss ? buildBossEncounterChoices(wave) : buildRegularEncounterChoices(wave);
+  const choices = boss ? buildBossEncounterChoices(wave) : (BEHAVIOR_PREVIEW ? buildBehaviorPreviewChoices(wave) : buildRegularEncounterChoices(wave));
   state.pendingEncounter = { wave, boss, choices };
   state.encounterChoices = choices;
   state.choicesOpen = true;
