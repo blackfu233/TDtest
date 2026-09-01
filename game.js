@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "monster-fit-boss-motion236";
+const BUILD_VERSION = "encounter-integrated-card238";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
 const DEBUG_BIOME = (() => {
@@ -10,6 +10,7 @@ const DEBUG_BIOME = (() => {
 })();
 const BEHAVIOR_PREVIEW_PAGE = Math.max(0, Number(new URLSearchParams(window.location.search).get("behaviorPreview")) || 0);
 const BEHAVIOR_PREVIEW = BEHAVIOR_PREVIEW_PAGE > 0;
+const CARD_ART_PREVIEW = new URLSearchParams(window.location.search).get("cardArtPreview") === "1";
 const BEHAVIOR_PREVIEW_ATTR = (() => {
   const attr = new URLSearchParams(window.location.search).get("previewAttr") || "neutral";
   return ["neutral", "fire", "ice", "electric", "poison"].includes(attr) ? attr : "neutral";
@@ -4398,16 +4399,50 @@ function encounterFormationForLane(lane, usedFormations) {
   return pool.slice().sort((a, b) => encounterRoleReadiness(b.role) - encounterRoleReadiness(a.role))[0];
 }
 
-function estimatedEncounterClearChance(lane, matchup) {
+function encounterPressureFactor(formation) {
+  const countMul = Math.max(.2, Number(formation.countMul) || 1);
+  const hpMul = Math.max(.2, Number(formation.hpMul) || 1);
+  const atkMul = Math.max(.2, Number(formation.atkMul) || 1);
+  const speedMul = Math.max(.2, Number(formation.speedMul) || 1);
+  const elitePressure = 1 + Math.max(0, Number(formation.eliteCount) || 0) * .18;
+  return Math.pow(countMul, .52)
+    * Math.pow(hpMul, .82)
+    * Math.pow(atkMul, .72)
+    * Math.pow(speedMul, .45)
+    * elitePressure;
+}
+
+function estimatedEncounterClearChance(lane, matchup, formation) {
+  const pressureFactor = encounterPressureFactor(formation);
+  const pressureShift = clamp(-Math.log2(pressureFactor) * 22, -18, 18);
   const attributeShift = clamp((matchup.attributePower - 1) * 14, -8, 8);
   const roleShift = clamp((matchup.roleReadiness - .34) * 18, -5, 5);
   const hpShift = clamp((matchup.hpRatio - .65) * 10, -6, 3);
   const depthShift = -Math.min(3, state.biomeIndex);
-  return Math.round(clamp(lane.baseClear + attributeShift + roleShift + hpShift + depthShift, lane.clearRange[0], lane.clearRange[1]));
+  return Math.round(clamp(lane.baseClear + pressureShift + attributeShift + roleShift + hpShift + depthShift, lane.clearRange[0], lane.clearRange[1]));
 }
 
 function threatForEstimatedClear(chance) {
   return chance >= 80 ? 1 : chance >= 60 ? 2 : 3;
+}
+
+function rewardForEstimatedClear(chance, boss=false) {
+  if (boss) return chance < 48 ? 4 : 3;
+  return chance >= 80 ? 1 : chance >= 60 ? 2 : chance >= 45 ? 3 : 4;
+}
+
+function encounterContract(lane, formation, matchup) {
+  const estimatedClear = estimatedEncounterClearChance(lane, matchup, formation);
+  const threat = threatForEstimatedClear(estimatedClear);
+  const reward = rewardForEstimatedClear(estimatedClear);
+  return {
+    estimatedClear,
+    threat,
+    reward,
+    pressureFactor:encounterPressureFactor(formation),
+    rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
+    expMul:ENCOUNTER_EXP_FACTORS[reward],
+  };
 }
 
 function buildRegularEncounterChoices(wave) {
@@ -4428,23 +4463,23 @@ function buildRegularEncounterChoices(wave) {
       eliteCount:(formation.eliteCount || 0) + (lane.id === "greedy" && formation.id !== "elite" && Math.random() < .35 ? 1 : 0),
     };
     const matchup = assessEncounterThreat({ formation:tunedFormation, attr, role:formation.role, wave });
-    const estimatedClear = estimatedEncounterClearChance(lane, matchup);
-    const threat = threatForEstimatedClear(estimatedClear);
-    const reward = lane.id === "greedy" && Math.random() < .32 ? 4 : lane.reward;
+    const contract = encounterContract(lane, tunedFormation, matchup);
     const art = encounterArtFor(attr, formation);
     const enemyCount = Math.max(5, Math.round(baseEnemyCount * Math.max(.25, tunedFormation.countMul)));
     return {
       id:`${wave}-${lane.id}-${formation.id}-${attr}-${index}`,
       wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
-      lane:lane.id, laneLabel:lane.label, template:formation.template, attr, threat, reward, estimatedClear,
+      lane:lane.id, laneLabel:lane.label, template:formation.template, attr,
+      threat:contract.threat, reward:contract.reward, estimatedClear:contract.estimatedClear,
       countMul:tunedFormation.countMul,
       hpMul:tunedFormation.hpMul,
       atkMul:tunedFormation.atkMul,
       speedMul:tunedFormation.speedMul,
       forcedElites:tunedFormation.eliteCount,
       enemyCount,
-      rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
-      expMul:ENCOUNTER_EXP_FACTORS[reward],
+      pressureFactor:contract.pressureFactor,
+      rewardFactor:contract.rewardFactor,
+      expMul:contract.expMul,
       matchup,
       art,
       artCount:formation.marks,
@@ -4460,23 +4495,35 @@ function buildBehaviorPreviewChoices(wave) {
   return previewIds.map((formationId, index) => {
     const formation = ENCOUNTER_FORMATIONS.find(item => item.id === formationId) || ENCOUNTER_FORMATIONS[index];
     const matchup = assessEncounterThreat({ formation, attr, role:formation.role, wave });
+    const previewReward = CARD_ART_PREVIEW ? [1, 3, 4][index] : 1;
+    const previewThreat = CARD_ART_PREVIEW ? index + 1 : 1;
     return {
       id:`${wave}-behavior-preview-${formation.id}-${index}`,
       wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
-      lane:"preview", laneLabel:"", template:formation.template, attr, threat:1, reward:1, estimatedClear:88,
+      lane:"preview", laneLabel:"", template:formation.template, attr, threat:previewThreat, reward:previewReward, estimatedClear:88,
       countMul:formation.countMul,
       hpMul:formation.hpMul,
       atkMul:formation.atkMul,
       speedMul:formation.speedMul,
       forcedElites:formation.eliteCount,
       enemyCount:previewCounts[formation.id],
-      rewardFactor:ENCOUNTER_REWARD_FACTORS[1],
-      expMul:ENCOUNTER_EXP_FACTORS[1],
+      rewardFactor:ENCOUNTER_REWARD_FACTORS[previewReward],
+      expMul:ENCOUNTER_EXP_FACTORS[previewReward],
       matchup,
       art:encounterArtFor(attr, formation),
       artCount:formation.marks,
     };
   });
+}
+
+function compositeEncounterCardArt(choice) {
+  const attr = ["neutral", "fire", "ice", "electric", "poison"].includes(choice.attr)
+    ? choice.attr
+    : "neutral";
+  if (choice.boss) return `assets/ui/encounter/boss-card-${attr}.png`;
+  const threat = clamp(Number(choice.threat) || 1, 1, 3);
+  const reward = clamp(Number(choice.reward) || 1, 1, 4);
+  return `assets/ui/encounter/card-${attr}-risk${threat}-reward${reward}.png`;
 }
 
 function buildBossEncounterChoices(wave) {
@@ -4501,18 +4548,20 @@ function buildBossEncounterChoices(wave) {
   const hpShift = clamp((matchup.hpRatio - .65) * 12, -9, 4);
   const estimatedClear = Math.round(clamp(75 - state.biomeIndex * 7 + archetype.clearShift + attributeShift + roleShift + hpShift, 28, 82));
   const threat = threatForEstimatedClear(estimatedClear);
+  const reward = rewardForEstimatedClear(estimatedClear, true);
   const preludeCount = Math.max(3, Math.round(rolledCount * clamp(paramNumber("bossPreludeCountMul", .55), .1, 1) * archetype.preludeMul));
   const art = encounterArtFor(biomeAttr, { id:"boss" });
   return [{
     id:`${wave}-boss-${biomeAttr}-${archetype.id}`,
     wave, boss:true, formation:"boss", formationLabel:archetype.label, role:"boss", bossArchetype:archetype.id,
     template:{ fire:"fast", ice:"tank", electric:"disrupt", poison:"ranged", neutral:"mixed" }[biomeAttr] || "mixed",
-    attr:biomeAttr, threat, reward:archetype.reward, estimatedClear, countMul:archetype.preludeMul, hpMul:1, atkMul:1, speedMul:1,
+    attr:biomeAttr, threat, reward, estimatedClear, countMul:archetype.preludeMul, hpMul:1, atkMul:1, speedMul:1,
     forcedElites:archetype.eliteCount,
     enemyCount:preludeCount,
     bossDifficulty,
-    rewardFactor:ENCOUNTER_REWARD_FACTORS[archetype.reward],
-    expMul:ENCOUNTER_EXP_FACTORS[archetype.reward],
+    pressureFactor:encounterPressureFactor(formation),
+    rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
+    expMul:ENCOUNTER_EXP_FACTORS[reward],
     matchup,
     art,
     artCount:1,
@@ -4561,15 +4610,24 @@ function renderEncounterDraft(choices, boss) {
   choices.forEach((choice, index) => {
     const display = ATTRIBUTE_DISPLAY[choice.attr] || ATTRIBUTE_DISPLAY.neutral;
     const button = document.createElement("button");
+    const compositeCardArt = compositeEncounterCardArt(choice);
     button.type = "button";
-    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} formation-${choice.formation} lane-${choice.lane || "boss"} attr-${choice.attr} matchup-${choice.matchup?.attributeState || "even"}${choice.boss ? " boss-card" : ""}`;
+    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} formation-${choice.formation} lane-${choice.lane || "boss"} attr-${choice.attr} matchup-${choice.matchup?.attributeState || "even"}${choice.boss ? " boss-card" : ""}${compositeCardArt ? " composite-card" : ""}`;
     button.style.setProperty("--encounter-color", display.color);
     button.style.setProperty("--deal-index", index);
+    if (compositeCardArt) button.style.setProperty("--composite-card-art", `url("${compositeCardArt}")`);
+    button.dataset.lane = choice.lane || "boss";
+    button.dataset.estimatedClear = String(choice.estimatedClear);
+    button.dataset.pressureFactor = Number(choice.pressureFactor || 1).toFixed(3);
+    button.dataset.rewardFactor = Number(choice.rewardFactor || 1).toFixed(2);
     const cardName = choice.boss ? `${display.label}屬 BOSS` : `${display.label}屬 ${choice.formationLabel}`;
     const formationHint = choice.boss ? `${choice.art?.name || ENCOUNTER_FORMATION_HINTS.boss}，${choice.formationLabel}` : ENCOUNTER_FORMATION_HINTS[choice.formation] || choice.art?.name || "敵軍來襲";
     const displayCount = choice.boss || (BEHAVIOR_PREVIEW && choice.formation === "elite")
       ? 1
       : Math.max(1, Math.round((choice.enemyCount || 0) + (choice.forcedElites || 0)));
+    const rewardArt = choice.boss
+      ? "reward-boss-v3"
+      : ["", "reward-normal", "reward-rare", "reward-epic", "reward-legendary"][clamp(choice.reward, 1, 4)];
     button.innerHTML = `
       <span class="encounter-emblem" aria-hidden="true">
         <span class="encounter-art">${encounterImageHtml(choice)}</span>
@@ -4577,8 +4635,8 @@ function renderEncounterDraft(choices, boss) {
         <span class="encounter-count">×${displayCount}</span>
         ${choice.boss ? `<span class="encounter-boss-type">${choice.formationLabel}</span>` : ""}
       </span>
-      <span class="encounter-loot" aria-hidden="true">
-        <img class="encounter-reward-art" src="assets/ui/encounter/${["", "reward-normal", "reward-rare", "reward-epic", "reward-legendary"][clamp(choice.reward, 1, 4)]}.webp" alt="">
+      <span class="encounter-loot${choice.boss ? " boss-reward" : ""}" aria-hidden="true">
+        <img class="encounter-reward-art" src="assets/ui/encounter/${rewardArt}.${choice.boss ? "png" : "webp"}" alt="">
       </span>`;
     button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，獎勵等級 ${choice.reward}，${encounterMatchupLabel(choice)}`);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
@@ -9242,6 +9300,16 @@ if (HEADLESS_SIM) {
     },
     setWallet: value => { state.wallet = Math.max(0, Number(value) || 0); },
     setBaseBetIndex: value => { state.baseBetIndex = Math.max(0, Math.min(BET_STEPS.length - 1, Math.round(value))); },
+    encounterChoices: wave => buildRegularEncounterChoices(Math.max(1, Math.round(Number(wave) || 1))).map(choice => ({
+      lane:choice.lane,
+      formation:choice.formation,
+      attr:choice.attr,
+      estimatedClear:choice.estimatedClear,
+      threat:choice.threat,
+      reward:choice.reward,
+      pressureFactor:choice.pressureFactor,
+      rewardFactor:choice.rewardFactor,
+    })),
     startBet,
     update,
     stepFrames: count => {

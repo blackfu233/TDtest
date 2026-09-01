@@ -1536,6 +1536,158 @@ canvas {
   .choice-list[data-layout="heroes"] .choice-emblem img { width: 82px; height: 80px; }
 }
 
+/* Encounter cards share one contract: frame=risk, field=attribute, chest=reward. */
+.encounter-card .encounter-emblem { z-index: auto; }
+
+.encounter-card:not(.boss-card) {
+  --reward-color: #9aa9b5;
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 4px;
+  background:
+    radial-gradient(ellipse at 30% 50%, color-mix(in srgb, var(--encounter-color) 30%, transparent), transparent 56%),
+    linear-gradient(90deg, color-mix(in srgb, var(--encounter-color) 14%, #071019), #05080c 68%, #080b0f);
+  box-shadow: inset 0 0 23px rgba(0, 0, 0, .82), 0 7px 16px rgba(0, 0, 0, .56);
+}
+
+.encounter-card:not(.boss-card)::before {
+  inset: 12px 76px 12px 58px;
+  border-color: color-mix(in srgb, var(--encounter-color) 24%, transparent);
+  opacity: .86;
+}
+
+.encounter-card:not(.boss-card)::after {
+  z-index: 7;
+  inset: 0;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+  opacity: 1;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, .9));
+}
+
+.encounter-card:not(.boss-card).threat-1::after { background-image: url("assets/ui/encounter/danger-simple-v2.webp"); }
+.encounter-card:not(.boss-card).threat-2::after {
+  background-image: url("assets/ui/encounter/danger-warning-v2.webp");
+  filter: drop-shadow(0 0 5px rgba(238, 153, 48, .4));
+}
+.encounter-card:not(.boss-card).threat-3::after {
+  background-image: url("assets/ui/encounter/danger-critical-v2.webp");
+  filter: drop-shadow(0 0 7px rgba(255, 50, 38, .54));
+}
+
+.encounter-card:not(.boss-card) .encounter-art { inset: 11px 78px 11px 59px; z-index: 2; }
+.encounter-card:not(.boss-card) .encounter-attr {
+  z-index: 9;
+  left: 20px;
+  width: 33px;
+  height: 33px;
+  border-width: 2px;
+  color: #fff;
+  background: color-mix(in srgb, var(--encounter-color) 34%, #020508);
+  box-shadow: inset 0 0 9px color-mix(in srgb, var(--encounter-color) 38%, transparent), 0 0 12px color-mix(in srgb, var(--encounter-color) 70%, transparent);
+}
+.encounter-card:not(.boss-card) .encounter-count { z-index: 9; right: 76px; bottom: 11px; }
+.encounter-card:not(.boss-card) .encounter-loot {
+  z-index: 9;
+  top: 12px;
+  right: 14px;
+  bottom: 12px;
+  width: 54px;
+  border: 0;
+  background: radial-gradient(circle, color-mix(in srgb, var(--reward-color) 28%, transparent), transparent 68%);
+}
+
+.encounter-card.reward-1 { --reward-color: #9aa9b5; }
+.encounter-card.reward-2 { --reward-color: #3ebcff; }
+.encounter-card.reward-3 { --reward-color: #b56cff; }
+.encounter-card.reward-4 { --reward-color: #ffb72f; }
+.encounter-card:not(.boss-card) .encounter-reward-art {
+  width: 43px;
+  height: 43px;
+  filter: drop-shadow(0 5px 5px rgba(0, 0, 0, .72)) drop-shadow(0 0 7px color-mix(in srgb, var(--reward-color) 55%, transparent));
+}
+.encounter-card:not(.boss-card).reward-2 .encounter-reward-art { width: 46px; height: 46px; }
+.encounter-card:not(.boss-card).reward-3 .encounter-reward-art { width: 49px; height: 49px; }
+.encounter-card:not(.boss-card).reward-4 .encounter-reward-art { width: 52px; height: 52px; }
+
+/* BOSS uses a separate frame and a separate vault, never a regular reward tier asset. */
+.encounter-panel.boss-draft .encounter-card.boss-card {
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 3px;
+  background:
+    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--encounter-color) 29%, transparent), transparent 43%),
+    repeating-conic-gradient(from 12deg at 50% 48%, rgba(255, 255, 255, .025) 0 8deg, transparent 9deg 24deg),
+    linear-gradient(180deg, #241213, #090708 66%, #180b0d);
+  box-shadow: inset 0 0 36px rgba(255, 54, 42, .24), 0 0 23px rgba(226, 42, 28, .4), 0 14px 30px rgba(0, 0, 0, .76);
+}
+
+.encounter-panel.boss-draft .encounter-card.boss-card::after {
+  z-index: 7;
+  inset: 0;
+  background: transparent url("assets/ui/encounter/danger-boss-vertical-v3.png") center / 100% 100% no-repeat;
+  opacity: 1;
+  filter: drop-shadow(0 0 8px rgba(255, 42, 30, .48));
+}
+
+.encounter-panel.boss-draft .encounter-card.boss-card::before { inset: 72px 48px 88px; }
+.encounter-panel.boss-draft .encounter-card.boss-card .encounter-art { z-index: 2; inset: 70px 42px 82px; }
+.encounter-panel.boss-draft .encounter-card.boss-card .encounter-attr {
+  z-index: 9;
+  top: 66px;
+  left: 47px;
+  width: 48px;
+  height: 48px;
+  border-width: 2px;
+  color: #fff;
+  background: color-mix(in srgb, var(--encounter-color) 38%, #030507);
+  box-shadow: inset 0 0 12px color-mix(in srgb, var(--encounter-color) 45%, transparent), 0 0 16px var(--encounter-color);
+}
+.encounter-panel.boss-draft .encounter-card.boss-card .encounter-loot.boss-reward {
+  z-index: 9;
+  top: 58px;
+  right: 43px;
+  width: 94px;
+  height: 94px;
+  background: radial-gradient(circle, rgba(255, 47, 31, .27), rgba(241, 184, 74, .11) 46%, transparent 70%);
+}
+.encounter-panel.boss-draft .encounter-card.boss-card .boss-reward .encounter-reward-art {
+  width: 92px;
+  height: 92px;
+  filter: drop-shadow(0 9px 8px rgba(0, 0, 0, .76)) drop-shadow(0 0 14px rgba(255, 49, 31, .72)) drop-shadow(0 0 7px rgba(244, 189, 72, .8));
+}
+.encounter-panel.boss-draft .encounter-card.boss-card .encounter-boss-type {
+  z-index: 9;
+  bottom: 50px;
+  border-color: rgba(255, 81, 60, .78);
+  background: rgba(12, 5, 7, .86);
+}
+
+@media (max-height: 700px) {
+  .encounter-panel.boss-draft .encounter-card.boss-card .encounter-attr { top: 58px; left: 42px; }
+  .encounter-panel.boss-draft .encounter-card.boss-card .encounter-loot.boss-reward { top: 52px; right: 39px; width: 82px; height: 82px; }
+  .encounter-panel.boss-draft .encounter-card.boss-card .boss-reward .encounter-reward-art { width: 80px; height: 80px; }
+  .encounter-panel.boss-draft .encounter-card.boss-card .encounter-boss-type { bottom: 42px; }
+}
+
+/* Fully integrated card art: runtime only layers monsters and their count. */
+.encounter-card.composite-card:not(.boss-card) {
+  background-color: #080b0f;
+  background-image: var(--composite-card-art);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+  box-shadow: 0 7px 16px rgba(0, 0, 0, .56);
+}
+.encounter-card.composite-card:not(.boss-card)::before,
+.encounter-card.composite-card:not(.boss-card)::after,
+.encounter-card.composite-card:not(.boss-card) .encounter-attr,
+.encounter-card.composite-card:not(.boss-card) .encounter-loot { display: none; }
+.encounter-card.composite-card:not(.boss-card) .encounter-art { inset: 10px 91px 10px 50px; }
+.encounter-card.composite-card:not(.boss-card) .encounter-count { right: 87px; bottom: 9px; }
+
 /* Final BOSS layout override: one large card replaces the three-card draft. */
 .encounter-panel.boss-draft {
   width: min(390px, 100%);

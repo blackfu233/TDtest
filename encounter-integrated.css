@@ -1,0 +1,42 @@
+/* Final integrated encounter-card overrides loaded after the legacy game styles. */
+.encounter-panel.boss-draft .encounter-card.boss-card.composite-card {
+  aspect-ratio: 1254 / 1365;
+  border: 0;
+  border-radius: 7px;
+  background-color: #060708;
+  background-image: var(--composite-card-art);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+  box-shadow: 0 0 22px rgba(255, 76, 50, .25), 0 14px 30px rgba(0, 0, 0, .76);
+}
+
+.encounter-panel.boss-draft .encounter-card.boss-card.composite-card::before,
+.encounter-panel.boss-draft .encounter-card.boss-card.composite-card::after,
+.encounter-panel.boss-draft .encounter-card.boss-card.composite-card .encounter-attr,
+.encounter-panel.boss-draft .encounter-card.boss-card.composite-card .encounter-loot,
+.encounter-panel.boss-draft .encounter-card.boss-card.composite-card .encounter-count {
+  display: none;
+}
+
+.encounter-panel.boss-draft .encounter-card.boss-card.composite-card .encounter-art {
+  inset: 104px 38px 66px;
+  overflow: visible;
+}
+
+.encounter-panel.boss-draft .encounter-card.boss-card.composite-card .encounter-boss-type {
+  bottom: 16px;
+  min-width: 116px;
+  border-color: rgba(230, 187, 99, .7);
+  background: rgba(8, 8, 9, .78);
+}
+
+@media (max-height: 700px) {
+  .encounter-panel.boss-draft .encounter-card.boss-card.composite-card {
+    aspect-ratio: 1.02;
+  }
+
+  .encounter-panel.boss-draft .encounter-card.boss-card.composite-card .encounter-art {
+    inset: 78px 34px 55px;
+  }
+}
