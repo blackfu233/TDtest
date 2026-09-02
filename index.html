@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#08090c">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>塔防深追 Demo</title>
+  <title>塔防卡牌玩法測試</title>
   <link rel="stylesheet" href="styles.css?v=encounter-integrated-card238">
-  <link rel="stylesheet" href="encounter-integrated.css?v=encounter-integrated-card238">
+  <link rel="stylesheet" href="encounter-integrated.css?v=encounter-campaign241">
 </head>
 <body>
   <main class="phone">
@@ -72,8 +72,8 @@
 
     <section id="entryOverlay" class="entry-overlay">
       <div class="entry-panel">
-        <span class="entry-kicker">ENTER BATTLE</span>
-        <h2>選擇 BET</h2>
+        <span class="entry-kicker">玩法測試 · RTP 未校準</span>
+        <h2>突破五大戰區</h2>
         <div class="entry-wallet"><span>錢包</span><strong id="entryWalletText">10000</strong></div>
         <div class="entry-stepper">
           <button id="betMinusBtn" type="button" aria-label="降低 BET">−</button>
@@ -94,6 +94,11 @@
           <i id="decisionDanger" class="decision-danger hidden" aria-label="危險程度上升">!</i>
         </div>
         <div class="decision-score"><span>目前總得分</span><strong id="decisionPayout">0</strong></div>
+        <div class="decision-wave-summary">
+          <strong id="decisionReward">+0 POT</strong>
+          <span id="decisionDamage">基地 -0 HP</span>
+          <small id="decisionRepair" class="hidden"></small>
+        </div>
         <div class="decision-actions">
           <button id="continueBtn" class="continue-button" type="button">
             <span>繼續</span><small>BET <b id="waveBetText">100</b></small>
@@ -144,6 +149,6 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=encounter-integrated-card238" charset="utf-8"></script>
+  <script src="game.js?v=encounter-campaign241" charset="utf-8"></script>
 </body>
 </html>

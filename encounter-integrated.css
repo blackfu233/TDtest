@@ -1,4 +1,70 @@
 /* Final integrated encounter-card overrides loaded after the legacy game styles. */
+.encounter-card.composite-card.formation-elite:not(.boss-card) {
+  box-shadow: 0 0 0 1px rgba(255, 192, 183, .55), 0 0 17px rgba(211, 64, 55, .28), 0 6px 14px rgba(0, 0, 0, .6);
+}
+
+.encounter-card.composite-card.formation-elite:not(.boss-card) .encounter-art {
+  inset: 8px 88px 8px 121px;
+}
+
+.encounter-elite-label,
+.encounter-escort-count {
+  position: absolute;
+  z-index: 9;
+  left: 52px;
+  width: 67px;
+  box-sizing: border-box;
+  text-align: center;
+  white-space: nowrap;
+  letter-spacing: 0;
+  pointer-events: none;
+}
+
+.encounter-elite-label {
+  top: calc(50% - 25px);
+  height: 27px;
+  padding: 3px 2px;
+  border-left: 3px solid #ff887b;
+  border-bottom: 1px solid #914a43;
+  background: #431c20;
+  color: #fff2ed;
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 900;
+  text-shadow: 0 1px 2px #130609;
+}
+
+.encounter-escort-count {
+  top: calc(50% + 8px);
+  height: 19px;
+  color: #d7dee4;
+  font-size: 12px;
+  line-height: 19px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px #000;
+}
+
+.encounter-card.composite-card.formation-elite:not(.boss-card) .behavior-elite {
+  inset: 2px;
+}
+
+.encounter-card.composite-card.formation-elite:not(.boss-card) .behavior-elite > img.behavior-unit {
+  max-width: calc(100% - 4px);
+  max-height: calc(100% - 4px);
+  padding: 1px;
+  filter: drop-shadow(0 4px 3px #000) drop-shadow(0 0 5px var(--encounter-color));
+}
+
+@media (max-width: 380px) {
+  .encounter-elite-label,
+  .encounter-escort-count { left: 48px; width: 60px; }
+  .encounter-elite-label { font-size: 14px; }
+  .encounter-card.composite-card.formation-elite:not(.boss-card) .encounter-art {
+    left: 112px;
+    right: 78px;
+  }
+}
+
 .encounter-panel.boss-draft .encounter-card.boss-card.composite-card {
   aspect-ratio: 1254 / 1365;
   border: 0;
@@ -40,3 +106,58 @@
     inset: 78px 34px 55px;
   }
 }
+/* Keep active enemies below the HUD without changing combat coordinates. */
+.battlefield #game {
+  position: absolute;
+  top: 108px;
+  left: 0;
+  width: 100%;
+  height: calc(100% - 108px);
+}
+.battlefield::after { top: 108px; }
+.battlefield .message { display: none; }
+.bottom-status .status-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+.decision-wave-summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 8px;
+  margin: 0 0 12px;
+  padding: 9px 0;
+  border-top: 1px solid #46515a;
+  border-bottom: 1px solid #46515a;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.decision-wave-summary strong { color: #ffda79; }
+.decision-wave-summary > span { color: #f4b4a8; }
+.decision-wave-summary small {
+  grid-column: 1 / -1;
+  color: #95e3c0;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.wave-decision .decision-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wave-decision .continue-button,
+.wave-decision .collect-button,
+.wave-decision.bet-increased .continue-button {
+  width: 100%;
+  height: 64px;
+  min-height: 64px;
+  margin: 0;
+  padding: 6px;
+  animation: none;
+  transform: none;
+  border-width: 2px;
+}
+.wave-decision .continue-button span,
+.wave-decision .collect-button span { font-size: 17px; }
+.wave-decision .continue-button small,
+.wave-decision .collect-button strong { font-size: 12px; }
