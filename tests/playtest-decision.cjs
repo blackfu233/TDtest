@@ -8,6 +8,26 @@ const path = require("node:path");
 const url = process.env.QA_URL || "http://127.0.0.1:4183/?v=continue-hierarchy242";
 const output = path.resolve(process.argv[2] || "../encounter242-decision");
 
+async function chooseAvailableCard(page) {
+  const kind = await page.evaluate(() => state.choiceKind);
+  const selector = kind === "encounter"
+    ? '.encounter-card[data-lane="steady"]:not([disabled])'
+    : '#choiceList .choice-card:not([disabled])';
+  const choice = page.locator(selector).first();
+  if (await choice.count() && await choice.isVisible()) await choice.click();
+}
+
+async function resolvePreWaveChoices(page) {
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    const status = await page.evaluate(() => ({active:state.waveActive, choosing:state.choicesOpen}));
+    if (status.active) return;
+    if (status.choosing) await chooseAvailableCard(page);
+    await page.waitForTimeout(100);
+  }
+  throw new Error("pre-wave choices timed out");
+}
+
 async function playToDecision(page) {
   const deadline = Date.now() + 120000;
   while (Date.now() < deadline) {
@@ -19,11 +39,7 @@ async function playToDecision(page) {
     }));
     assert.equal(status.over, false, "test run must reach a real wave-clear decision");
     if (status.decision) return;
-    if (status.choosing) {
-      const steady = page.locator('.encounter-card[data-lane="steady"]');
-      if (await steady.count()) await steady.click();
-      else await page.locator("#choiceList .choice-card").first().click();
-    }
+    if (status.choosing) await chooseAvailableCard(page);
     await page.waitForTimeout(100);
   }
   throw new Error("wave-clear decision timed out");
@@ -85,8 +101,7 @@ async function inspectDecision(page) {
       const first = await inspectDecision(page);
       await page.screenshot({path:path.join(output, `decision-${viewport.width}.png`)});
       await page.locator("#continueBtn").click();
-      await page.locator('.encounter-card[data-lane="steady"]').click();
-      await page.waitForFunction(() => state.waveActive);
+      await resolvePreWaveChoices(page);
       const continued = await page.evaluate(() => ({wallet:state.wallet, wave:state.wave}));
       assert.equal(continued.wallet, first.wallet - first.bet, "Continue debits exactly one displayed BET");
       assert.equal(continued.wave, first.wave + 1);
