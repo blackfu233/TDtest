@@ -6,7 +6,7 @@ const path = require("node:path");
 const assert = require("node:assert/strict");
 
 const output = path.resolve(process.argv[2] || "../encounter241-browser");
-const url = process.env.QA_URL || "http://127.0.0.1:4183/?v=encounter-campaign241";
+const url = process.env.QA_URL || "http://127.0.0.1:4183/?v=continue-hierarchy242";
 
 (async () => {
   fs.mkdirSync(output, {recursive:true});

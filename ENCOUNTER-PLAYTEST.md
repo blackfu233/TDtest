@@ -1,8 +1,16 @@
 # Encounter Combat and Rewards Playtest
 
-Current build: `encounter-campaign241`.
+Current build: `continue-hierarchy242`.
 Economy identity: `encounter-playtest-unbalanced`.
 This is an explicitly uncalibrated gameplay prototype, not an RTP-approved release.
+
+## Decision Hierarchy Revision 242
+
+Restore the original stacked actions: a full-width, 72-pixel minimum-height
+Continue button above the smaller, centered Collect button. Both amounts remain
+visible and both actions remain directly operable. Retain the wave receipt and
+the presentation sequencing fixes, without moving or scaling either button.
+This is a layout-only revision; combat, rewards, wagers and settlement are unchanged.
 
 ## Campaign Revision 241
 
