@@ -1,5 +1,7 @@
 const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v3";
 const PARAM_CHANNEL = "tower-defense-param-sync";
+const TUNER_CURRENT = document.body?.dataset?.tunerMode === "current";
+const TUNER_LEGACY = document.body?.dataset?.tunerMode === "legacy";
 
 const MONSTER_TYPES = [
   ["neutral_scout", "無｜偵察蛛機", { hp:315, speed:34.2, range:0, atk:4.1, interval:1.5, exp:10, moneyMin:1, moneyMax:3 }],
@@ -112,10 +114,10 @@ const HERO_TUNING = [
 ];
 [
   ["fire", { damage:140 }],
-  ["ice", { damage:160, secondaryMul:.68 }],
+  ["ice", { damage:220, rate:.70, secondaryMul:.75 }],
   ["electric", { damage:88 }],
   ["poison", { damage:84, rate:.76, status:25, splash:58 }],
-  ["neutral", { damage:60 }],
+  ["neutral", { damage:70 }],
 ].forEach(([id, values]) => Object.assign(HERO_TUNING.find(hero => hero[0] === id)[4], values));
 const HERO_FIELDS = [
   ["damage","傷害",0,1000,1],["rate","攻速",.05,10,.01],["range","射程",100,1200,10],
@@ -421,7 +423,34 @@ function upgradeRequirementText(text) {
   return Object.entries(UPGRADE_REQUIREMENT_LABELS).find(([name]) => text.includes(name))?.[1] || "";
 }
 
+const ENCOUNTER_PARAM_DEFAULTS = {
+  encounterRewardRevision:258,
+  encounterEconomyEnabled:1,
+  encounterRtpTargetMin:.96, encounterRtpTargetMax:1,
+  encounterRewardScale:.94,
+  encounterChestUpgradeChance:.10,
+  encounterHpDepthGrowth:.09, encounterHpDepthCap:2,
+  encounterGrade1HpMul:1.45, encounterGrade2HpMul:.98, encounterGrade3HpMul:.90,
+  encounterGrade1AtkMul:6, encounterGrade2AtkMul:4.5, encounterGrade3AtkMul:3.5,
+  encounterBaseHitCap:100,
+  encounterMinionBaseHitLimit:1,
+  encounterChest1Min:.30, encounterChest1Max:1.77,
+  encounterChest2Min:.35, encounterChest2Max:1.80,
+  encounterChest3Min:.66, encounterChest3Max:1.90,
+  encounterChest4Min:.70, encounterChest4Max:2.00,
+  encounterBossChestMin:.17, encounterBossChestMax:.28,
+  encounterBossSmallWeight:90, encounterBossMediumWeight:9, encounterBossLargeWeight:1,
+  encounterBossSmallMin:.10, encounterBossSmallMax:.18,
+  encounterBossMediumMin:.30, encounterBossMediumMax:.60,
+  encounterBossLargeMin:1.20, encounterBossLargeMax:2.20,
+  encounterBossDepthGrowth:.08,
+  encounterRushSpeedCap:78,
+  encounterTankSingleDamageMul:1.35, encounterTankAreaDamageMul:.60,
+  encounterTrapSlowPct:.38, encounterTrapSlowTime:.8,
+  encounterFrostSlowPct:.35, encounterFrostSlowTime:1,
+};
 const DEFAULT_PARAMS = {
+  ...ENCOUNTER_PARAM_DEFAULTS,
   balanceRevision:202,
   mathModelEnabled:1,mathTargetRtp:.95,mathTolerancePct:1,mathBuildInfluence:.80,mathBossBuildInfluence:.08,mathBossLaterBuildInfluence:.08,mathMinionBuildInfluence:.24,mathAttributeMinionInfluence:.24,mathAttributeBossInfluence:.34,mathAreaBossRiskDiscount:.08,mathSingleTowerChanceShift:.07,mathAreaTowerChanceShift:-.03,mathControlTowerChanceShift:-.035,mathSingleTowerPayoutShift:0,mathAreaTowerPayoutShift:0,mathControlTowerPayoutShift:0,mathSingleSharePayoutSlope:0,mathAreaSharePayoutSlope:0,mathControlSharePayoutSlope:0,mathHpInfluence:1.50,mathMinionHpInfluence:.22,mathBossHpInfluence:1.10,mathBossLaterHpInfluence:.18,mathBossOrdinalPenalty:.08,mathBossFirstBaseChance:.97,mathBossLaterBaseChance:.75,mathFirstBossDelayPenalty:.012,mathFirstBossGuaranteePenalty:0,mathHpReference:.91,mathHeroPower_fire:1,mathHeroPower_ice:1,mathHeroPower_electric:1,mathHeroPower_neutral:1,mathHeroPower_poison:1,mathCoreRiskBonus:.05,mathTowerBossPower_flame:.68,mathTowerBossPower_grenade:.64,mathTowerBossPower_cryo:1.88,mathTowerBossPower_frostbomb:.58,mathTowerBossPower_laser:2.05,mathTowerBossPower_chain:.48,mathTowerBossPower_gas:.64,mathTowerBossPower_needle:2.08,mathTowerBossPower_blade:.88,mathTowerBossPower_trap:.42,mathBossPenalty:.35,mathPayoutCalibration:1,mathMinionPayoutChanceScale:1,mathBossPayoutChanceScale:.97,mathBossPayoutChanceMidScale:.95,mathBossPayoutChanceDeepScale:.59,mathBossPayoutChanceUltraScale:1.15,mathBossPayoutChanceTailScale:2.70,mathPayoutBand1:1,mathPayoutBand2:1,mathPayoutBand3:1,mathPayoutBand4:1,mathPayoutBand5:1,mathLossHpMul:5,mathLossAtkMul:5,mathLossSpeedMul:1.12,mathMinClearChance:.15,mathMaxClearChance:.999,mathFirstWaveClearChance:.985,
   mathClearBand1:.975,mathClearBand2:.955,mathClearBand3:.925,mathClearBand4:.875,mathClearBand5:.835,
@@ -803,6 +832,52 @@ PARAM_GROUPS.unshift([
     ["mathPoolHotWaveReleaseRate", "深追熱波餘額釋放", "比例", 0, 1, .01, "深追熱波可動用舊餘額的比例。"],
   ],
 ]);
+const ENCOUNTER_PARAM_GROUPS = [
+  ["251 候選版 / 驗證目標", "economy-group", [
+    ["encounterEconomyEnabled", "候選彩金規則", "0 / 1", 0, 1, 1, "1 使用新版寶箱與 BOSS 增幅；0 回到未校準玩法版，不啟用舊版水池。"],
+    ["encounterRtpTargetMin", "RTP 目標下限", "比例", 0, 1, .01, "驗證目標，不是即時控制派彩的開關。"],
+    ["encounterRtpTargetMax", "RTP 目標上限", "比例", 0, 1, .01, "仍須以完整對局與不同合法策略模擬驗證。"],
+    ["encounterRewardScale", "寶箱整體係數", "倍", .01, 5, .01, "抽籤前固定套用，不隨玩家已得倍率、POT 或血量改變。"],
+    ["moneyMul", "金錢全域係數", "倍", 0, 5, .05, "目前遭遇戰實際使用；乘在整波寶箱預算上，不是停用參數。"],
+    ["expMul", "經驗全域係數", "倍", .1, 5, .05, "只影響擊殺經驗；寶箱升級、開箱與通關均不增加經驗。"],
+  ]],
+  ["251 寶箱 / 完成整波的原始 POT", "economy-group", [
+    ["encounterChestUpgradeChance", "一般波寶箱升一級機率", "比例", 0, 1, .01, "普通、進階、危險牌各自抽籤，只升一級；不提高怪物危險等級，不會變成 BOSS 專屬寶箱。0.10 代表 10%。"],
+    ...[1,2,3,4].flatMap(tier => [
+      [`encounterChest${tier}Min`, `第 ${tier} 級寶箱下限`, "當波 BET 倍數", .01, 20, .01, "尚未乘 moneyMul、寶箱整體係數及累積 BOSS 倍率；60% 擊殺、40% 通關。"],
+      [`encounterChest${tier}Max`, `第 ${tier} 級寶箱上限`, "當波 BET 倍數", .01, 20, .01, "區間內均勻抽取；區間可以重疊，但上下限須隨等級提高。寶箱不給經驗，也不改變打怪經驗。"],
+    ]),
+    ["encounterBossChestMin", "BOSS 護衛獎金下限", "當波 BET 倍數", .01, 20, .01, "只分給護衛擊殺；BOSS 專屬寶箱只開倍率、不給金錢或經驗。沿用舊參數鍵以相容匯入。"],
+    ["encounterBossChestMax", "BOSS 護衛獎金上限", "當波 BET 倍數", .01, 20, .01, "區間內均勻抽取，全部分給護衛，不再扣出通關金錢。"],
+  ]],
+  ["251 BOSS / 每次必加倍率", "boss-group", [
+    ...[["Small","小增幅"],["Medium","中增幅"],["Large","大增幅"]].flatMap(([key,label]) => [
+      [`encounterBoss${key}Weight`, `${label}權重`, "權重", 0, 10000, 1, "三組權重正規化後抽籤，總和必須大於零。"],
+      [`encounterBoss${key}Min`, `${label}下限`, "+倍率", .01, 20, .01, "第一隻 BOSS 的增幅區間；最後四捨五入至 0.1，至少增加 0.1。"],
+      [`encounterBoss${key}Max`, `${label}上限`, "+倍率", .01, 20, .01, "同一組區間內均勻抽取；不回收已取得的 POT。"],
+    ]),
+    ["encounterBossDepthGrowth", "每隻後續 BOSS 增幅成長", "比例", 0, 1, .01, "增幅乘以 1 + (BOSS 序號 - 1) × 成長。"],
+  ]],
+  ["251 一般波 / 危險程度", "system-group", [
+    ...[[1,"普通"],[2,"進階"],[3,"危險"]].flatMap(([grade,label]) => [
+      [`encounterGrade${grade}HpMul`, `${label}耐久修正`, "倍", .5, 3, .01, "乘在陣型與卡牌基礎血量上；實際通過率須測試，不是固定勝敗機率。"],
+      [`encounterGrade${grade}AtkMul`, `${label}攻擊修正`, "倍", 1, 20, .5, "只有敵人實際打到基地才造成傷害；不影響 BOSS 波。"],
+    ]),
+    ["encounterHpDepthGrowth", "每波額外耐久成長", "比例", 0, .5, .01, "額外係數為 1 + (波次 - 1) × 成長；不讀取玩家配置、血量、POT 或過往勝敗。"],
+    ["encounterHpDepthCap", "額外耐久成長上限", "倍", 1, 5, .1, "只限制此額外係數；原本波次血量曲線仍生效。"],
+    ["encounterBaseHitCap", "一般波單次傷害上限", "HP", 1, 1000, 10, "限制單隻敵人的單次基地傷害，多隻敵人仍可連續造成傷害；BOSS 波不套用。"],
+    ["encounterMinionBaseHitLimit", "一般怪突破攻擊次數", "次", 1, 10, 1, "一般怪抵達基地後最多攻擊幾次便離場；離場不視為擊殺，也不會發放該怪獎勵。BOSS 不受此值限制。"],
+  ]],
+  ["251 戰鬥 / 配置差異", "system-group", [
+    ["encounterRushSpeedCap", "高速怪速度上限", "像素 / 秒", 40, 96, 1, "保留高速特性，但限制難度與屬性疊乘後的移速。"],
+    ["encounterTankSingleDamageMul", "單體打厚甲係數", "倍", .5, 3, .05, "普通坦克使用砲塔 eliteMul，再乘此係數。"],
+    ["encounterTankAreaDamageMul", "群攻打厚甲係數", "倍", .1, 1, .05, "普通坦克使用 minionMul，再乘此抗性係數；不影響 BOSS。"],
+    ["encounterTrapSlowPct", "基礎陷阱緩速", "比例", 0, .7, .01, "不用先抽升級就具備控場。"],
+    ["encounterTrapSlowTime", "基礎陷阱緩速時間", "秒", .1, 3, .1, "控場需搭配輸出，不保證通關。"],
+    ["encounterFrostSlowPct", "冰爆基礎緩速", "比例", 0, .7, .01, "命中後的基礎緩速強度。"],
+    ["encounterFrostSlowTime", "冰爆基礎緩速時間", "秒", .1, 3, .1, "升級增益沿用既有砲塔邏輯。"],
+  ]],
+];
 const BOSS_EMOTION_KEYS = new Set([
   "bossLowWeight", "bossMidWeight", "bossHighWeight",
   "bossLowMin", "bossLowMax", "bossMidMin", "bossMidMax", "bossHighMin", "bossHighMax",
@@ -848,6 +923,7 @@ const COLLECT_POLICY_TEMPLATES = [
 ];
 
 const ui = {
+  encounterParamBody:document.getElementById("encounterParamTableBody"),
   rewardBody:document.getElementById("rewardTableBody"), bossEmotionBody:document.getElementById("bossEmotionTableBody"), bossDifficultyBody:document.getElementById("bossDifficultyTableBody"), monsterBody: document.getElementById("monsterTableBody"), templateBody: document.getElementById("templateTableBody"), bandBody: document.getElementById("bandTableBody"), waveBody: document.getElementById("waveTableBody"), expBody: document.getElementById("expTableBody"), heroGlobalBody:document.getElementById("heroGlobalTableBody"), heroBody:document.getElementById("heroTableBody"), towerBody: document.getElementById("towerTableBody"), upgradeBody: document.getElementById("upgradeCoefTableBody"), upgradeOptions: document.getElementById("upgradeOptionTables"), upgradeSummaryBody: document.getElementById("upgradeSummaryBody"), rtpBody: document.getElementById("rtpTableBody"), towerScoreBody: document.getElementById("towerScoreBody"),
   apply: document.getElementById("applyBtn"), reset: document.getElementById("resetBtn"), export: document.getElementById("exportBtn"), import: document.getElementById("importBtn"), json: document.getElementById("jsonText"), status: document.getElementById("statusText"), bossAvg: document.getElementById("bossAvgText"), bossRange: document.getElementById("bossRangeText"), rewardAvg:document.getElementById("rewardAvgText"), bossDifficultyAvg:document.getElementById("bossDifficultyAvgText"), towerGap: document.getElementById("towerGapText"), towerGapNote: document.getElementById("towerGapNote"),
   rewardRtpBody:document.getElementById("rewardRtpBudgetBody"), bossRtpBody:document.getElementById("bossRtpBudgetBody"), rewardRtpTotal:document.getElementById("rewardRtpTotal"), bossRtpTotal:document.getElementById("bossRtpTotal"), rewardRtpMeta:document.getElementById("rewardRtpMeta"), bossRtpMeta:document.getElementById("bossRtpMeta"),
@@ -864,6 +940,136 @@ let channel = null;
 try { channel = new BroadcastChannel(PARAM_CHANNEL); } catch {}
 
 function loadParams() { try { return cleanParams(migrateBossParams(JSON.parse(localStorage.getItem(PARAM_STORAGE_KEY) || "{}"))); } catch { return cleanParams(); } }
+function migrateEncounterRewardParams(input) {
+  const revision = Number(input.encounterRewardRevision) || 0;
+  if (revision >= 258) return input;
+  const next = {...input};
+  if (revision === 257) {
+    const defaults257 = {
+      encounterRewardScale:.96,
+      encounterChest1Min:.25, encounterChest1Max:1.75,
+      encounterChest3Min:.60, encounterChest3Max:1.90,
+    };
+    for (const [key,value] of Object.entries(defaults257)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 258;
+    return next;
+  }
+  if (revision === 256) {
+    const defaults256 = {
+      encounterRewardScale:.93,
+      encounterHpDepthGrowth:.075,
+      encounterHpDepthCap:2,
+      encounterGrade2HpMul:.95,
+      encounterGrade3HpMul:.82,
+      encounterChest1Min:.20, encounterChest1Max:1.70,
+      encounterChest2Min:.40, encounterChest2Max:1.80,
+      encounterChest3Min:.55, encounterChest3Max:1.90,
+      encounterChest4Min:.70, encounterChest4Max:2.10,
+    };
+    for (const [key,value] of Object.entries(defaults256)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 258;
+    return next;
+  }
+  if (revision === 255) {
+    const defaults255 = {
+      encounterRewardScale:.99,
+      encounterHpDepthGrowth:.13,
+      encounterHpDepthCap:3,
+      encounterGrade2HpMul:1.05,
+      encounterGrade3HpMul:1.00,
+      encounterChest1Min:.20, encounterChest1Max:1.70,
+      encounterChest2Min:.40, encounterChest2Max:1.80,
+      encounterChest3Min:.55, encounterChest3Max:1.90,
+      encounterChest4Min:.70, encounterChest4Max:2.10,
+      encounterBossSmallWeight:70,
+      encounterBossMediumWeight:23,
+      encounterBossLargeWeight:7,
+      encounterBossSmallMin:.25,
+      encounterBossSmallMax:.65,
+      encounterBossMediumMin:1.00,
+      encounterBossMediumMax:1.80,
+      encounterBossLargeMin:2.50,
+      encounterBossLargeMax:5.00,
+      encounterBossDepthGrowth:.40,
+    };
+    for (const [key,value] of Object.entries(defaults255)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    if (input.encounterMinionBaseHitLimit === undefined) next.encounterMinionBaseHitLimit = DEFAULT_PARAMS.encounterMinionBaseHitLimit;
+    next.encounterRewardRevision = 258;
+    return next;
+  }
+  if (revision === 254) {
+    const defaults254 = {
+      encounterBossSmallWeight:88, encounterBossMediumWeight:11, encounterBossLargeWeight:1,
+      encounterBossSmallMin:.10, encounterBossSmallMax:.40,
+      encounterBossMediumMin:.50, encounterBossMediumMax:1.00,
+      encounterBossLargeMin:1.10, encounterBossLargeMax:1.80,
+      encounterBossDepthGrowth:.10,
+    };
+    for (const [key,value] of Object.entries(defaults254)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 255;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 253) {
+    const defaults253 = {encounterRewardScale:1.04,hero_ice_damage:160,hero_ice_rate:.58,hero_ice_secondaryMul:.68,hero_neutral_damage:60};
+    for (const [key,value] of Object.entries(defaults253)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 254;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 252) {
+    if (input.encounterRewardScale === undefined || Number(input.encounterRewardScale) === 1) next.encounterRewardScale = 1.04;
+    next.encounterRewardRevision = 253;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 251) {
+    const combat251 = {encounterGrade1HpMul:1.45,encounterGrade2HpMul:.85,encounterGrade3HpMul:.72,
+      encounterGrade1AtkMul:10,encounterGrade2AtkMul:14,encounterGrade3AtkMul:11.5,encounterBaseHitCap:300};
+    for (const [key,value] of Object.entries(combat251)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    const rewards251 = {encounterChest1Min:.10,encounterChest1Max:1.20,
+      encounterChest2Min:.20,encounterChest2Max:1.60,encounterChest3Min:.40,encounterChest3Max:2.20,
+      encounterChest4Min:.80,encounterChest4Max:3.20};
+    if (Object.entries(rewards251).every(([key,value]) => input[key] === undefined || Number(input[key]) === value)) {
+      for (const key of Object.keys(rewards251)) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 252;
+    return migrateEncounterRewardParams(next);
+  }
+  const old = {encounterRewardScale:.46, encounterChest1Min:.30, encounterChest1Max:.42,
+    encounterChest2Min:.50, encounterChest2Max:.70, encounterChest3Min:.90, encounterChest3Max:1.20,
+    encounterChest4Min:1.80, encounterChest4Max:2.40};
+  let escortScale = .60;
+  // Migrate an untouched preset as a group; keep custom prize distributions intact.
+  if (Object.entries(old).every(([key,value]) => input[key] === undefined || Number(input[key]) === value)) {
+    for (const key of Object.keys(old)) next[key] = DEFAULT_PARAMS[key];
+    escortScale *= .46;
+  }
+  // The old BOSS wave budget included a 40% cash chest; only its escort share remains.
+  for (const part of ["Min","Max"]) {
+    const key = `encounterBossChest${part}`;
+    const previousDefault = part === "Min" ? .60 : 1;
+    next[key] = input[key] === undefined || (escortScale === .60*.46 && Number(input[key]) === previousDefault)
+      ? DEFAULT_PARAMS[key] : Number(input[key]) * escortScale;
+  }
+  const boss = {encounterBossSmallMin:.10, encounterBossSmallMax:.20,
+    encounterBossMediumMin:.30, encounterBossMediumMax:.50, encounterBossLargeMin:1.80, encounterBossLargeMax:3.20};
+  if (Object.entries(boss).every(([key,value]) => input[key] === undefined || Number(input[key]) === value)) {
+    for (const key of Object.keys(boss)) next[key] = DEFAULT_PARAMS[key];
+  }
+  next.encounterRewardRevision = 251;
+  return migrateEncounterRewardParams(next);
+}
+
 function migrateBossParams(input={}) {
   const next = { ...input };
   if (!Object.prototype.hasOwnProperty.call(input, "bossFirstMinWave")) {
@@ -2047,11 +2253,38 @@ function migrateBossParams(input={}) {
     });
     next.balanceRevision = 211;
   }
-  return next;
+  return migrateEncounterRewardParams(next);
 }
 function cleanParams(input={}) {
   const next = { ...DEFAULT_PARAMS };
   Object.keys(DEFAULT_PARAMS).forEach(key => { const value = Number(input[key]); if (Number.isFinite(value)) next[key] = value; });
+  const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+  next.encounterEconomyEnabled = next.encounterEconomyEnabled >= .5 ? 1 : 0;
+  next.encounterRtpTargetMin = clamp(next.encounterRtpTargetMin, 0, 1);
+  next.encounterRtpTargetMax = clamp(next.encounterRtpTargetMax, next.encounterRtpTargetMin, 1);
+  next.encounterRewardScale = clamp(next.encounterRewardScale, .01, 5);
+  next.encounterChestUpgradeChance = clamp(next.encounterChestUpgradeChance, 0, 1);
+  next.encounterHpDepthGrowth = clamp(next.encounterHpDepthGrowth, 0, .5);
+  next.encounterHpDepthCap = clamp(next.encounterHpDepthCap, 1, 5);
+  next.encounterBaseHitCap = clamp(next.encounterBaseHitCap, 1, 1000);
+  next.encounterMinionBaseHitLimit = Math.round(clamp(next.encounterMinionBaseHitLimit, 1, 10));
+  for (const grade of [1,2,3]) {
+    next[`encounterGrade${grade}HpMul`] = clamp(next[`encounterGrade${grade}HpMul`], .5, 3);
+    next[`encounterGrade${grade}AtkMul`] = clamp(next[`encounterGrade${grade}AtkMul`], 1, 20);
+  }
+  ["Chest1", "Chest2", "Chest3", "Chest4", "BossChest", "BossSmall", "BossMedium", "BossLarge"].forEach(part => {
+    next[`encounter${part}Min`] = clamp(next[`encounter${part}Min`], .01, 20);
+    next[`encounter${part}Max`] = clamp(next[`encounter${part}Max`], next[`encounter${part}Min`], 20);
+  });
+  ["Small", "Medium", "Large"].forEach(part => { next[`encounterBoss${part}Weight`] = Math.max(0, next[`encounterBoss${part}Weight`]); });
+  next.encounterBossDepthGrowth = clamp(next.encounterBossDepthGrowth, 0, 1);
+  next.encounterRushSpeedCap = clamp(next.encounterRushSpeedCap, 40, 96);
+  next.encounterTankSingleDamageMul = clamp(next.encounterTankSingleDamageMul, .5, 3);
+  next.encounterTankAreaDamageMul = clamp(next.encounterTankAreaDamageMul, .1, 1);
+  ["Trap", "Frost"].forEach(part => {
+    next[`encounter${part}SlowPct`] = clamp(next[`encounter${part}SlowPct`], 0, .70);
+    next[`encounter${part}SlowTime`] = clamp(next[`encounter${part}SlowTime`], .1, 3);
+  });
   next.bossFirstMinWave = Math.max(1, Math.round(next.bossFirstMinWave));
   next.bossFirstGuaranteeWave = Math.max(next.bossFirstMinWave, Math.round(next.bossFirstGuaranteeWave));
   next.bossFirstChance = Math.max(0, Math.min(100, next.bossFirstChance));
@@ -2354,6 +2587,13 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>\"]/g, char => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[char]));
 }
 function parameterLogic(key) {
+  if (key === "expMul") return "擊殺 EXP = 怪物 EXP × 本值 × 卡牌危險度EXP係數；寶箱與通關均不另給 EXP，寶箱升級不影響 EXP";
+  if (key === "moneyMul") return "遭遇戰：整波 POT 原值 = BET × 寶箱區間抽籤 × 本值 × 寶箱整體係數；小數跨波累積後取整";
+  if (key === "encounterChestUpgradeChance") return "每張一般牌獨立以此機率升一級寶箱；不改危險度，最高第4級，不含BOSS專屬寶箱";
+  if (key.startsWith("encounterRtpTarget")) return "只用於檢核；實測 RTP = 實際 Collect 總額 / 實際投入總額";
+  if (/^encounter(?:Chest\d|BossChest)/.test(key) || key === "encounterRewardScale") return "候選規則：整波 POT = floor(BET × 區間抽籤 × moneyMul × encounterRewardScale + 上波小數餘額)，餘額留到下一波";
+  if (key.startsWith("encounterBoss")) return "BOSS 增幅 = max(0.1, round(權重抽籤區間值 × 深度成長, 0.1))";
+  if (key.startsWith("encounter")) return "僅遭遇戰原型使用；由 game.js 同名參數讀取";
   const modern = {
     mathCarryShapeEnabled:"啟用時：先算 fundedMean，再做等期望值兩點分布；E[重排彩金 | 當下狀態] = fundedMean，不額外增加RTP",
     mathCarryAnchorChance:"倍率維持目標 = 上波POT + 上波回收倍率 × 本波新增BET；另一分支彩金由公平平均反推",
@@ -2511,11 +2751,13 @@ function parameterTiming(key) {
   return "依所屬系統即時計算";
 }
 function inputCell(key, min, max, step, showMeta=true) {
-  const percent = key === "mathTargetRtp";
+  const percent = key === "mathTargetRtp" || (TUNER_CURRENT && ENCOUNTER_PARAM_GROUPS.some(([, ,rows])=>rows.some(row=>row[0]===key&&row[2]==="比例")));
   const scale = percent ? .01 : 1;
   const value = Number(params[key]);
   const shown = Number.isFinite(value) ? value / scale : 0;
-  const input = `<input data-key="${key}" data-scale="${scale}" type="number" min="${min / scale}" max="${max / scale}" step="${step / scale}" value="${shown}">`;
+  if(TUNER_CURRENT && key === "encounterEconomyEnabled") return `<input type="checkbox" role="switch" data-key="${key}" data-scale="1" min="0" max="1" value="${value}" ${value>=.5?"checked":""} aria-label="啟用候選彩金規則">`;
+  const input = `<input data-key="${key}" data-scale="${scale}" type="number" min="${min / scale}" max="${max / scale}" step="${step / scale}" value="${shown}" aria-label="${escapeHtml(key)}">`;
+  if(TUNER_CURRENT) return input;
   if (!showMeta) return input;
   return `<div class="param-input-wrap">${input}<code class="param-key">${escapeHtml(key)}</code><span class="param-formula">${escapeHtml(parameterLogic(key))}</span></div>`;
 }
@@ -2576,7 +2818,10 @@ function bindInputs(root=document) {
   }));
 }
 function build() {
+  if(TUNER_CURRENT) { buildCurrentTuner(); return; }
+  TD_ENCOUNTER_VIEW.bind(() => params);
   buildParamTable(ui.poolParamBody, POOL_PARAM_GROUPS);
+  buildParamTable(ui.encounterParamBody, ENCOUNTER_PARAM_GROUPS);
   buildPoolEntryTable();
   buildParamTable(ui.bossEmotionBody, BOSS_EMOTION_GROUPS);
   buildRewardTables();
@@ -2591,6 +2836,10 @@ function build() {
   bindInputs(document);
   updateEvaluation();
   renderEngineeringLogic();
+  if(TUNER_LEGACY) {
+    document.querySelectorAll("input[data-key], #applyBtn, #resetBtn, #importBtn").forEach(input=>input.disabled=true);
+    ui.status.textContent="舊版參考，唯讀。歷史模型的 RTP 估算不適用目前版本。";
+  }
 }
 function buildRewardTables() {
   const rewardTotal = WAVE_REWARD_TIERS.reduce((sum, [, , weightKey]) => sum + Math.max(0, Number(params[weightKey]) || 0), 0) || 1;
@@ -3349,6 +3598,8 @@ function renderCollectPolicyTemplates() {
   }).join("");
 }
 function updateEvaluation() {
+  TD_ENCOUNTER_VIEW.render(params);
+  if(TUNER_CURRENT) { refreshCurrentState(); return; }
   updateHeroEvaluationCells();
   renderCollectPolicyTemplates();
   const mins = [params.bossLowMin, params.bossMidMin, params.bossHighMin].map(Number);
@@ -3395,6 +3646,7 @@ function syncParamInputs(key, source=null) {
     if (input === source || input.dataset.key !== key) return;
     const scale = Number(input.dataset.scale) || 1;
     input.value = Number(params[key] || 0) / scale;
+    if(input.type === "checkbox") input.checked=params[key]>=.5;
   });
 }
 
@@ -3459,6 +3711,7 @@ function parameterContext(input) {
 }
 
 function updateEngineeringSummary() {
+  if(TUNER_CURRENT) return;
   const target = Number(params.mathTargetRtp) || 0;
   const actual = poolEntryStats().mean;
   const targetText = `${(target * 100).toFixed(2)}%`;
@@ -3475,6 +3728,7 @@ function updateEngineeringSummary() {
 }
 
 function renderEngineeringLogic() {
+  if(TUNER_CURRENT) return;
   updateEngineeringSummary();
   renderPoolLedgerLogic();
   if (ui.logicPipeline) {
@@ -3511,7 +3765,7 @@ function bindInputs(root=document) {
     if (input.dataset.bound === "1") return;
     input.dataset.bound = "1";
     input.addEventListener("input", () => {
-      const value = Number(input.value);
+      const value = input.type === "checkbox" ? Number(input.checked) : Number(input.value);
       const scale = Number(input.dataset.scale) || 1;
       if (Number.isFinite(value)) params[input.dataset.key] = value * scale;
       syncParamInputs(input.dataset.key, input);
@@ -3519,17 +3773,18 @@ function bindInputs(root=document) {
       if (input.dataset.key.startsWith("mathPoolEntryTier")) updatePoolEntryStats();
       if (input.dataset.key.startsWith("upgradeVal_")) {
         updateLiveUpgradeDescription(input);
+        if(TUNER_CURRENT) refreshCurrentState();
         return;
       }
       updateEvaluation();
     });
     input.addEventListener("change", () => {
-      const value = Number(input.value);
+      const value = input.type === "checkbox" ? Number(input.checked) : Number(input.value);
       const scale = Number(input.dataset.scale) || 1;
       if (Number.isFinite(value)) params[input.dataset.key] = value * scale;
       syncParamInputs(input.dataset.key, input);
       if (input.dataset.key.startsWith("upgradeVal_") || input.dataset.key.startsWith("upgrade")) {
-        buildUpgradeOptionTables();
+        if(TUNER_CURRENT) buildCurrentUpgrades(); else buildUpgradeOptionTables();
       }
       if (input.dataset.key.startsWith("waveReward") || input.dataset.key.startsWith("bossDiff")) {
         buildRewardTables();
@@ -4018,20 +4273,68 @@ function buildUpgradeOptionTables() {
 }
 
 function applyToGame() {
+  if(TUNER_LEGACY) return;
+  if(TUNER_CURRENT) {
+    const error=validateCurrentDraft(params);
+    if(error) { ui.status.textContent=`未套用：${error}`; return; }
+  }
   params = cleanParams(params);
+  if (params.moneyMul < 0 || params.moneyMul > 5 || params.expMul < .1 || params.expMul > 5) {
+    ui.status.textContent = "未更新：金錢係數範圍為 0–5，經驗係數範圍為 0.1–5。";
+    return;
+  }
+  if (["Small", "Medium", "Large"].every(part => params[`encounterBoss${part}Weight`] === 0)) {
+    ui.status.textContent = "未更新：BOSS 三組增幅權重不可全部為零。";
+    return;
+  }
+  if ([1,2,3].some(tier => ["Min","Max"].some(part => params[`encounterChest${tier}${part}`] >= params[`encounterChest${tier + 1}${part}`]))) {
+    ui.status.textContent = "未更新：高級寶箱的上下限須逐級提高；區間可以重疊。";
+    return;
+  }
   localStorage.setItem(PARAM_STORAGE_KEY, JSON.stringify(params));
   channel?.postMessage({ type: "towerDefenseParams", params });
-  ui.status.textContent = `已更新到遊戲：${new Date().toLocaleTimeString()}`;
+  if(TUNER_CURRENT) currentSavedParams={...params};
+  ui.status.textContent = `已儲存：${new Date().toLocaleTimeString()}，進行中的遊戲於下一局套用。`;
   build();
 }
 function switchTab(tabName) {
-  ui.tabs.forEach(tab => tab.classList.toggle("active", tab.dataset.tab === tabName));
+  const summary=document.querySelector(".legacy-summary");
+  if(summary) summary.hidden = tabName !== "evaluation";
+  ui.tabs.forEach(tab => {tab.classList.toggle("active", tab.dataset.tab === tabName); tab.setAttribute("aria-pressed",String(tab.dataset.tab===tabName));});
   Object.entries(ui.panels).forEach(([name, panel]) => panel.classList.toggle("active", name === tabName));
   if (tabName === "pool" || tabName === "logic") renderEngineeringLogic();
 }
 ui.tabs.forEach(tab => tab.addEventListener("click", () => switchTab(tab.dataset.tab)));
 ui.apply.addEventListener("click", applyToGame);
-ui.reset.addEventListener("click", () => { params = cleanParams(); build(); applyToGame(); });
+ui.reset.addEventListener("click", () => {
+  if(TUNER_LEGACY) return;
+  if(TUNER_CURRENT) {
+    // Preserve compatibility fields not owned by the current editing surface.
+    const defaults=cleanParams();
+    for(const key of currentBounds.keys()) params[key]=defaults[key];
+    build(); ui.status.textContent="已還原目前版本的預設草稿，尚未套用到遊戲。";
+  } else { params=cleanParams(); build(); applyToGame(); }
+});
 ui.export.addEventListener("click", () => { ui.json.value = JSON.stringify(cleanParams(params), null, 2); });
-ui.import.addEventListener("click", () => { try { params = cleanParams(JSON.parse(ui.json.value)); build(); applyToGame(); } catch { ui.status.textContent = "JSON 格式錯誤，沒有匯入。"; } });
+ui.import.addEventListener("click", () => {
+  if(TUNER_LEGACY) return;
+  try {
+    const imported=JSON.parse(ui.json.value);
+    if(TUNER_CURRENT) {
+      if(!imported||typeof imported!=="object"||Array.isArray(imported)) throw new Error("設定必須是 JSON 物件。");
+      const unknown=Object.keys(imported).filter(key=>!Object.hasOwn(params,key));
+      if(unknown.length) throw new Error(`不支援的設定欄位：${unknown.slice(0,3).join("、")}`);
+      let candidate={...params,...imported};
+      let error=validateCurrentDraft(candidate);
+      if(error) throw new Error(error);
+      const legacyRewards=Object.hasOwn(imported,"balanceRevision")&&(Number(imported.encounterRewardRevision)||0)<258;
+      if(legacyRewards) {
+        candidate={...params,...migrateEncounterRewardParams(imported)};
+        error=validateCurrentDraft(candidate);
+        if(error) throw new Error(error);
+      }
+      params=cleanParams(candidate); build(); ui.status.textContent=legacyRewards?"舊版遭遇戰設定已轉換為 258 草稿，尚未套用到遊戲。":"已匯入草稿，尚未套用到遊戲。";
+    } else { params=cleanParams(imported); build(); applyToGame(); }
+  } catch(error) { ui.status.textContent = `沒有匯入：${error.message}`; }
+});
 build();

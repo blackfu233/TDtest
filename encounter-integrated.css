@@ -150,3 +150,56 @@
   animation: none;
   transform: none;
 }
+
+/* Matchup feedback is separate from the card's fixed threat and reward artwork. */
+.encounter-option { min-width: 0; --advice-color: #a8b7be; }
+.encounter-option > .encounter-card { display: block; width: 100%; }
+.encounter-option.advice-advantage { --advice-color: #72edcf; }
+.encounter-option.advice-danger { --advice-color: #ff987c; }
+.encounter-option.advice-mixed { --advice-color: #f5d784; }
+.encounter-advice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  margin: 3px 5px 0;
+  padding: 0 7px;
+  border-bottom: 2px solid color-mix(in srgb, var(--advice-color) 55%, transparent);
+  color: var(--advice-color);
+  background: #131b1edb;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.advice-sources { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+.advice-sources:empty { display: none; }
+.advice-sources img { display: block; width: 23px; height: 23px; object-fit: contain; }
+.advice-reasons { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.advice-reasons > span { white-space: nowrap; }
+.advice-reasons .advice-good { color: #72edcf; }
+.advice-reasons .advice-bad { color: #ffac91; }
+.advice-reasons .advice-even { color: #bac6cb; }
+.advice-signal { flex: 0 0 3px; height: 12px; margin-left: auto; background: var(--advice-color); }
+.advice-advantage .advice-signal { animation: matchupReady 1.8s ease-in-out infinite; }
+.advice-danger .advice-signal { animation: matchupWarning 1.6s ease-in-out infinite; }
+.advice-mixed .advice-signal { background: linear-gradient(#72edcf 50%, #ffac91 50%); }
+.encounter-option:has(.encounter-card:hover) .encounter-advice,
+.encounter-option:has(.encounter-card:focus-visible) .encounter-advice {
+  background: color-mix(in srgb, var(--advice-color) 12%, #10191b);
+  border-color: var(--advice-color);
+}
+.encounter-option:has(.encounter-card.selected) .encounter-advice,
+.encounter-option:has(.encounter-card.rejected) .encounter-advice { opacity: 0; }
+@keyframes matchupReady { 0%, 100% { opacity: .55; box-shadow: 0 0 0 transparent; } 50% { opacity: 1; box-shadow: 0 0 10px #72edcf; } }
+@keyframes matchupWarning { 0%, 100% { opacity: 1; } 50% { opacity: .30; } }
+@media (max-width: 350px) {
+  .encounter-advice { gap: 4px; padding: 0 4px; font-size: 10px; }
+  .advice-reasons { gap: 7px; }
+  .advice-sources img { width: 20px; height: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .encounter-advice .advice-signal { animation: none; }
+}
