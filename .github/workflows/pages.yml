@@ -32,10 +32,10 @@ jobs:
       - name: Prepare playable files
         run: |
           mkdir _site
-          cp index.html _site/
-          cp game.js _site/
-          cp styles.css _site/
-          cp encounter-integrated.css _site/
+          cp index.html game.js styles.css encounter-integrated.css _site/
+          cp tuner.html tuner-legacy.html tuner.css tuner-current.css _site/
+          cp tuner.js tuner-current.js tuner-encounter.js encounter-tuning-data.js _site/
+          cp simulator.html simulator.css simulator.js simulator-core.js simulator-worker.js _site/
           cp -R assets _site/
 
       - name: Upload game
