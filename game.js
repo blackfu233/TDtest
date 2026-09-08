@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-balance258";
+const BUILD_VERSION = "encounter-balance259";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
 const DEBUG_BIOME = (() => {
@@ -854,10 +854,10 @@ const PROTOTYPE_BOSS_REPAIR = .35;
 // Prototype-only POT per paid BET; disjoint chest bands, not calibrated RTP.
 const ENCOUNTER_REWARD_BANDS = { 1:[.45,.65], 2:[1.00,1.35], 3:[2.40,3.10], 4:[4.80,6.00] };
 const ENCOUNTER_PARAM_DEFAULTS = {
-  encounterRewardRevision:258,
+  encounterRewardRevision:259,
   encounterEconomyEnabled:1,
   encounterRtpTargetMin:.96, encounterRtpTargetMax:1,
-  encounterRewardScale:.94,
+  encounterRewardScale:.82,
   encounterChestUpgradeChance:.10,
   encounterHpDepthGrowth:.09, encounterHpDepthCap:2,
   encounterGrade1HpMul:1.45, encounterGrade2HpMul:.98, encounterGrade3HpMul:.90,
@@ -869,11 +869,11 @@ const ENCOUNTER_PARAM_DEFAULTS = {
   encounterChest3Min:.66, encounterChest3Max:1.90,
   encounterChest4Min:.70, encounterChest4Max:2.00,
   encounterBossChestMin:.17, encounterBossChestMax:.28,
-  encounterBossSmallWeight:90, encounterBossMediumWeight:9, encounterBossLargeWeight:1,
-  encounterBossSmallMin:.10, encounterBossSmallMax:.18,
-  encounterBossMediumMin:.30, encounterBossMediumMax:.60,
-  encounterBossLargeMin:1.20, encounterBossLargeMax:2.20,
-  encounterBossDepthGrowth:.08,
+  encounterBossSmallWeight:85, encounterBossMediumWeight:13, encounterBossLargeWeight:2,
+  encounterBossSmallMin:.75, encounterBossSmallMax:1.05,
+  encounterBossMediumMin:1.30, encounterBossMediumMax:2.00,
+  encounterBossLargeMin:2.00, encounterBossLargeMax:3.00,
+  encounterBossDepthGrowth:.10,
   encounterRushSpeedCap:78,
   encounterTankSingleDamageMul:1.35, encounterTankAreaDamageMul:.60,
   encounterTrapSlowPct:.38, encounterTrapSlowTime:.8,
@@ -1724,8 +1724,23 @@ function loadParams() {
 
 function migrateEncounterRewardParams(input) {
   const revision = Number(input.encounterRewardRevision) || 0;
-  if (revision >= 258) return input;
+  if (revision >= 259) return input;
   const next = {...input};
+  if (revision === 258) {
+    const defaults258 = {
+      encounterRewardScale:.94,
+      encounterBossSmallWeight:90, encounterBossMediumWeight:9, encounterBossLargeWeight:1,
+      encounterBossSmallMin:.10, encounterBossSmallMax:.18,
+      encounterBossMediumMin:.30, encounterBossMediumMax:.60,
+      encounterBossLargeMin:1.20, encounterBossLargeMax:2.20,
+      encounterBossDepthGrowth:.08,
+    };
+    for (const [key,value] of Object.entries(defaults258)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 259;
+    return next;
+  }
   if (revision === 257) {
     const defaults257 = {
       encounterRewardScale:.96,
@@ -1736,7 +1751,7 @@ function migrateEncounterRewardParams(input) {
       if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
     }
     next.encounterRewardRevision = 258;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 256) {
     const defaults256 = {
@@ -1754,7 +1769,7 @@ function migrateEncounterRewardParams(input) {
       if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
     }
     next.encounterRewardRevision = 258;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 255) {
     const defaults255 = {
@@ -1783,7 +1798,7 @@ function migrateEncounterRewardParams(input) {
     }
     if (input.encounterMinionBaseHitLimit === undefined) next.encounterMinionBaseHitLimit = DEFAULT_PARAMS.encounterMinionBaseHitLimit;
     next.encounterRewardRevision = 258;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 254) {
     const defaults254 = {
@@ -3226,7 +3241,7 @@ function encounterEconomyEnabled() {
 }
 function economyMode() {
   return ENCOUNTER_DRAFT_PROTOTYPE
-    ? encounterEconomyEnabled() ? "encounter-rtp-candidate-258" : "encounter-playtest-unbalanced-258"
+    ? encounterEconomyEnabled() ? "encounter-rtp-candidate-259" : "encounter-playtest-unbalanced-259"
     : "legacy-math";
 }
 function mathPoolEnabled() {

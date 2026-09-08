@@ -1,14 +1,14 @@
 "use strict";
 // Generated from game.js by tools/export-encounter-tuning.cjs.
 globalThis.TD_ENCOUNTER_TUNING = {
-  "build": "encounter-balance258",
-  "economyMode": "encounter-rtp-candidate-258",
+  "build": "encounter-balance259",
+  "economyMode": "encounter-rtp-candidate-259",
   "encounterDefaults": {
-    "encounterRewardRevision": 258,
+    "encounterRewardRevision": 259,
     "encounterEconomyEnabled": 1,
     "encounterRtpTargetMin": 0.96,
     "encounterRtpTargetMax": 1,
-    "encounterRewardScale": 0.94,
+    "encounterRewardScale": 0.82,
     "encounterChestUpgradeChance": 0.1,
     "encounterHpDepthGrowth": 0.09,
     "encounterHpDepthCap": 2,
@@ -30,16 +30,16 @@ globalThis.TD_ENCOUNTER_TUNING = {
     "encounterChest4Max": 2,
     "encounterBossChestMin": 0.17,
     "encounterBossChestMax": 0.28,
-    "encounterBossSmallWeight": 90,
-    "encounterBossMediumWeight": 9,
-    "encounterBossLargeWeight": 1,
-    "encounterBossSmallMin": 0.1,
-    "encounterBossSmallMax": 0.18,
-    "encounterBossMediumMin": 0.3,
-    "encounterBossMediumMax": 0.6,
-    "encounterBossLargeMin": 1.2,
-    "encounterBossLargeMax": 2.2,
-    "encounterBossDepthGrowth": 0.08,
+    "encounterBossSmallWeight": 85,
+    "encounterBossMediumWeight": 13,
+    "encounterBossLargeWeight": 2,
+    "encounterBossSmallMin": 0.75,
+    "encounterBossSmallMax": 1.05,
+    "encounterBossMediumMin": 1.3,
+    "encounterBossMediumMax": 2,
+    "encounterBossLargeMin": 2,
+    "encounterBossLargeMax": 3,
+    "encounterBossDepthGrowth": 0.1,
     "encounterRushSpeedCap": 78,
     "encounterTankSingleDamageMul": 1.35,
     "encounterTankAreaDamageMul": 0.6,
@@ -383,6 +383,6 @@ globalThis.TD_ENCOUNTER_TUNING = {
     ]
   },
   "clearShare": 0.4,
-  "engineSha256": "e2ced1e61d8bba1223f9a492dca097e6caf46520584e501a2a50eab2fd11315d"
+  "engineSha256": "d9dd563a8ab56ece5b57485fa8304fe6f17d7df98945527a2b0496856e90dfa8"
 };
 if (typeof module !== "undefined") module.exports = globalThis.TD_ENCOUNTER_TUNING;

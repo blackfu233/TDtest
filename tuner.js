@@ -424,10 +424,10 @@ function upgradeRequirementText(text) {
 }
 
 const ENCOUNTER_PARAM_DEFAULTS = {
-  encounterRewardRevision:258,
+  encounterRewardRevision:259,
   encounterEconomyEnabled:1,
   encounterRtpTargetMin:.96, encounterRtpTargetMax:1,
-  encounterRewardScale:.94,
+  encounterRewardScale:.82,
   encounterChestUpgradeChance:.10,
   encounterHpDepthGrowth:.09, encounterHpDepthCap:2,
   encounterGrade1HpMul:1.45, encounterGrade2HpMul:.98, encounterGrade3HpMul:.90,
@@ -439,11 +439,11 @@ const ENCOUNTER_PARAM_DEFAULTS = {
   encounterChest3Min:.66, encounterChest3Max:1.90,
   encounterChest4Min:.70, encounterChest4Max:2.00,
   encounterBossChestMin:.17, encounterBossChestMax:.28,
-  encounterBossSmallWeight:90, encounterBossMediumWeight:9, encounterBossLargeWeight:1,
-  encounterBossSmallMin:.10, encounterBossSmallMax:.18,
-  encounterBossMediumMin:.30, encounterBossMediumMax:.60,
-  encounterBossLargeMin:1.20, encounterBossLargeMax:2.20,
-  encounterBossDepthGrowth:.08,
+  encounterBossSmallWeight:85, encounterBossMediumWeight:13, encounterBossLargeWeight:2,
+  encounterBossSmallMin:.75, encounterBossSmallMax:1.05,
+  encounterBossMediumMin:1.30, encounterBossMediumMax:2.00,
+  encounterBossLargeMin:2.00, encounterBossLargeMax:3.00,
+  encounterBossDepthGrowth:.10,
   encounterRushSpeedCap:78,
   encounterTankSingleDamageMul:1.35, encounterTankAreaDamageMul:.60,
   encounterTrapSlowPct:.38, encounterTrapSlowTime:.8,
@@ -942,8 +942,23 @@ try { channel = new BroadcastChannel(PARAM_CHANNEL); } catch {}
 function loadParams() { try { return cleanParams(migrateBossParams(JSON.parse(localStorage.getItem(PARAM_STORAGE_KEY) || "{}"))); } catch { return cleanParams(); } }
 function migrateEncounterRewardParams(input) {
   const revision = Number(input.encounterRewardRevision) || 0;
-  if (revision >= 258) return input;
+  if (revision >= 259) return input;
   const next = {...input};
+  if (revision === 258) {
+    const defaults258 = {
+      encounterRewardScale:.94,
+      encounterBossSmallWeight:90, encounterBossMediumWeight:9, encounterBossLargeWeight:1,
+      encounterBossSmallMin:.10, encounterBossSmallMax:.18,
+      encounterBossMediumMin:.30, encounterBossMediumMax:.60,
+      encounterBossLargeMin:1.20, encounterBossLargeMax:2.20,
+      encounterBossDepthGrowth:.08,
+    };
+    for (const [key,value] of Object.entries(defaults258)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 259;
+    return next;
+  }
   if (revision === 257) {
     const defaults257 = {
       encounterRewardScale:.96,
@@ -954,7 +969,7 @@ function migrateEncounterRewardParams(input) {
       if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
     }
     next.encounterRewardRevision = 258;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 256) {
     const defaults256 = {
@@ -972,7 +987,7 @@ function migrateEncounterRewardParams(input) {
       if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
     }
     next.encounterRewardRevision = 258;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 255) {
     const defaults255 = {
@@ -1001,7 +1016,7 @@ function migrateEncounterRewardParams(input) {
     }
     if (input.encounterMinionBaseHitLimit === undefined) next.encounterMinionBaseHitLimit = DEFAULT_PARAMS.encounterMinionBaseHitLimit;
     next.encounterRewardRevision = 258;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 254) {
     const defaults254 = {
@@ -4327,13 +4342,13 @@ ui.import.addEventListener("click", () => {
       let candidate={...params,...imported};
       let error=validateCurrentDraft(candidate);
       if(error) throw new Error(error);
-      const legacyRewards=Object.hasOwn(imported,"balanceRevision")&&(Number(imported.encounterRewardRevision)||0)<258;
+      const legacyRewards=Object.hasOwn(imported,"balanceRevision")&&(Number(imported.encounterRewardRevision)||0)<259;
       if(legacyRewards) {
         candidate={...params,...migrateEncounterRewardParams(imported)};
         error=validateCurrentDraft(candidate);
         if(error) throw new Error(error);
       }
-      params=cleanParams(candidate); build(); ui.status.textContent=legacyRewards?"舊版遭遇戰設定已轉換為 258 草稿，尚未套用到遊戲。":"已匯入草稿，尚未套用到遊戲。";
+      params=cleanParams(candidate); build(); ui.status.textContent=legacyRewards?"舊版遭遇戰設定已轉換為 259 草稿，尚未套用到遊戲。":"已匯入草稿，尚未套用到遊戲。";
     } else { params=cleanParams(imported); build(); applyToGame(); }
   } catch(error) { ui.status.textContent = `沒有匯入：${error.message}`; }
 });
