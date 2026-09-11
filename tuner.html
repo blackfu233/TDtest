@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>塔防調參工具</title>
-  <link rel="stylesheet" href="tuner.css?v=encounter-balance259">
-  <link rel="stylesheet" href="tuner-current.css?v=encounter-balance259">
+  <link rel="stylesheet" href="tuner.css?v=encounter-balance273">
+  <link rel="stylesheet" href="tuner-current.css?v=encounter-balance273">
 </head>
 <body data-tuner-mode="current">
   <main class="tool-shell">
     <header class="tool-header">
       <div><p class="eyebrow">塔防 · 遭遇戰版本</p><h1>調參工具</h1></div>
       <div class="actions">
-        <a class="ghost" href="index.html?v=encounter-balance259" target="_blank" rel="noreferrer">開啟遊戲</a>
+        <a class="ghost" href="index.html?v=encounter-balance273" target="_blank" rel="noreferrer">開啟遊戲</a>
         <button id="applyBtn" type="button">套用到下一局</button>
       </div>
     </header>
@@ -89,7 +89,7 @@
           <p id="currentBossModeNote" class="mode-warning" hidden>目前為未校準玩法模式。下方候選版的 BOSS 權重與倍率區間尚未啟用。</p>
           <div id="bossSettings"></div>
           <section class="current-section"><h3>BOSS 波獎勵來源（BET 100）</h3><div class="table-scroll"><table class="data-table matrix-table" data-columns="3"><thead><tr><th>來源</th><th>獎金範圍／內容</th><th>平均金額</th></tr></thead><tbody id="currentBossEscortBody"></tbody></table></div></section>
-          <section class="current-section"><h3>第 1–5 隻 BOSS 的實際增幅區間</h3><div class="table-scroll"><table class="data-table"><thead><tr><th>BOSS</th><th>小增幅</th><th>中增幅</th><th>大增幅</th></tr></thead><tbody id="currentBossIncrementBody"></tbody></table></div></section>
+          <section class="current-section"><h3>第 1–5 隻 BOSS 的實際增幅區間</h3><div class="table-scroll"><table class="data-table"><thead><tr><th>BOSS</th><th>小增幅</th><th>中增幅</th><th>大增幅</th><th>頭獎增幅</th></tr></thead><tbody id="currentBossIncrementBody"></tbody></table></div></section>
           <details class="technical-details"><summary>BOSS 固定型態與血量</summary>
             <div class="table-scroll"><table class="data-table"><thead><tr><th>型態</th><th>機率</th><th>血量係數</th><th>攻擊係數</th><th>移速係數</th><th>護衛數量係數</th><th>保底菁英</th><th>寶箱</th></tr></thead><tbody id="encounterBossArchetypeBody"></tbody></table></div>
             <p id="currentBossGrowth" class="page-note"></p>
@@ -117,15 +117,15 @@
         </section>
         <section id="jsonTab" class="tab-panel"><header class="page-heading"><h2>版本與存檔</h2></header><div id="versionSettings"></div>
           <section class="current-section"><h3>設定檔</h3><p class="page-note">匯入只更新草稿；按「套用到下一局」後才儲存到本機遊戲。設定檔保留相容用的舊欄位，不會自動更新 Git 或雲端版本。</p><div class="file-actions"><button id="exportBtn" type="button" class="ghost">匯出設定</button><button id="importBtn" type="button" class="ghost">匯入草稿</button><button id="resetBtn" type="button" class="ghost">還原預設草稿</button></div><textarea id="jsonText" spellcheck="false" aria-label="設定 JSON" placeholder="匯出的設定，或待匯入的 JSON"></textarea></section>
-          <section class="current-section"><h3>版本範圍</h3><p class="page-note">目前：遭遇戰與調參介面 259。一般怪突破後攻擊一次便離場；BOSS 倍率已改為深追分布，常見增幅更有感，中、大增幅保留低機率波動。</p><a href="tuner-legacy.html?v=tuner-organized249">開啟舊版參考（唯讀）</a></section>
+          <section class="current-section"><h3>版本範圍</h3><p class="page-note">目前：遭遇戰與調參介面 V273。一般怪突破後攻擊一次便離場；三種危險度分開控制耐久、受傷與回報；首王倍率較收斂，後續 BOSS 的倍率波動與成長更明顯。</p><a href="tuner-legacy.html?v=tuner-organized249">開啟舊版參考（唯讀）</a></section>
         </section>
       </div>
     </div>
     <p id="statusText" class="status" role="status">設定僅在本機使用；進行中的對局維持原設定。</p>
   </main>
-  <script src="encounter-tuning-data.js?v=encounter-balance259"></script>
-  <script src="tuner-encounter.js?v=encounter-balance259"></script>
-  <script src="tuner-current.js?v=encounter-balance259"></script>
-  <script src="tuner.js?v=encounter-balance259"></script>
+  <script src="encounter-tuning-data.js?v=encounter-balance273"></script>
+  <script src="tuner-encounter.js?v=encounter-balance273"></script>
+  <script src="tuner-current.js?v=encounter-balance273"></script>
+  <script src="tuner.js?v=encounter-balance273"></script>
 </body>
 </html>

@@ -44,6 +44,7 @@ function readRules() {
       visit(0, new Set(), 1);
     }
     return {build:BUILD_VERSION, economyMode:economyMode(),
+      defaultParams:DEFAULT_PARAMS,
       encounterDefaults:ENCOUNTER_PARAM_DEFAULTS,
       attributes:ATTRIBUTE_KEYS, attributeMarks:ENCOUNTER_ATTR_MARKS, attributeWeights,
       formations:ENCOUNTER_FORMATIONS, lanes:ENCOUNTER_LANES, formationProbabilities,

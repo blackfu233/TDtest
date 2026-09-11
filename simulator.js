@@ -4,6 +4,8 @@ const CONFIG_STORAGE_KEY = "towerDefenseRtpSimulatorConfig.v1";
 const PROFILE_STORAGE_KEY = "towerDefenseRtpSimulatorProfiles.v1";
 const SNAPSHOT_STORAGE_KEY = "towerDefenseRtpParamSnapshots.v1";
 const RESULT_STORAGE_KEY = "towerDefenseRtpResults.v3";
+const SIMULATOR_BUILD_VERSION = "encounter-balance273";
+const SIMULATOR_REPORT_VERSION = "simulator-report265";
 const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
 const MAX_SAMPLES = 500000;
 const TRUSTED_SAMPLES_PER_STRATEGY = 100000;
@@ -21,7 +23,7 @@ const WALLET_MODE_LABELS = { independent:"獨立場次", continuous:"連續錢�
 const ui = Object.fromEntries([
   "paramDot","paramStatus","paramMeta","paramSource","refreshParamsBtn","strategy","playerCount","gamesPerPlayer","walletMode","baseBet","startWallet","collectPolicy","maxWave","accuracy","rerollChance","seed","workerCount","sampleTotal","setupHint",
   "runBtn","trustedRunBtn","parityBtn","cancelBtn","profileName","saveProfileBtn","profileSelect","deleteProfileBtn","progressFill","progressText","elapsedText","workerStatus",
-  "rtpValue","rtpCi","bossKillValue","bossKillMeta","profitValue","zeroMeta","waveValue","volatilityMeta",
+  "rtpLabel","rtpValue","rtpCi","bossKillValue","bossKillMeta","profitValue","zeroMeta","waveValue","volatilityMeta",
   "copySummaryBtn","copyTabBtn","copyAllBtn","saveResultBtn","resultMeta","overviewBody","validationBody","distributionBody","waveBody","chaseWaveBody","bossBody","buildBody","heroBody","towerBody","upgradeBody",
   "snapshotName","saveSnapshotBtn","exportParamsBtn","importParamsInput","snapshotBody","historyBody","toast","engineFrame"
 ].map(id => [id, document.getElementById(id)]));
@@ -66,7 +68,7 @@ function waveBaseHpPct(report, row) {
 }
 function id(prefix) { return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`; }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[char]); }
-function configuredPoolRtp(params={}) {
+function configuredLegacyPoolRtp(params={}) {
   const tiers = Array.from({ length:6 }, (_, index) => {
     const tier = index + 1;
     return {
@@ -79,6 +81,51 @@ function configuredPoolRtp(params={}) {
     return tiers.reduce((sum, tier) => sum + tier.multiplier * tier.weight, 0) / totalWeight;
   }
   return Math.max(0, Number(params.mathTargetRtp) || 0);
+}
+
+function configuredRtpTarget(params={}) {
+  const encounterMin = Number(params.encounterRtpTargetMin);
+  const encounterMax = Number(params.encounterRtpTargetMax);
+  if (Number(params.encounterEconomyEnabled) >= .5 && Number.isFinite(encounterMin) && Number.isFinite(encounterMax)) {
+    const min = Math.max(0,Math.min(encounterMin,encounterMax));
+    const max = Math.max(min,Math.max(encounterMin,encounterMax));
+    return {min,max,center:(min+max)/2,mode:"range"};
+  }
+  const target = configuredLegacyPoolRtp(params);
+  return {min:target,max:target,center:target,mode:"point"};
+}
+
+function normalizeRtpTarget(targetOrValue) {
+  if (targetOrValue && typeof targetOrValue === "object") {
+    const minValue = Number(targetOrValue.min ?? targetOrValue.targetMin ?? targetOrValue.targetRtp);
+    const maxValue = Number(targetOrValue.max ?? targetOrValue.targetMax ?? targetOrValue.targetRtp);
+    if (Number.isFinite(minValue) && Number.isFinite(maxValue)) {
+      const min = Math.max(0,Math.min(minValue,maxValue));
+      const max = Math.max(min,Math.max(minValue,maxValue));
+      return {min,max,center:Number.isFinite(Number(targetOrValue.center)) ? Number(targetOrValue.center) : (min+max)/2};
+    }
+  }
+  const point = Math.max(0,Number(targetOrValue) || 0);
+  return {min:point,max:point,center:point};
+}
+
+function targetRangeDeviation(value, targetOrValue) {
+  const target = normalizeRtpTarget(targetOrValue);
+  const actual = Number(value);
+  if (!Number.isFinite(actual)) return Infinity;
+  if (actual < target.min) return target.min-actual;
+  if (actual > target.max) return actual-target.max;
+  return 0;
+}
+
+function targetRangeOverlapsInterval(low, high, targetOrValue) {
+  const target = normalizeRtpTarget(targetOrValue);
+  return Number(high) >= target.min && Number(low) <= target.max;
+}
+
+function targetRangeLabel(validation, digits=2) {
+  const target = normalizeRtpTarget(validation);
+  return Math.abs(target.max-target.min) < 1e-12 ? pct(target.center,digits) : `${pct(target.min,digits)} ～ ${pct(target.max,digits)}`;
 }
 
 function stableParamString(params) {
@@ -114,7 +161,7 @@ function renderParamStatus(changed=false) {
   const params = source.params || {};
   const count = Object.keys(params).length;
   const hash = count ? paramHash(params) : "--------";
-  const revision = params.balanceRevision ?? "--";
+  const revision = params.encounterRewardRevision ?? params.balanceRevision ?? "--";
   const time = source.updatedAt ? new Date(source.updatedAt).toLocaleString() : "尚未同步";
   ui.paramStatus.textContent = count ? (ui.paramSource.value === "live" ? "已連接調參工具" : `使用快照：${source.name}`) : "尚未取得參數";
   ui.paramMeta.textContent = `v${revision} · ${count} 項 · ${hash} · ${time}`;
@@ -150,7 +197,13 @@ function waitForEngine() {
     const check = () => {
       try {
         const candidate = ui.engineFrame.contentWindow?.__tdHeadless;
-        if (candidate?.ready) { engine = candidate; resolve(candidate); return; }
+        if (candidate?.ready) {
+          if (candidate.build !== SIMULATOR_BUILD_VERSION) {
+            reject(new Error(`模擬器版本不一致：頁面 ${SIMULATOR_BUILD_VERSION}，引擎 ${candidate.build || "未知"}`));
+            return;
+          }
+          engine = candidate; resolve(candidate); return;
+        }
       } catch {}
       if (Date.now() - started > 12000) { reject(new Error("戰鬥引擎載入逾時")); return; }
       window.setTimeout(check, 50);
@@ -296,8 +349,11 @@ function aggregateRuns(rows) {
     ["10-20x",value => value >= 10 && value < 20],["20-50x",value => value >= 20 && value < 50],
     ["50x+",value => value >= 50],
   ].map(([label,test]) => {
-    const count = returns.filter(test).length;
-    return {label,count,rate:rows.length ? count/rows.length : 0};
+    const matched = rows.filter(row => test(row.bets ? row.payout / row.bets : 0));
+    const bandBets = matched.reduce((sum,row) => sum + (Number(row.bets) || 0),0);
+    const bandPayout = matched.reduce((sum,row) => sum + (Number(row.payout) || 0),0);
+    return {label,count:matched.length,rate:rows.length ? matched.length/rows.length : 0,bets:bandBets,payout:bandPayout,
+      bandRtp:bandBets ? bandPayout/bandBets : 0,rtpContribution:bets ? bandPayout/bets : 0,payoutShare:payout ? bandPayout/payout : 0};
   });
   return {
     samples:rows.length, bets, payout, payoutSq, betSq, payoutBet, rtp, ci95,
@@ -627,20 +683,22 @@ function mergeChaseReports(reports, samples) {
   }))};
 }
 
-function buildDepthValidation(waves, sampleCount, targetRtp, tolerance, useAllocated=false) {
-  const minimumCashouts = Math.max(1000, Math.ceil(sampleCount * .002));
-  const reliableWaves = waves.filter(row => row.samples >= minimumCashouts);
+function buildDepthValidation(waves, sampleCount, targetOrValue, tolerance, useAllocated=false) {
+  const target = normalizeRtpTarget(targetOrValue);
+  const minimumSamples = Math.max(100, Math.ceil(sampleCount * .002));
+  const reliableWaves = waves.filter(row => row.samples >= minimumSamples);
   const values = reliableWaves.map(row => useAllocated ? row.allocatedRtp : row.checkpointRtp);
   const first = reliableWaves[0] || null;
   const last = reliableWaves.at(-1) || null;
   const spread = values.length ? Math.max(...values) - Math.min(...values) : 0;
   const drift = first && last ? last.checkpointRtp - first.checkpointRtp : 0;
-  const maxDeviation = values.length ? Math.max(...values.map(value => Math.abs(value - targetRtp))) : Infinity;
+  const maxDeviation = values.length ? Math.max(...values.map(value => targetRangeDeviation(value,target))) : Infinity;
   const maxUnexplainedDeviation = maxDeviation;
-  const targetInIntervals = reliableWaves.length >= 2 && reliableWaves.every(row => targetRtp >= row.checkpointRtp-row.cashoutCi95 && targetRtp <= row.checkpointRtp+row.cashoutCi95);
+  const targetInIntervals = reliableWaves.length >= 2 && reliableWaves.every(row => targetRangeOverlapsInterval(row.checkpointRtp-row.cashoutCi95,row.checkpointRtp+row.cashoutCi95,target));
   return {
-    minimumEntrants:minimumCashouts,
-    minimumCashouts,
+    minimumEntrants:minimumSamples,
+    minimumCashouts:minimumSamples,
+    minimumSamples,
     waveCount:reliableWaves.length,
     firstWave:first?.wave || 0,
     lastWave:last?.wave || 0,
@@ -651,6 +709,8 @@ function buildDepthValidation(waves, sampleCount, targetRtp, tolerance, useAlloc
     maxDeviation,
     maxUnexplainedDeviation,
     targetInIntervals,
+    targetMin:target.min,
+    targetMax:target.max,
     pass:maxDeviation <= tolerance,
   };
 }
@@ -686,7 +746,8 @@ function buildReport(results, config, paramRecord, startedAt, elapsedMs, request
   const bossKilled = results.reduce((sum,row) => sum + row.bossEvents.filter(event => event.killed).length, 0);
   const basePayout = results.reduce((sum,row) => sum + (Number(row.basePayout) || 0), 0);
   const bossPayout = results.reduce((sum,row) => sum + (Number(row.bossPayout) || 0), 0);
-  const targetRtp = configuredPoolRtp(paramRecord.params);
+  const target = configuredRtpTarget(paramRecord.params);
+  const targetRtp = target.center;
   const baseHp = Math.max(1, Number(config.baseHp) || 1000);
 
   const waveMap = new Map(Array.from({length:config.maxWave},(_,index) => {
@@ -851,22 +912,25 @@ function buildReport(results, config, paramRecord, startedAt, elapsedMs, request
   const strategyRtps = strategyStats.map(item => item.rtp);
   const empiricalSpread = strategyRtps.length ? Math.max(...strategyRtps) - Math.min(...strategyRtps) : 0;
   const cashoutSpread = cashoutRtps.length ? Math.max(...cashoutRtps) - Math.min(...cashoutRtps) : 0;
-  const maxTargetDeviation = strategyRtps.length ? Math.max(...strategyRtps.map(item => Math.abs(item-targetRtp))) : 0;
+  const maxTargetDeviation = strategyRtps.length ? Math.max(...strategyRtps.map(item => targetRangeDeviation(item,target))) : 0;
   const minStrategySamples = strategyStats.length ? Math.min(...strategyStats.map(item => item.samples)) : 0;
   const maxStrategyCi95 = strategyStats.length ? Math.max(...strategyStats.map(item => item.ci95)) : 0;
   const isValidationMatrix = strategyStats.length === VALIDATION_STRATEGIES.length
     && VALIDATION_STRATEGIES.every(strategy => strategyStats.some(item => item.strategy === strategy));
   const trustedSample = isValidationMatrix && minStrategySamples >= TRUSTED_SAMPLES_PER_STRATEGY;
   const targetInIntervals = strategyStats.length > 0
-    && strategyStats.every(item => targetRtp >= item.rtp - item.ci95 && targetRtp <= item.rtp + item.ci95);
+    && strategyStats.every(item => targetRangeOverlapsInterval(item.rtp-item.ci95,item.rtp+item.ci95,target));
   const targetPass = strategyStats.length > 0 && maxTargetDeviation <= tolerance;
   const empiricalPass = isValidationMatrix && empiricalSpread <= tolerance;
   const depthValidationApplicable = config.collectPolicy === "fixedWaveMatrix";
   const depth = depthValidationApplicable
-    ? {...buildDepthValidation(waves, results.length, targetRtp, tolerance, false),applicable:true,mode:"fixedWaveMatrix"}
+    ? {...buildDepthValidation(waves, results.length, target, tolerance, false),applicable:true,mode:"fixedWaveMatrix"}
     : buildConditionalWaveSliceInfo();
   const validation = {
-    targetRtp, tolerance, targetInIntervals, targetPass, maxTargetDeviation, metric:"cashoutRtp", cashoutSpread,
+    targetRtp, targetMin:target.min, targetMax:target.max, targetMode:target.mode,
+    tolerance, targetInIntervals, targetPass, maxTargetDeviation, metric:"cashoutRtp", cashoutSpread,
+    strategyFairnessApplicable:true,
+    strategyFairnessMode:Number(paramRecord.params.encounterEconomyEnabled)>=.5?"independentRuns":"isolatedPersonalPool",
     empiricalSpread, empiricalPass, minStrategySamples, maxStrategyCi95,
     trustedSample, isValidationMatrix, strategies:strategyStats, depth, depthValidationApplicable,
     status:!isValidationMatrix ? "單策略觀察"
@@ -877,13 +941,16 @@ function buildReport(results, config, paramRecord, startedAt, elapsedMs, request
   return {
     id:id("result"), createdAt:new Date().toISOString(), startedAt, elapsedMs, canceled,
     requestedSamples, completedSamples:results.length, brokePlayers,
-    config:clone(config), paramName:paramRecord.name, paramHash:paramHash(paramRecord.params), paramRevision:paramRecord.params.balanceRevision ?? null,
+    config:clone(config), paramName:paramRecord.name, paramHash:paramHash(paramRecord.params),
+    paramRevision:paramRecord.params.encounterRewardRevision ?? paramRecord.params.balanceRevision ?? null,
+    engineBuild:engine?.build || null, reportVersion:SIMULATOR_REPORT_VERSION, economyMode:engine?.economyMode || null,
     summary:{
       ...totals, volatility, bossSpawned, bossKilled, bossKillRate:bossSpawned ? bossKilled/bossSpawned : 0,
       basePayout, bossPayout, baseRtp:totals.bets ? basePayout/totals.bets : 0, bossRtp:totals.bets ? bossPayout/totals.bets : 0,
       hitRate:results.length ? results.filter(row => row.payout > 0).length/results.length : 0,
       zeroRate:results.length ? results.filter(row => row.payout === 0).length/results.length : 0,
       collectedRate:results.length ? results.filter(row => row.collected || row.completed).length/results.length : 0,
+      campaignCompleteRate:results.length ? results.filter(row => row.completed).length/results.length : 0,
       completed30Rate:results.length ? results.filter(row => row.completed).length/results.length : 0,
       p50:percentile(returns,.5), p75:percentile(returns,.75), p90:percentile(returns,.9), p95:percentile(returns,.95), p99:percentile(returns,.99), max:returns.at(-1)||0,
     },
@@ -943,11 +1010,19 @@ function runWorkerPool(config, params, strategySet, requestedWorkers, onProgress
     activeWorkers = localWorkers;
     activeParallelCancel = () => finish(true);
     buckets.forEach(bucket => {
-    const worker = new Worker("simulator-worker.js?headless=1&v=deep-chase-minion210");
+      const worker = new Worker(`simulator-worker.js?headless=1&v=${SIMULATOR_BUILD_VERSION}`);
       localWorkers.push(worker);
       worker.onmessage = event => {
         if (settled) return;
         const message = event.data || {};
+        if (message.type === "ready") {
+          if (message.build !== SIMULATOR_BUILD_VERSION || message.build !== engine?.build) {
+            fail(new Error(`Worker 版本不一致：預期 ${SIMULATOR_BUILD_VERSION}，收到 ${message.build || "未知"}`));
+            return;
+          }
+          worker.postMessage({type:"start",config,params,assignments:bucket,chunkSize:100});
+          return;
+        }
         if (message.type === "rows") {
           rows.push(...(message.rows || []));
           onProgress(rows.length,workerCount);
@@ -962,7 +1037,6 @@ function runWorkerPool(config, params, strategySet, requestedWorkers, onProgress
         if (message.type === "error") fail(new Error(message.message || "Worker 模擬失敗"));
       };
       worker.onerror = event => fail(new Error(event.message || "Worker 載入失敗"));
-      worker.postMessage({type:"start",config,params,assignments:bucket,chunkSize:100});
     });
   });
 }
@@ -1141,10 +1215,15 @@ function mergeFormalReports(reports, returns, config, paramRecord, startedAt, el
     ["10-20x",value => value >= 10 && value < 20],["20-50x",value => value >= 20 && value < 50],
     ["50x+",value => value >= 50],
   ].map(([label,test]) => {
-    const count = sortedReturns.filter(test).length;
-    return {label,count,rate:samples ? count/samples : 0};
+    const parts = reports.map(report => report.summary.returnDistribution?.find(row => row.label === label)).filter(Boolean);
+    const count = parts.reduce((sum,row) => sum + (Number(row.count) || 0),0);
+    const bandBets = parts.reduce((sum,row) => sum + (Number(row.bets) || 0),0);
+    const bandPayout = parts.reduce((sum,row) => sum + (Number(row.payout) || 0),0);
+    return {label,count,rate:samples ? count/samples : 0,bets:bandBets,payout:bandPayout,
+      bandRtp:bandBets ? bandPayout/bandBets : 0,rtpContribution:bets ? bandPayout/bets : 0,payoutShare:payout ? bandPayout/payout : 0};
   });
-  const targetRtp = configuredPoolRtp(paramRecord.params);
+  const target = configuredRtpTarget(paramRecord.params);
+  const targetRtp = target.center;
   const baseHp = Math.max(1, Number(config.baseHp) || 1000);
 
   const waveMap = new Map();
@@ -1204,22 +1283,24 @@ function mergeFormalReports(reports, returns, config, paramRecord, startedAt, el
   const strategyRtps = strategies.map(row => row.rtp);
   const empiricalSpread = strategyRtps.length ? Math.max(...strategyRtps)-Math.min(...strategyRtps) : 0;
   const cashoutSpread = cashoutRtps.length ? Math.max(...cashoutRtps)-Math.min(...cashoutRtps) : 0;
-  const maxTargetDeviation = strategyRtps.length ? Math.max(...strategyRtps.map(row => Math.abs(row-targetRtp))) : 0;
+  const maxTargetDeviation = strategyRtps.length ? Math.max(...strategyRtps.map(row => targetRangeDeviation(row,target))) : 0;
   const minStrategySamples = strategies.length ? Math.min(...strategies.map(row => row.samples)) : 0;
   const maxStrategyCi95 = strategies.length ? Math.max(...strategies.map(row => row.ci95)) : 0;
   const trustedSample = strategies.length === VALIDATION_STRATEGIES.length && minStrategySamples >= TRUSTED_SAMPLES_PER_STRATEGY;
   const targetInIntervals = strategies.length > 0
-    && strategies.every(row => targetRtp >= row.rtp-row.ci95 && targetRtp <= row.rtp+row.ci95);
+    && strategies.every(row => targetRangeOverlapsInterval(row.rtp-row.ci95,row.rtp+row.ci95,target));
   const targetPass = strategies.length > 0 && maxTargetDeviation <= tolerance;
   const empiricalPass = strategies.length === VALIDATION_STRATEGIES.length && empiricalSpread <= tolerance;
   const depthValidationApplicable = config.collectPolicy === "fixedWaveMatrix";
   const depth = depthValidationApplicable
-    ? {...buildDepthValidation(waves, samples, targetRtp, tolerance, false),applicable:true,mode:"fixedWaveMatrix"}
+    ? {...buildDepthValidation(waves, samples, target, tolerance, false),applicable:true,mode:"fixedWaveMatrix"}
     : buildConditionalWaveSliceInfo();
-  const validation = {targetRtp,tolerance,targetInIntervals,targetPass,maxTargetDeviation,metric:"isolatedCashoutRtp",strategyFairnessApplicable:true,strategyFairnessMode:"isolatedPersonalPool",cashoutSpread,empiricalSpread,empiricalPass,minStrategySamples,maxStrategyCi95,trustedSample,isValidationMatrix:strategies.length === VALIDATION_STRATEGIES.length,strategies,depth,depthValidationApplicable,status:!trustedSample ? "方向樣本（未達可信數量）" : targetPass && empiricalPass && depth.pass ? "通過" : "未通過"};
+  const validation = {targetRtp,targetMin:target.min,targetMax:target.max,targetMode:target.mode,tolerance,targetInIntervals,targetPass,maxTargetDeviation,metric:"isolatedCashoutRtp",strategyFairnessApplicable:true,strategyFairnessMode:Number(paramRecord.params.encounterEconomyEnabled)>=.5?"independentRuns":"isolatedPersonalPool",cashoutSpread,empiricalSpread,empiricalPass,minStrategySamples,maxStrategyCi95,trustedSample,isValidationMatrix:strategies.length === VALIDATION_STRATEGIES.length,strategies,depth,depthValidationApplicable,status:!trustedSample ? "方向樣本（未達可信數量）" : targetPass && empiricalPass && depth.pass ? "通過" : "未通過"};
   return {
     id:id("result"),createdAt:new Date().toISOString(),startedAt,elapsedMs,canceled,requestedSamples,completedSamples,brokePlayers,
-    config:clone(config),paramName:paramRecord.name,paramHash:paramHash(paramRecord.params),paramRevision:paramRecord.params.balanceRevision ?? null,
+    config:clone(config),paramName:paramRecord.name,paramHash:paramHash(paramRecord.params),
+    paramRevision:paramRecord.params.encounterRewardRevision ?? paramRecord.params.balanceRevision ?? null,
+    engineBuild:engine?.build || null,reportVersion:SIMULATOR_REPORT_VERSION,economyMode:engine?.economyMode || null,
     summary:{samples,bets,payout,payoutSq,betSq,payoutBet,rtp,ci95,avgWave:weighted("avgWave"),bossKillRate:bossSpawned ? bossKilled/bossSpawned : 0,
       basePayout,bossPayout,baseRtp:bets ? basePayout/bets : 0,bossRtp:bets ? bossPayout/bets : 0,
       mathPoolContribution,mathPoolCapHits,mathPoolRecycled,mathPoolOperatorAdvance,rerollSpent,mathPoolMaxInvariantError,
@@ -1228,7 +1309,7 @@ function mergeFormalReports(reports, returns, config, paramRecord, startedAt, el
       allocatedRtp:bets ? (mathPoolClosingPaid+mathPoolClosingAvailable+mathPoolClosingReserved-mathPoolSeedTotal-mathPoolOperatorAdvance)/bets : 0,
       closingLiabilityRtp:bets ? (mathPoolClosingAvailable+mathPoolClosingReserved)/bets : 0,
       profitRate:weighted("profitRate"),volatility,bossSpawned,bossKilled,hitRate:weighted("hitRate"),zeroRate:weighted("zeroRate"),
-      collectedRate:weighted("collectedRate"),completed30Rate:weighted("completed30Rate"),
+      collectedRate:weighted("collectedRate"),campaignCompleteRate:weighted("campaignCompleteRate") || weighted("completed30Rate"),completed30Rate:weighted("completed30Rate"),
       p50:percentile(sortedReturns,.5),p75:percentile(sortedReturns,.75),p90:percentile(sortedReturns,.9),p95:percentile(sortedReturns,.95),p99:percentile(sortedReturns,.99),max:sortedReturns.at(-1)||0,
       win2xRate:samples ? sortedReturns.filter(value => value >= 2).length/samples : 0,
       win5xRate:samples ? sortedReturns.filter(value => value >= 5).length/samples : 0,
@@ -1312,6 +1393,17 @@ function comparableRow(row) {
   return JSON.stringify(value);
 }
 
+function firstRowDifference(left,right) {
+  const keys = new Set([...Object.keys(left || {}),...Object.keys(right || {})]);
+  for (const key of keys) {
+    if (key === "_runOrder") continue;
+    if (JSON.stringify(left?.[key]) !== JSON.stringify(right?.[key])) {
+      return `${key}（單執行緒 ${JSON.stringify(left?.[key])}；多執行緒 ${JSON.stringify(right?.[key])}）`;
+    }
+  }
+  return "欄位順序";
+}
+
 async function runParityCheck() {
   if (running) return;
   if (typeof Worker === "undefined") { showToast("目前瀏覽器不支援本機 Worker。",true); return; }
@@ -1347,18 +1439,34 @@ async function runParityCheck() {
     let checkedRows = 0;
     for (const walletMode of ["independent","continuous"]) {
       const modeConfig = {...config,walletMode};
+      const assignments = buildWorkerAssignments(["balanced"],modeConfig,2);
       const serialRows = [];
       for (let player=0;player<modeConfig.playerCount;player+=1) {
+        const assignment = assignments[player];
+        const cashoutWave = Math.max(1,Math.min(modeConfig.maxWave,Number(assignment.cashoutWave)||modeConfig.maxWave));
+        const serialConfig = {
+          ...modeConfig,
+          strategy:assignment.strategy,
+          forcedHeroId:assignment.heroId,
+          maxWave:assignment.cashoutWave ? cashoutWave : modeConfig.maxWave,
+          collectPolicy:assignment.cashoutWave ? "fixedWave" : modeConfig.collectPolicy,
+        };
+        engine.resetMathPool?.(modeConfig.baseBet);
         let wallet = modeConfig.startWallet;
         for (let game=0;game<modeConfig.gamesPerPlayer;game+=1) {
           const gameWallet = walletMode === "independent" ? modeConfig.startWallet : wallet;
           if (gameWallet < modeConfig.baseBet) break;
           const seed = (modeConfig.seed + player * 1000003 + game * 7919) >>> 0;
-          const preciseRow = window.TDSimCore.runOne(preciseEngine,modeConfig,gameWallet,seed || 1);
-          const row = runOne(modeConfig,gameWallet,seed || 1);
+          const poolBefore = engine.mathPool?.();
+          const preciseRow = window.TDSimCore.runOne(preciseEngine,serialConfig,gameWallet,seed || 1);
+          engine.restoreMathPool?.(poolBefore,0);
+          const row = runOne(serialConfig,gameWallet,seed || 1);
           if (comparableRow(preciseRow) !== comparableRow(row)) throw new Error(`${WALLET_MODE_LABELS[walletMode]}第 ${player*modeConfig.gamesPerPlayer+game+1} 局批次步進與逐幀結果不一致`);
           if (walletMode === "continuous") wallet = row.endingWallet;
           row._runOrder = player * modeConfig.gamesPerPlayer + game;
+          row.playerId = assignment.player;
+          row.cashoutWave = assignment.cashoutWave ? cashoutWave : row.wave;
+          row.personalPoolClosing = game === modeConfig.gamesPerPlayer - 1;
           serialRows.push(row);
         }
       }
@@ -1366,7 +1474,10 @@ async function runParityCheck() {
       const parallelRows = parallel.rows;
       const sameLength = serialRows.length === parallelRows.length;
       const mismatch = sameLength ? serialRows.findIndex((row,index) => comparableRow(row) !== comparableRow(parallelRows[index])) : 0;
-      if (!sameLength || mismatch >= 0) throw new Error(`${WALLET_MODE_LABELS[walletMode]}第 ${Math.max(1,mismatch+1)} 局結果不一致`);
+      if (!sameLength || mismatch >= 0) {
+        const detail = sameLength ? firstRowDifference(serialRows[mismatch],parallelRows[mismatch]) : `局數 ${serialRows.length} / ${parallelRows.length}`;
+        throw new Error(`${WALLET_MODE_LABELS[walletMode]}第 ${Math.max(1,mismatch+1)} 局結果不一致：${detail}`);
+      }
       checkedRows += serialRows.length;
     }
     renderWorkerStatus(`精度檢查通過：逐幀、批次與多核心共 ${checkedRows} 局完全相同`);
@@ -1388,39 +1499,62 @@ function setCopyEnabled(enabled) {
   [ui.copySummaryBtn,ui.copyTabBtn,ui.copyAllBtn,ui.saveResultBtn].forEach(button => button.disabled = !enabled);
 }
 
+function isEncounterEconomyReport(report) {
+  return String(report?.economyMode || "").startsWith("encounter-");
+}
+
+function reportRtpLabel(report) {
+  return report?.config?.collectPolicy === "fixedWaveMatrix" ? "固定收手矩陣混合 RTP" : "總 RTP";
+}
+
 function renderReport(report) {
   const s = report.summary;
   const v = report.validation;
   const chase = report.chase?.summary || {};
-  const depth = v.depth || buildDepthValidation(report.waves || [],report.completedSamples,v.targetRtp,v.tolerance);
+  const depth = v.depth || buildDepthValidation(report.waves || [],report.completedSamples,v,v.tolerance);
+  const encounterEconomy = isEncounterEconomyReport(report);
+  const matrixReport = report.config.collectPolicy === "fixedWaveMatrix";
+  const rtpLabel = reportRtpLabel(report);
+  const targetLabel = targetRangeLabel(v);
+  const campaignCompleteRate = s.campaignCompleteRate ?? s.completed30Rate ?? 0;
+  ui.rtpLabel.textContent = rtpLabel;
   ui.rtpValue.textContent = pct(s.rtp,2);
-  ui.rtpCi.textContent = `95% 信賴區間 ±${pct(s.ci95,2)}`;
+  ui.rtpCi.textContent = matrixReport
+    ? `30 種固定收手點的投注加權值｜誤差 ±${pct(s.ci95,2)}`
+    : `95% 信賴區間 ±${pct(s.ci95,2)}`;
   ui.bossKillValue.textContent = pct(s.bossKillRate,1);
   ui.bossKillMeta.textContent = `${s.bossKilled.toLocaleString()} / ${s.bossSpawned.toLocaleString()} 隻`;
   ui.profitValue.textContent = pct(s.profitRate,1);
   ui.zeroMeta.textContent = `歸零率 ${pct(s.zeroRate,1)}`;
   ui.waveValue.textContent = number(s.avgWave,1);
   ui.volatilityMeta.textContent = `VI ${number(s.volatility,2)}`;
-  ui.resultMeta.textContent = `${STRATEGY_LABELS[report.config.strategy]}｜${WALLET_MODE_LABELS[report.config.walletMode] || WALLET_MODE_LABELS.independent}｜${COLLECT_LABELS[report.config.collectPolicy]}｜${report.config.actualWorkerCount || 1} 執行緒｜${report.completedSamples.toLocaleString()} 場｜參數 ${report.paramHash}${report.canceled ? "｜中途停止" : ""}`;
+  ui.resultMeta.textContent = `${STRATEGY_LABELS[report.config.strategy]}｜${WALLET_MODE_LABELS[report.config.walletMode] || WALLET_MODE_LABELS.independent}｜${COLLECT_LABELS[report.config.collectPolicy]}｜${report.config.actualWorkerCount || 1} 執行緒｜${report.completedSamples.toLocaleString()} 場｜引擎 ${report.engineBuild || "舊報表未記錄"}｜報表 ${report.reportVersion || "舊版"}｜模式 ${report.economyMode || "未記錄"}｜參數 V${report.paramRevision ?? "?"} / ${report.paramHash}${report.canceled ? "｜中途停止" : ""}`;
 
-  const overviewRows = [
-    ["總 RTP",pct(s.rtp,2),`總賠付 ${Math.round(s.payout).toLocaleString()} / 總 BET ${Math.round(s.bets).toLocaleString()}`],
+  const accountingRows = encounterEconomy ? [
+    ["舊版返還池帳本","不適用","新版遭遇戰經濟直接依一般波獎勵與 BOSS 倍率結算，不使用舊版個人返還池"],
+  ] : [
     ["個人帳面配置 RTP",pct(s.allocatedRtp || 0,2),"實付加上期末個人帳面餘額；僅供核帳，不是玩家實際RTP"],
     ["期末個人帳面餘額",pct(s.closingLiabilityRtp || 0,2),"尚未釋放的個人池可用餘額；永不為負，也不預支未來投注"],
-    ["一般怪／一般波 RTP",pct(s.baseRtp || 0,2),`基礎 POT 賠付 ${Math.round(s.basePayout || 0).toLocaleString()} / 總 BET`],
-    ["BOSS RTP",pct(s.bossRtp || 0,2),`BOSS 倍率追加賠付 ${Math.round(s.bossPayout || 0).toLocaleString()} / 總 BET`],
     ["個人返還池",`${Math.round(s.personalPools || 0).toLocaleString()} 個`,`每位玩家獨立且跨局沿用；玩家之間不共用`],
     ["投注入水 RTP",pct(s.bets ? (s.mathPoolContribution || 0) / s.bets : 0,2),`累計入水 ${Math.round(s.mathPoolContribution || 0).toLocaleString()}｜Reroll BET ${Math.round(s.rerollSpent || 0).toLocaleString()}`],
     ["倍率重排暫時責任",Math.round(s.mathPoolOperatorAdvance || 0).toLocaleString(),`只支付同一公平平均內的上升分支；由同玩家後續入水回收，配置RTP已扣除`],
     ["帳本守恆",number(s.mathPoolMaxInvariantError || 0,6),`seed + 入水 = available + reserved + paid`],
+  ];
+  const overviewRows = [
+    [rtpLabel,pct(s.rtp,2),matrixReport
+      ? `把第 1～30 波固定收手樣本依實際 BET 加權；這不是任何一種真人策略的總 RTP｜賠付 ${Math.round(s.payout).toLocaleString()} / BET ${Math.round(s.bets).toLocaleString()}`
+      : `總賠付 ${Math.round(s.payout).toLocaleString()} / 總 BET ${Math.round(s.bets).toLocaleString()}`],
+    ...accountingRows,
+    ["一般怪／一般波 RTP",pct(s.baseRtp || 0,2),`基礎 POT 賠付 ${Math.round(s.basePayout || 0).toLocaleString()} / 總 BET`],
+    ["BOSS RTP",pct(s.bossRtp || 0,2),`BOSS 倍率追加賠付 ${Math.round(s.bossPayout || 0).toLocaleString()} / 總 BET`],
     ["顯示／實付一致性",s.payoutMismatchCount ? "異常" : "一致",`差異場次 ${Math.round(s.payoutMismatchCount || 0).toLocaleString()}｜最大差額 ${number(s.payoutMismatchMax || 0,6)}`],
-    ["目標 RTP",pct(v.targetRtp,2),`各策略容許偏差 ${pct(v.tolerance,2)}`],
-    ["策略驗證模式",v.strategyFairnessMode === "isolatedPersonalPool" ? "隔離個人水池" : "非隔離", "每名玩家在完整模擬期間固定同一策略；策略間不共用水池"],
+    ["目標 RTP 區間",targetLabel,`超出區間後容許偏差 ${pct(v.tolerance,2)}`],
+    ["策略驗證模式",v.strategyFairnessMode === "independentRuns" ? "獨立場次" : v.strategyFairnessMode === "isolatedPersonalPool" ? "隔離個人水池" : "非隔離",encounterEconomy ? "每局依相同參數獨立實跑；新版不使用返還池責任" : "每名玩家在完整模擬期間固定同一策略；策略間不共用水池"],
     ["可信樣本",v.trustedSample ? "已達標" : "未達標",`每策略至少 ${TRUSTED_SAMPLES_PER_STRATEGY.toLocaleString()} 場｜目前最少 ${v.minStrategySamples.toLocaleString()} 場`],
-    ["策略 RTP 差距",pct(v.empiricalSpread,2),`容許 ${pct(v.tolerance,2)}｜${v.empiricalPass ? "通過" : "未通過"}`],
+    ["策略 RTP 差距",v.isValidationMatrix?pct(v.empiricalSpread,2):"不適用",v.isValidationMatrix?`容許 ${pct(v.tolerance,2)}｜${v.empiricalPass ? "通過" : "未通過"}`:"單一策略沒有其他策略可比較"],
     ["最大目標偏差",pct(v.maxTargetDeviation,2),`容許 ${pct(v.tolerance,2)}｜${v.targetPass ? "通過" : "未通過"}`],
-    ["Cash Out RTP 漂移",`${number(depth.drift*100,2)} pp`,`固定 Collect：第 ${depth.firstWave} 波 ${pct(depth.firstRtp,2)} → 第 ${depth.lastWave} 波 ${pct(depth.lastRtp,2)}`],
-    ["深追中立檢查",depth.pass ? "通過" : "未通過",`以每波固定 Collect RTP 判定｜可靠波次 ${depth.waveCount} 個｜最大目標偏差 ${pct(depth.maxDeviation,2)}`],
+    ["Cash Out RTP 漂移",depth.applicable===false?"不適用":`${number(depth.drift*100,2)} pp`,depth.applicable===false?"真人／動態 Collect 的逐波資料是條件切片，不能拿來判定固定收手漂移":`固定 Collect：第 ${depth.firstWave} 波 ${pct(depth.firstRtp,2)} → 第 ${depth.lastWave} 波 ${pct(depth.lastRtp,2)}`],
+    ["深追中立檢查",depth.applicable===false?"不適用":depth.pass ? "通過" : "未通過",depth.applicable===false?"請另跑固定波次矩陣":`以每波固定 Collect RTP 判定｜可靠波次 ${depth.waveCount} 個｜最大目標偏差 ${pct(depth.maxDeviation,2)}`],
     ["驗證結論",v.status,v.isValidationMatrix ? `各策略最大 95% 誤差 ±${pct(v.maxStrategyCi95,2)}` : "請使用驗證矩陣比較五種策略"],
     ["95% 信賴區間",`${pct(Math.max(0,s.rtp-s.ci95),2)} ～ ${pct(s.rtp+s.ci95,2)}`,`誤差 ±${pct(s.ci95,2)}`],
     ["Hit Frequency",pct(s.hitRate,1),"有取得賠付的場次比例"],
@@ -1436,8 +1570,8 @@ function renderReport(report) {
     ["帶著 2x 續追後死亡",pct(chase.twoXRiskDeathRate || 0,2),`所有曾達 2x 的玩家中，最後因續追死亡的比例`],
     ["平均最高帳面倍率",mult(chase.avgPeakReturn || 0,2),`平均在第 ${number(chase.avgPeakWave || 0,1)} 波達到最高帳面`],
     ["歸零率",pct(s.zeroRate,1),"未 Collect 且賠付為 0"],
-    ["成功結算率",pct(s.collectedRate,1),"Collect 或 30 波通關"],
-    ["30 波通關率",pct(s.completed30Rate,1),"完成第 30 波"],
+    ["成功結算率",pct(s.collectedRate,1),"主動 Collect 或完成五戰區戰役"],
+    ["戰役完成率",pct(campaignCompleteRate,1),"擊敗五隻 BOSS 並自動結算"],
     ["波動 VI",number(s.volatility,3),"每場回收倍數的標準差"],
     ["執行模式",`${report.config.actualWorkerCount || 1} 執行緒`,report.config.actualWorkerCount > 1 ? "本機 CPU 多核心，戰鬥步長維持 1/60" : "單執行緒精度基準，戰鬥步長 1/60"],
     [report.config.walletMode === "continuous" ? "破產玩家" : "無法開局玩家",`${report.brokePlayers} 人`,report.config.walletMode === "continuous" ? "累積錢包不足以開始下一場" : "起始錢包低於起始 BET"],
@@ -1445,11 +1579,11 @@ function renderReport(report) {
   ];
   ui.overviewBody.innerHTML = overviewRows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("");
   ui.validationBody.innerHTML = v.strategies.map(row => `<tr>
-    <td>${escapeHtml(STRATEGY_LABELS[row.strategy] || row.strategy)}</td><td>${row.samples}</td><td>${pct(row.rtp,2)}</td><td>${pct(row.allocatedRtp ?? row.rtp,2)}</td><td>${pct(row.closingLiabilityRtp || 0,2)}</td>
+    <td>${escapeHtml(STRATEGY_LABELS[row.strategy] || row.strategy)}</td><td>${row.samples}</td><td>${pct(row.rtp,2)}</td><td>${encounterEconomy?"不適用":pct(row.allocatedRtp ?? row.rtp,2)}</td><td>${encounterEconomy?"不適用":pct(row.closingLiabilityRtp || 0,2)}</td>
     <td>${pct(Math.max(0,row.rtp-row.ci95),2)} ～ ${pct(row.rtp+row.ci95,2)}</td>
-    <td>${number(row.avgWave,1)}</td><td>${pct(row.minionClearRate,1)}</td><td>${pct(row.modelMinionChance,1)}</td><td>${number(row.modelMinionBuildPower,3)}</td><td>${pct(row.bossKillRate,1)}</td><td>${pct(row.modelBossChance,1)}</td><td>${number(row.modelBossBuildPower,3)}</td><td>${number(row.volatility,3)}</td>
+    <td>${number(row.avgWave,1)}</td><td>${pct(row.minionClearRate,1)}</td><td>${encounterEconomy?"不適用":pct(row.modelMinionChance,1)}</td><td>${encounterEconomy?"不適用":number(row.modelMinionBuildPower,3)}</td><td>${pct(row.bossKillRate,1)}</td><td>${encounterEconomy?"不適用":pct(row.modelBossChance,1)}</td><td>${encounterEconomy?"不適用":number(row.modelBossBuildPower,3)}</td><td>${number(row.volatility,3)}</td>
   </tr>`).join("");
-  ui.distributionBody.innerHTML = `<tr>${(s.returnDistribution || []).map(row => `<td><strong>${pct(row.rate,2)}</strong><small>${Number(row.count || 0).toLocaleString()} 局</small></td>`).join("")}</tr>`;
+  ui.distributionBody.innerHTML = `<tr>${(s.returnDistribution || []).map(row => `<td><strong>${pct(row.rate,2)}</strong><small>${pct(row.rtpContribution || 0,2)} 全局 RTP</small><small>${Number(row.count || 0).toLocaleString()} 局</small></td>`).join("")}</tr>`;
 
   ui.waveBody.innerHTML = report.waves.map(row => `<tr>
     <td>第 ${row.wave} 波</td><td>${row.samples}</td><td>${row.entrants}</td><td>${row.clears}</td>
@@ -1463,10 +1597,10 @@ function renderReport(report) {
     <td>${pct(row.deathAfterProfitRiskRate || 0,1)}</td><td>${pct(row.deathAfter2xRiskRate || 0,1)}</td><td>${number(row.checkpointMax || 0,2)}x</td>
   </tr>`).join("") || `<tr><td colspan="11">這份舊報表尚未包含深追風險資料。</td></tr>`;
 
-  ui.bossBody.innerHTML = report.bosses.length ? report.bosses.map(row => `<tr><td>第 ${row.order} 隻</td><td>${row.encounters}</td><td>${pct(row.reachRate,1)}</td><td>${row.kills}</td><td>${pct(row.killRate,1)}</td><td>${pct(row.avgModelChance,1)}</td><td>${number(row.avgWave,1)}</td><td>+${number(row.avgAdd,2)}</td><td>${pct(row.rtpContribution,2)}</td></tr>`).join("") : `<tr><td colspan="9">本次樣本沒有遇到 BOSS。</td></tr>`;
+  ui.bossBody.innerHTML = report.bosses.length ? report.bosses.map(row => `<tr><td>第 ${row.order} 隻</td><td>${row.encounters}</td><td>${pct(row.reachRate,1)}</td><td>${row.kills}</td><td>${pct(row.killRate,1)}</td><td>${encounterEconomy?"不適用":pct(row.avgModelChance,1)}</td><td>${number(row.avgWave,1)}</td><td>+${number(row.avgAdd,2)}</td><td>${pct(row.rtpContribution,2)}</td></tr>`).join("") : `<tr><td colspan="9">本次樣本沒有遇到 BOSS。</td></tr>`;
 
   ui.buildBody.innerHTML = report.combos.slice(0,100).map(row => `<tr><td>${escapeHtml(row.name)}</td><td>${row.samples}</td><td>${pct(row.samples/report.completedSamples,1)}</td><td>${pct(row.rtp,2)}</td><td>${number(row.avgWave,1)}</td><td>${pct(row.bossKillRate,1)}</td><td>${pct(row.profitRate,1)}</td><td class="${row.samples<20?"sample-low":""}">${row.samples<20?"資料不足":"可比較"}</td></tr>`).join("");
-  ui.heroBody.innerHTML = (report.heroes || []).map(row => `<tr><td>${escapeHtml(row.name)}</td><td>${row.samples}</td><td>${pct(row.samples/report.completedSamples,1)}</td><td>${pct(row.rtp,2)}</td><td>${pct(row.allocatedRtp ?? row.rtp,2)}</td><td>${pct(row.closingLiabilityRtp || 0,2)}</td><td>${number(row.avgWave,1)}</td><td>${pct(row.bossKillRate,1)}</td></tr>`).join("");
+  ui.heroBody.innerHTML = (report.heroes || []).map(row => `<tr><td>${escapeHtml(row.name)}</td><td>${row.samples}</td><td>${pct(row.samples/report.completedSamples,1)}</td><td>${pct(row.rtp,2)}</td><td>${encounterEconomy?"不適用":pct(row.allocatedRtp ?? row.rtp,2)}</td><td>${encounterEconomy?"不適用":pct(row.closingLiabilityRtp || 0,2)}</td><td>${number(row.avgWave,1)}</td><td>${pct(row.bossKillRate,1)}</td></tr>`).join("");
   ui.towerBody.innerHTML = report.towers.map(row => `<tr><td>${escapeHtml(row.name)}</td><td>${row.samples}</td><td>${pct(row.samples/report.completedSamples,1)}</td><td>${pct(row.rtp,2)}</td><td>${number(row.avgWave,1)}</td><td>${pct(row.bossKillRate,1)}</td></tr>`).join("");
   ui.upgradeBody.innerHTML = report.upgrades.slice(0,150).map(row => `<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.tower)}</td><td>${row.samples}</td><td>${number(row.avgCount,2)}</td><td>${pct(row.rtp,2)}</td><td>${number(row.avgWave,1)}</td></tr>`).join("");
   setCopyEnabled(true);
@@ -1482,52 +1616,63 @@ function sheetPercent(value,digits=2) { return pct(Number(value),digits); }
 function sheetNumber(value,digits=0) { return number(Number(value),digits); }
 function rtpTone(value,validation,samples=Infinity) {
   if (samples < 20) return "warn";
-  return Math.abs(value-validation.targetRtp) <= validation.tolerance ? "good" : "bad";
+  return targetRangeDeviation(value,validation) <= validation.tolerance ? "good" : "bad";
 }
 
 function reportSections(report) {
   const s=report.summary;
   const v=report.validation;
   const chase=report.chase?.summary || {};
-  const depth=v.depth || buildDepthValidation(report.waves || [],report.completedSamples,v.targetRtp,v.tolerance);
+  const depth=v.depth || buildDepthValidation(report.waves || [],report.completedSamples,v,v.tolerance);
+  const encounterEconomy=isEncounterEconomyReport(report);
+  const matrixReport=report.config.collectPolicy === "fixedWaveMatrix";
+  const rtpLabel=reportRtpLabel(report);
+  const targetLabel=targetRangeLabel(v);
+  const campaignCompleteRate=s.campaignCompleteRate ?? s.completed30Rate ?? 0;
   const strategyRows=v.strategies.map(row=>[
     STRATEGY_LABELS[row.strategy]||row.strategy,
     row.samples,
     sheetCell(sheetPercent(row.rtp,2),rtpTone(row.rtp,v,row.samples)),
-    sheetPercent(row.allocatedRtp ?? row.rtp,2),
-    sheetPercent(row.closingLiabilityRtp || 0,2),
+    encounterEconomy?"不適用":sheetPercent(row.allocatedRtp ?? row.rtp,2),
+    encounterEconomy?"不適用":sheetPercent(row.closingLiabilityRtp || 0,2),
     `${sheetPercent(Math.max(0,row.rtp-row.ci95),2)} ～ ${sheetPercent(row.rtp+row.ci95,2)}`,
     sheetNumber(row.avgWave,1),
     sheetPercent(row.minionClearRate,1),
-    sheetPercent(row.modelMinionChance,1),
-    sheetNumber(row.modelMinionBuildPower,3),
+    encounterEconomy?"不適用":sheetPercent(row.modelMinionChance,1),
+    encounterEconomy?"不適用":sheetNumber(row.modelMinionBuildPower,3),
     sheetPercent(row.bossKillRate,1),
-    sheetPercent(row.modelBossChance,1),
-    sheetNumber(row.modelBossBuildPower,3),
+    encounterEconomy?"不適用":sheetPercent(row.modelBossChance,1),
+    encounterEconomy?"不適用":sheetNumber(row.modelBossBuildPower,3),
     sheetNumber(row.volatility,3),
   ]);
+  const accountingRows=encounterEconomy ? [
+    ["舊版返還池帳本","不適用","新版遭遇戰經濟不使用個人返還池、期末責任或入水帳本"],
+  ] : [
+    ["返還池投入",sheetPercent(s.bets ? (s.mathPoolContribution || 0) / s.bets : 0,2),`累計投入 ${Math.round(s.mathPoolContribution || 0)}`],
+    ["舊版餘額釋放",Math.round(s.mathPoolRecycled || 0),"目前正式邏輯不使用；應維持0"],
+    ["返還池上限觸發",Math.round(s.mathPoolCapHits || 0),`帳本最大誤差 ${sheetNumber(s.mathPoolMaxInvariantError || 0,6)}`],
+  ];
   return [
     {id:"settings",title:"模擬設定",headers:["項目","數值"],rows:[
       ["參數名稱",report.paramName],["參數版本",report.paramRevision ?? "--"],["參數雜湊",report.paramHash],["報表時間",new Date(report.createdAt).toLocaleString()],
       ["策略模板",STRATEGY_LABELS[report.config.strategy]],["玩家數",report.config.playerCount],["每人場數",report.config.gamesPerPlayer],["要求場數",report.requestedSamples],["完成場數",report.completedSamples],
       ["錢包模式",WALLET_MODE_LABELS[report.config.walletMode] || WALLET_MODE_LABELS.independent],["起始 BET",report.config.baseBet],["起始錢包",report.config.startWallet],
       ["Collect 策略",COLLECT_LABELS[report.config.collectPolicy]],["最大波次",report.config.maxWave],["決策準確度",sheetPercent(report.config.accuracy,0)],["Reroll 使用率",sheetPercent(report.config.rerollChance || 0,0)],["亂數種子",report.config.seed],
+      ["引擎版本",report.engineBuild || "未記錄"],["報表版本",report.reportVersion || "舊版"],["經濟模式",report.economyMode || "未記錄"],
       ["CPU 執行緒",report.config.actualWorkerCount || 1],["執行時間",`${sheetNumber(report.elapsedMs/1000,1)} 秒`],["執行狀態",sheetCell(report.canceled?"中途停止":"完整完成",report.canceled?"warn":"good")],
     ]},
     {id:"core",title:"核心指標",headers:["指標","結果","說明"],rows:[
-      ["總 RTP",sheetCell(sheetPercent(s.rtp,2),rtpTone(s.rtp,v,s.samples)),`總賠付 ${Math.round(s.payout)} / 總 BET ${Math.round(s.bets)}`],
+      [rtpLabel,sheetCell(sheetPercent(s.rtp,2),rtpTone(s.rtp,v,s.samples)),matrixReport?`第 1～30 波固定收手樣本的投注加權值；不是任何一種真人策略的總 RTP｜賠付 ${Math.round(s.payout)} / BET ${Math.round(s.bets)}`:`總賠付 ${Math.round(s.payout)} / 總 BET ${Math.round(s.bets)}`],
       ["一般怪／一般波 RTP",sheetPercent(s.baseRtp || 0,2),`基礎 POT 賠付 ${Math.round(s.basePayout || 0)} / 總 BET`],
       ["BOSS RTP",sheetPercent(s.bossRtp || 0,2),`BOSS 倍率追加賠付 ${Math.round(s.bossPayout || 0)} / 總 BET`],
-      ["返還池投入",sheetPercent(s.bets ? (s.mathPoolContribution || 0) / s.bets : 0,2),`累計投入 ${Math.round(s.mathPoolContribution || 0)}`],
-      ["舊版餘額釋放",Math.round(s.mathPoolRecycled || 0),"目前正式邏輯不使用；應維持0"],
-      ["返還池上限觸發",Math.round(s.mathPoolCapHits || 0),`帳本最大誤差 ${sheetNumber(s.mathPoolMaxInvariantError || 0,6)}`],
+      ...accountingRows,
       ["顯示／實付一致性",sheetCell(s.payoutMismatchCount ? "異常" : "一致",s.payoutMismatchCount ? "bad" : "good"),`差異場次 ${Math.round(s.payoutMismatchCount || 0)}｜最大差額 ${sheetNumber(s.payoutMismatchMax || 0,6)}`],
-      ["目標 RTP",sheetPercent(v.targetRtp,2),`策略容許差 ${sheetPercent(v.tolerance,2)}`],
+      ["目標 RTP 區間",targetLabel,`超出區間後容許偏差 ${sheetPercent(v.tolerance,2)}`],
       ["95% 信賴區間",`${sheetPercent(Math.max(0,s.rtp-s.ci95),2)} ～ ${sheetPercent(s.rtp+s.ci95,2)}`,`誤差 ±${sheetPercent(s.ci95,2)}`],
-      ["莊家期望差",sheetCell(sheetPercent(1-s.rtp,2),s.rtp<1?"good":s.rtp>1?"bad":"warn"),"1 - 實跑 RTP；尚未扣除營運成本"],
+      [matrixReport?"矩陣混合差":"莊家期望差",sheetCell(sheetPercent(1-s.rtp,2),s.rtp<1?"good":s.rtp>1?"bad":"warn"),matrixReport?"1 - 矩陣混合 RTP；人工混合樣本不可當作真人策略莊家優勢":"1 - 實跑 RTP；尚未扣除營運成本"],
       ["BOSS 擊殺率",sheetPercent(s.bossKillRate,1),`${s.bossKilled} / ${s.bossSpawned} 隻`],["獲利局比例",sheetPercent(s.profitRate,1),"賠付高於該場總 BET"],
       ["歸零率",sheetPercent(s.zeroRate,1),"未成功結算且賠付為 0"],["Hit Frequency",sheetPercent(s.hitRate,1),"有取得賠付的場次比例"],
-      ["成功結算率",sheetPercent(s.collectedRate,1),"Collect 或 30 波通關"],["30 波通關率",sheetPercent(s.completed30Rate,1),"完成第 30 波"],
+      ["成功結算率",sheetPercent(s.collectedRate,1),"主動 Collect 或完成五戰區戰役"],["戰役完成率",sheetPercent(campaignCompleteRate,1),"擊敗五隻 BOSS 並自動結算"],
       ["平均到達波次",sheetNumber(s.avgWave,1),"所有樣本平均"],["波動 VI",sheetNumber(s.volatility,3),"每場回收倍數標準差"],
       ["曾持有帳面 2x+",sheetPercent(chase.had2xRate || 0,2),`曾持有 5x+ ${sheetPercent(chase.had5xRate || 0,2)}`],
       ["進入深追樣本",sheetPercent(chase.deepReachRate || 0,2),`完成第 6 波並有可 Collect 帳面；終局在第 6 波後 ${sheetPercent(chase.deepTerminalRate || 0,2)}`],
@@ -1538,19 +1683,22 @@ function reportSections(report) {
     ]},
     {id:"validation",title:"實跑驗證",headers:["檢查項目","結果","門檻／說明"],rows:[
       ["驗證狀態",sheetCell(v.status,v.status==="通過"?"good":v.status==="未通過"?"bad":"warn"),v.isValidationMatrix?"五種策略矩陣":"目前只有單策略"],
-      ["策略驗證模式",v.strategyFairnessMode === "isolatedPersonalPool" ? "隔離個人水池" : "非隔離","策略公平性只能使用固定策略、獨立水池樣本"],
+      ["策略驗證模式",v.strategyFairnessMode === "independentRuns" ? "獨立場次" : v.strategyFairnessMode === "isolatedPersonalPool" ? "隔離個人水池" : "非隔離",encounterEconomy?"新版經濟每局獨立實跑，不使用返還池責任":"策略公平性只能使用固定策略、獨立水池樣本"],
       ["可信樣本",sheetCell(v.trustedSample?"已達標":"未達標",v.trustedSample?"good":"warn"),`每策略至少 ${TRUSTED_SAMPLES_PER_STRATEGY} 場；目前最少 ${v.minStrategySamples} 場`],
       ["最大 95% 誤差",sheetPercent(v.maxStrategyCi95,2),"策略中最大的統計誤差"],
       ["最大目標偏差",sheetCell(sheetPercent(v.maxTargetDeviation,2),v.targetPass?"good":"bad"),`容許 ${sheetPercent(v.tolerance,2)}`],
-      ["策略 RTP 差距",sheetCell(sheetPercent(v.empiricalSpread,2),v.empiricalPass?"good":"bad"),`容許 ${sheetPercent(v.tolerance,2)}`],
-      ["Cash Out RTP 差距",sheetPercent(v.cashoutSpread || 0,2),"有限樣本仍受各群組期末個人池責任影響"],
+      ["策略 RTP 差距",v.isValidationMatrix?sheetCell(sheetPercent(v.empiricalSpread,2),v.empiricalPass?"good":"bad"):sheetCell("不適用","warn"),v.isValidationMatrix?`容許 ${sheetPercent(v.tolerance,2)}`:"單一策略沒有其他策略可比較"],
+      ["Cash Out RTP 差距",sheetPercent(v.cashoutSpread || 0,2),encounterEconomy?"五種策略實跑 RTP 的最大差距":"有限樣本仍受各群組期末個人池責任影響"],
       ["固定波深度驗證",depth.applicable===false?sheetCell("不適用","warn"):sheetCell(`${sheetNumber(depth.drift*100,2)} pp`,depth.pass?"good":"bad"),depth.applicable===false?"本次為真人／動態 Collect；逐波資料是條件切片，不能當固定波次 RTP":`固定 Collect：第 ${depth.firstWave} 波 ${sheetPercent(depth.firstRtp,2)} → 第 ${depth.lastWave} 波 ${sheetPercent(depth.lastRtp,2)}`],
       ["波次最大目標偏差",depth.applicable===false?"—":sheetCell(sheetPercent(depth.maxDeviation,2),depth.pass?"good":"warn"),depth.applicable===false?"請改跑固定波次矩陣驗證":"以各波固定 Collect RTP 判定"],
-      ["波次信賴區間",depth.applicable===false?"—":sheetCell(depth.targetInIntervals?"通過":"未通過",depth.targetInIntervals?"good":"bad"),depth.applicable===false?"不使用條件切片判斷深度套利":`可靠波次 ${depth.waveCount} 個；每波至少 ${depth.minimumCashouts || depth.minimumEntrants} 次成功 Collect`],
-      ["目標落在信賴區間",sheetCell(v.targetInIntervals?"是":"否",v.targetInIntervals?"good":"warn"),"所有策略的 95% 區間是否包含目標 RTP"],
+      ["波次信賴區間",depth.applicable===false?"—":sheetCell(depth.targetInIntervals?"通過":"未通過",depth.targetInIntervals?"good":"bad"),depth.applicable===false?"不使用條件切片判斷深度套利":`可靠波次 ${depth.waveCount} 個；每波至少 ${depth.minimumSamples || depth.minimumCashouts || depth.minimumEntrants} 筆完整結果（死亡亦為有效 0 回收樣本）`],
+      ["目標區間與信賴區間重疊",sheetCell(v.targetInIntervals?"是":"否",v.targetInIntervals?"good":"warn"),`所有策略的 95% 區間是否與 ${targetLabel} 重疊`],
     ]},
-    {id:"strategies",title:"策略比較",headers:["策略","樣本","Cash Out RTP","配置 RTP","期末責任","95% 區間","平均波次","一般通過率","一般預估","一般強度","BOSS 擊殺率","BOSS 預估","BOSS 強度","VI"],rows:strategyRows},
-    {id:"distribution",title:"賠付分布",headers:["P50","P75","P90","P95","P99","最高"],rows:[[sheetNumber(s.p50,2),sheetNumber(s.p75,2),sheetNumber(s.p90,2),sheetNumber(s.p95,2),sheetNumber(s.p99,2),sheetNumber(s.max,2)]]},
+    {id:"strategies",title:"策略比較",headers:["策略","樣本","Cash Out RTP","舊池配置 RTP","舊池期末責任","95% 區間","平均波次","一般通過率","舊模型預估","舊模型強度","BOSS 擊殺率","舊模型預估","舊模型強度","VI"],rows:strategyRows},
+    {id:"distribution",title:"回收倍率與全局 RTP 貢獻",headers:["倍率區間","局數","局數占比","區間投注","區間派彩","區間平均回收","全局 RTP 貢獻","總派彩占比"],rows:(s.returnDistribution || []).map(row=>[
+      row.label,row.count,sheetPercent(row.rate || 0,2),sheetNumber(row.bets || 0,0),sheetNumber(row.payout || 0,0),sheetPercent(row.bandRtp || 0,2),sheetPercent(row.rtpContribution || 0,2),sheetPercent(row.payoutShare || 0,2),
+    ])},
+    {id:"percentiles",title:"單局回收百分位",headers:["P50","P75","P90","P95","P99","最高"],rows:[[sheetNumber(s.p50,2),sheetNumber(s.p75,2),sheetNumber(s.p90,2),sheetNumber(s.p95,2),sheetNumber(s.p99,2),sheetNumber(s.max,2)]]},
     {id:"waves",title:depth.applicable===false?"真人 Collect 行為切片（不作固定波 RTP 驗證）":"固定於第 N 波 Collect 的長期 RTP（Crash 報表）",headers:["波次","全部樣本","進入波次","成功 Collect","條件通過率",depth.applicable===false?"該條件樣本成功率":"固定收手成功率","獲利局率（含死亡）","存活獲利率","2x+","5x+","最大倍數","存活者平均 HP","基地 HP%（含死亡）","平均 POT","POT 加權平均倍率","平均已付 BET","一般波 RTP","BOSS RTP",depth.applicable===false?"條件樣本回收率（非固定波 RTP）":"固定收手 RTP","95% 區間","BOSS 波比例"],rows:report.waves.map(row=>[
       `第 ${row.wave} 波`,row.samples,row.entrants,row.clears,sheetPercent(row.conditionalSurvival,1),sheetPercent(row.cumulativeSurvival,1),sheetPercent(row.profitRate || 0,1),sheetPercent(row.survivorProfitRate || 0,1),sheetPercent(row.return2xRate || 0,1),sheetPercent(row.return5xRate || 0,1),`${sheetNumber(row.returnMax || 0,2)}x`,sheetNumber(row.avgHp,0),sheetPercent(waveBaseHpPct(report,row),1),sheetNumber(row.avgPot,1),`${sheetNumber(row.avgPotMultiplier || 0,2)}x`,sheetNumber(row.avgTotalBet,1),sheetPercent(row.baseRtp || 0,2),sheetPercent(row.bossRtp || 0,2),sheetPercent(row.checkpointRtp,2),`${sheetPercent(Math.max(0,row.checkpointRtp-row.cashoutCi95),2)} ～ ${sheetPercent(row.checkpointRtp+row.cashoutCi95,2)}`,sheetPercent(row.bossRate,1),
     ])},
@@ -1573,14 +1721,14 @@ function reportSections(report) {
     {id:"chaseWaves",title:"逐波 POT 深追風險",headers:["波次","清場檢查點","帳面 RTP","帳面獲利","帳面 2x+","帳面 5x+","獲利後繼續","2x 後繼續","續追後死亡","2x 續追後死亡","2x轉移樣本","下一波死亡","總回收比上升>15%","總回收比同區間","總回收比下降>15%","仍≥2x","淨利增加","淨利持平","淨利減少","平均總回收比變化","平均淨利變化","該波最高"],rows:(report.chase?.waves || []).map(row=>[
       `第 ${row.wave} 波`,row.clears,sheetPercent(row.checkpointRtp || 0,2),sheetPercent(row.profitStateRate || 0,1),sheetPercent(row.x2StateRate || 0,1),sheetPercent(row.x5StateRate || 0,1),sheetPercent(row.continueAfterProfitRate || 0,1),sheetPercent(row.continueAfter2xRate || 0,1),sheetPercent(row.deathAfterProfitRiskRate || 0,1),sheetPercent(row.deathAfter2xRiskRate || 0,1),row.twoXTransitions || 0,sheetPercent(row.twoXNextDeathRate || 0,1),sheetPercent(row.twoXUpRate || 0,1),sheetPercent(row.twoXFlatRate || 0,1),sheetPercent(row.twoXDownRate || 0,1),sheetPercent(row.twoXRetainRate || 0,1),sheetPercent(row.twoXProfitUpRate || 0,1),sheetPercent(row.twoXProfitFlatRate || 0,1),sheetPercent(row.twoXProfitDownRate || 0,1),`${sheetNumber(row.twoXAvgStartRatio || 0,2)}x → ${sheetNumber(row.twoXAvgNextRatio || 0,2)}x`,`${sheetNumber(row.twoXAvgStartProfit || 0,0)} → ${sheetNumber(row.twoXAvgNextProfit || 0,0)}`,`${sheetNumber(row.checkpointMax || 0,2)}x`,
     ])},
-    {id:"bosses",title:"逐隻 BOSS 分析",headers:["BOSS 順序","遭遇次數","到達率","擊殺數","擊殺率","模型預估","平均出現波次","平均增加倍率","RTP 貢獻"],rows:report.bosses.length?report.bosses.map(row=>[
-      `第 ${row.order} 隻`,row.encounters,sheetPercent(row.reachRate,1),row.kills,sheetPercent(row.killRate,1),sheetPercent(row.avgModelChance,1),sheetNumber(row.avgWave,1),`+${sheetNumber(row.avgAdd,2)}`,sheetPercent(row.rtpContribution,2),
+    {id:"bosses",title:"逐隻 BOSS 分析",headers:["BOSS 順序","遭遇次數","到達率","擊殺數","擊殺率","舊模型預估","平均出現波次","平均增加倍率","RTP 貢獻"],rows:report.bosses.length?report.bosses.map(row=>[
+      `第 ${row.order} 隻`,row.encounters,sheetPercent(row.reachRate,1),row.kills,sheetPercent(row.killRate,1),encounterEconomy?"不適用":sheetPercent(row.avgModelChance,1),sheetNumber(row.avgWave,1),`+${sheetNumber(row.avgAdd,2)}`,sheetPercent(row.rtpContribution,2),
     ]):[["本次樣本沒有遇到 BOSS"]]},
     {id:"builds",title:"最終 Build 組合",headers:["最終塔組合","樣本","占比","RTP","平均波次","BOSS 擊殺率","獲利率","判定"],rows:report.combos.map(row=>[
       row.name,row.samples,sheetPercent(row.samples/report.completedSamples,1),sheetCell(sheetPercent(row.rtp,2),rtpTone(row.rtp,v,row.samples)),sheetNumber(row.avgWave,1),sheetPercent(row.bossKillRate,1),sheetPercent(row.profitRate,1),sheetCell(row.samples<20?"資料不足":"可比較",row.samples<20?"warn":"good"),
     ])},
-    {id:"heroes",title:"角色表現",headers:["角色","使用場數","使用率","Cash Out RTP","配置 RTP","期末未付責任","平均波次","BOSS 擊殺率"],rows:(report.heroes || []).map(row=>[
-      row.name,row.samples,sheetPercent(row.samples/report.completedSamples,1),sheetCell(sheetPercent(row.rtp,2),rtpTone(row.rtp,v,row.samples)),sheetPercent(row.allocatedRtp ?? row.rtp,2),sheetPercent(row.closingLiabilityRtp || 0,2),sheetNumber(row.avgWave,1),sheetPercent(row.bossKillRate,1),
+    {id:"heroes",title:"角色表現",headers:["角色","使用場數","使用率","Cash Out RTP","舊池配置 RTP","舊池期末責任","平均波次","BOSS 擊殺率"],rows:(report.heroes || []).map(row=>[
+      row.name,row.samples,sheetPercent(row.samples/report.completedSamples,1),sheetCell(sheetPercent(row.rtp,2),rtpTone(row.rtp,v,row.samples)),encounterEconomy?"不適用":sheetPercent(row.allocatedRtp ?? row.rtp,2),encounterEconomy?"不適用":sheetPercent(row.closingLiabilityRtp || 0,2),sheetNumber(row.avgWave,1),sheetPercent(row.bossKillRate,1),
     ])},
     {id:"towers",title:"單塔表現",headers:["塔","使用場數","使用率","含此塔 RTP","平均波次","BOSS 擊殺率"],rows:report.towers.map(row=>[
       row.name,row.samples,sheetPercent(row.samples/report.completedSamples,1),sheetCell(sheetPercent(row.rtp,2),rtpTone(row.rtp,v,row.samples)),sheetNumber(row.avgWave,1),sheetPercent(row.bossKillRate,1),
@@ -1703,14 +1851,14 @@ function saveProfile() {
 
 function renderSnapshots() {
   refreshParamSources();
-  ui.snapshotBody.innerHTML=snapshots.length?snapshots.map(snapshot=>`<tr><td>${escapeHtml(snapshot.name)}</td><td>v${escapeHtml(snapshot.params.balanceRevision??"--")}</td><td>${escapeHtml(snapshot.hash)}</td><td>${new Date(snapshot.createdAt).toLocaleString()}</td><td><span class="row-actions"><button class="button secondary" type="button" data-use-snapshot="${escapeHtml(snapshot.id)}">使用</button><button class="button danger" type="button" data-delete-snapshot="${escapeHtml(snapshot.id)}">刪除</button></span></td></tr>`).join(""):`<tr><td colspan="5">尚未儲存參數快照。</td></tr>`;
+  ui.snapshotBody.innerHTML=snapshots.length?snapshots.map(snapshot=>`<tr><td>${escapeHtml(snapshot.name)}</td><td>V${escapeHtml(snapshot.params.encounterRewardRevision??snapshot.params.balanceRevision??"--")}</td><td>${escapeHtml(snapshot.hash)}</td><td>${new Date(snapshot.createdAt).toLocaleString()}</td><td><span class="row-actions"><button class="button secondary" type="button" data-use-snapshot="${escapeHtml(snapshot.id)}">使用</button><button class="button danger" type="button" data-delete-snapshot="${escapeHtml(snapshot.id)}">刪除</button></span></td></tr>`).join(""):`<tr><td colspan="5">尚未儲存參數快照。</td></tr>`;
 }
 
 function saveSnapshot() {
   const source=selectedParamRecord();
   const name=ui.snapshotName.value.trim() || `參數 ${new Date().toLocaleString()}`;
   const params=engine?.normalizeParams ? engine.normalizeParams(source.params) : clone(source.params);
-  snapshots.unshift({id:id("params"),name,createdAt:new Date().toISOString(),hash:paramHash(params),params});
+  snapshots.unshift({id:id("params"),name,createdAt:new Date().toISOString(),hash:paramHash(params),engineBuild:engine?.build || null,params});
   snapshots=snapshots.slice(0,30);
   saveList(SNAPSHOT_STORAGE_KEY,snapshots);
   ui.snapshotName.value="";
@@ -1720,7 +1868,7 @@ function saveSnapshot() {
 
 function exportParams() {
   const source=selectedParamRecord();
-  const payload={name:source.name,createdAt:new Date().toISOString(),hash:paramHash(source.params),params:source.params};
+  const payload={name:source.name,createdAt:new Date().toISOString(),hash:paramHash(source.params),engineBuild:engine?.build || null,economyMode:engine?.economyMode || null,params:source.params};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const link=document.createElement("a");
   link.href=URL.createObjectURL(blob);
@@ -1738,7 +1886,7 @@ async function importParams(file) {
     const params=engine?.normalizeParams ? engine.normalizeParams(imported) : imported;
     if(!params||typeof params!=="object"||!Object.keys(params).length)throw new Error("檔案沒有參數");
     const name=json.name||file.name.replace(/\.json$/i,"")||`匯入參數 ${new Date().toLocaleString()}`;
-    snapshots.unshift({id:id("params"),name,createdAt:new Date().toISOString(),hash:paramHash(params),params:clone(params)});
+    snapshots.unshift({id:id("params"),name,createdAt:new Date().toISOString(),hash:paramHash(params),engineBuild:json.engineBuild || null,params:clone(params)});
     snapshots=snapshots.slice(0,30);
     saveList(SNAPSHOT_STORAGE_KEY,snapshots);
     renderSnapshots();

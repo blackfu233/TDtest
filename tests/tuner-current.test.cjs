@@ -15,14 +15,26 @@ test("current draft validation accepts defaults without rewriting them",()=>{
   assert.equal(context.validateCurrentDraft(candidate),"");
   assert.equal(JSON.stringify(candidate),before);
 });
+test("current imports migrate every older encounter revision before display",()=>{
+  const context=validationContext();
+  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:269},273),true);
+  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:260},273),true);
+  assert.equal(context.currentImportNeedsRewardMigration({balanceRevision:211},273),true);
+  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:271},273),true);
+  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:272},273),true);
+  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:273},273),false);
+  assert.equal(context.currentImportNeedsRewardMigration({},273),false);
+});
 test("current draft rejects invalid values, reversed ranges and impossible reward weights",()=>{
   const context=validationContext(),defaults={...rules.encounterDefaults,expMul:1};
+  assert.equal(context.validateCurrentDraft({...defaults,encounterBossSmallWeight:0,encounterBossMediumWeight:0,encounterBossLargeWeight:0,encounterBossJackpotWeight:1}),"");
   for(const invalid of [null,[],{...defaults,expMul:"2"},{...defaults,expMul:NaN},{...defaults,expMul:-1},
     {...defaults,encounterChestUpgradeChance:20},{...defaults,encounterRtpTargetMin:1.1},
-    {...defaults,encounterChest1Min:1},{...defaults,encounterChest1Max:1.81},
+    {...defaults,encounterChest1Min:2.03},{...defaults,encounterChest1Max:0},
     {...defaults,encounterBossChestMin:3,encounterBossChestMax:1},
+    {...defaults,encounterBossJackpotMin:30,encounterBossJackpotMax:20},
     {...defaults,band_1_countMin:30,band_1_countMax:20},
-    {...defaults,encounterBossSmallWeight:0,encounterBossMediumWeight:0,encounterBossLargeWeight:0}]) {
+    {...defaults,encounterBossSmallWeight:0,encounterBossMediumWeight:0,encounterBossLargeWeight:0,encounterBossJackpotWeight:0}]) {
     assert.notEqual(context.validateCurrentDraft(invalid),"");
   }
 });

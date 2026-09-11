@@ -102,10 +102,11 @@ function installHeadlessDom() {
 }
 
 installHeadlessDom();
-importScripts("simulator-core.js?v=deep-chase-minion210", "game.js?v=deep-chase-minion210");
+importScripts("simulator-core.js?v=encounter-balance273", "game.js?v=encounter-balance273");
 
 const engine = self.__tdHeadless;
 if (!engine?.ready) throw new Error("Worker 戰鬥引擎載入失敗");
+self.postMessage({ type:"ready", build:engine.build });
 
 function runAssignments(message) {
   const { config, params, assignments, chunkSize = 100 } = message;

@@ -113,11 +113,11 @@ const HERO_TUNING = [
   ["neutral","戰術傭兵","無","三連實彈",{ damage:46, rate:.92, range:940, status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0 }],
 ];
 [
-  ["fire", { damage:140 }],
-  ["ice", { damage:220, rate:.70, secondaryMul:.75 }],
-  ["electric", { damage:88 }],
-  ["poison", { damage:84, rate:.76, status:25, splash:58 }],
-  ["neutral", { damage:70 }],
+  ["fire", { damage:118 }],
+  ["ice", { damage:176, rate:.70, secondaryMul:.75 }],
+  ["electric", { damage:80 }],
+  ["poison", { damage:107, rate:.76, status:25, splash:58 }],
+  ["neutral", { damage:116 }],
 ].forEach(([id, values]) => Object.assign(HERO_TUNING.find(hero => hero[0] === id)[4], values));
 const HERO_FIELDS = [
   ["damage","傷害",0,1000,1],["rate","攻速",.05,10,.01],["range","射程",100,1200,10],
@@ -424,31 +424,34 @@ function upgradeRequirementText(text) {
 }
 
 const ENCOUNTER_PARAM_DEFAULTS = {
-  encounterRewardRevision:259,
+  encounterRewardRevision:273,
   encounterEconomyEnabled:1,
   encounterRtpTargetMin:.96, encounterRtpTargetMax:1,
-  encounterRewardScale:.82,
+  encounterRewardScale:.433,
+  encounterPotEntryPower:1,
   encounterChestUpgradeChance:.10,
   encounterHpDepthGrowth:.09, encounterHpDepthCap:2,
-  encounterGrade1HpMul:1.45, encounterGrade2HpMul:.98, encounterGrade3HpMul:.90,
-  encounterGrade1AtkMul:6, encounterGrade2AtkMul:4.5, encounterGrade3AtkMul:3.5,
-  encounterBaseHitCap:100,
+  encounterGrade1HpMul:1.38, encounterGrade2HpMul:1.00, encounterGrade3HpMul:.82,
+  encounterGrade1AtkMul:4.5, encounterGrade2AtkMul:2.4, encounterGrade3AtkMul:1.6,
+  encounterBaseHitCap:55,
   encounterMinionBaseHitLimit:1,
-  encounterChest1Min:.30, encounterChest1Max:1.77,
-  encounterChest2Min:.35, encounterChest2Max:1.80,
-  encounterChest3Min:.66, encounterChest3Max:1.90,
-  encounterChest4Min:.70, encounterChest4Max:2.00,
-  encounterBossChestMin:.17, encounterBossChestMax:.28,
-  encounterBossSmallWeight:85, encounterBossMediumWeight:13, encounterBossLargeWeight:2,
-  encounterBossSmallMin:.75, encounterBossSmallMax:1.05,
-  encounterBossMediumMin:1.30, encounterBossMediumMax:2.00,
-  encounterBossLargeMin:2.00, encounterBossLargeMax:3.00,
-  encounterBossDepthGrowth:.10,
+  encounterChest1Min:.05, encounterChest1Max:1.55,
+  encounterChest2Min:.35, encounterChest2Max:2.42,
+  encounterChest3Min:.80, encounterChest3Max:3.80,
+  encounterChest4Min:1.60, encounterChest4Max:6.00,
+  encounterBossChestMin:.19, encounterBossChestMax:.31,
+  encounterBossSmallWeight:63, encounterBossMediumWeight:27, encounterBossLargeWeight:8, encounterBossJackpotWeight:2,
+  encounterBossSmallMin:.10, encounterBossSmallMax:.35,
+  encounterBossMediumMin:1.00, encounterBossMediumMax:3.20,
+  encounterBossLargeMin:3.50, encounterBossLargeMax:6.00,
+  encounterBossJackpotMin:7.00, encounterBossJackpotMax:24.00,
+  encounterBossDepthGrowth:.08, encounterBossDepthGrowthCap:1.25,
   encounterRushSpeedCap:78,
   encounterTankSingleDamageMul:1.35, encounterTankAreaDamageMul:.60,
   encounterTrapSlowPct:.38, encounterTrapSlowTime:.8,
   encounterFrostSlowPct:.35, encounterFrostSlowTime:1,
 };
+Object.assign(ENCOUNTER_PARAM_DEFAULTS, globalThis.TD_ENCOUNTER_TUNING?.encounterDefaults || {});
 const DEFAULT_PARAMS = {
   ...ENCOUNTER_PARAM_DEFAULTS,
   balanceRevision:202,
@@ -684,6 +687,8 @@ UPGRADE_GRID.forEach((row, rowIndex) => {
     upgradeEffectSpecs(id, rowIndex).forEach(spec => DEFAULT_PARAMS[upgradeValueParamKey(id, rowIndex, spec.key)] = spec.value);
   });
 });
+const tuningDefaults = globalThis.TD_ENCOUNTER_TUNING?.defaultParams;
+if (tuningDefaults && typeof tuningDefaults === "object") Object.assign(DEFAULT_PARAMS, tuningDefaults);
 
 const PARAM_GROUPS = [
   ["動態定價與 Reroll","economy-group",[
@@ -833,15 +838,16 @@ PARAM_GROUPS.unshift([
   ],
 ]);
 const ENCOUNTER_PARAM_GROUPS = [
-  ["251 候選版 / 驗證目標", "economy-group", [
+  ["V273 候選版 / 驗證目標", "economy-group", [
     ["encounterEconomyEnabled", "候選彩金規則", "0 / 1", 0, 1, 1, "1 使用新版寶箱與 BOSS 增幅；0 回到未校準玩法版，不啟用舊版水池。"],
     ["encounterRtpTargetMin", "RTP 目標下限", "比例", 0, 1, .01, "驗證目標，不是即時控制派彩的開關。"],
     ["encounterRtpTargetMax", "RTP 目標上限", "比例", 0, 1, .01, "仍須以完整對局與不同合法策略模擬驗證。"],
     ["encounterRewardScale", "寶箱整體係數", "倍", .01, 5, .01, "抽籤前固定套用，不隨玩家已得倍率、POT 或血量改變。"],
+    ["encounterPotEntryPower", "王後 POT 入場換算強度", "比例", 0, 1, .01, "0 代表後續 BET 直接換成 POT；1 代表完全按當下倍率折算；V273 使用 100%，讓 BET 成長增加實得金額但不重複放大 RTP。"],
     ["moneyMul", "金錢全域係數", "倍", 0, 5, .05, "目前遭遇戰實際使用；乘在整波寶箱預算上，不是停用參數。"],
     ["expMul", "經驗全域係數", "倍", .1, 5, .05, "只影響擊殺經驗；寶箱升級、開箱與通關均不增加經驗。"],
   ]],
-  ["251 寶箱 / 完成整波的原始 POT", "economy-group", [
+  ["V273 寶箱 / 完成整波的原始 POT", "economy-group", [
     ["encounterChestUpgradeChance", "一般波寶箱升一級機率", "比例", 0, 1, .01, "普通、進階、危險牌各自抽籤，只升一級；不提高怪物危險等級，不會變成 BOSS 專屬寶箱。0.10 代表 10%。"],
     ...[1,2,3,4].flatMap(tier => [
       [`encounterChest${tier}Min`, `第 ${tier} 級寶箱下限`, "當波 BET 倍數", .01, 20, .01, "尚未乘 moneyMul、寶箱整體係數及累積 BOSS 倍率；60% 擊殺、40% 通關。"],
@@ -850,13 +856,14 @@ const ENCOUNTER_PARAM_GROUPS = [
     ["encounterBossChestMin", "BOSS 護衛獎金下限", "當波 BET 倍數", .01, 20, .01, "只分給護衛擊殺；BOSS 專屬寶箱只開倍率、不給金錢或經驗。沿用舊參數鍵以相容匯入。"],
     ["encounterBossChestMax", "BOSS 護衛獎金上限", "當波 BET 倍數", .01, 20, .01, "區間內均勻抽取，全部分給護衛，不再扣出通關金錢。"],
   ]],
-  ["251 BOSS / 每次必加倍率", "boss-group", [
-    ...[["Small","小增幅"],["Medium","中增幅"],["Large","大增幅"]].flatMap(([key,label]) => [
-      [`encounterBoss${key}Weight`, `${label}權重`, "權重", 0, 10000, 1, "三組權重正規化後抽籤，總和必須大於零。"],
-      [`encounterBoss${key}Min`, `${label}下限`, "+倍率", .01, 20, .01, "第一隻 BOSS 的增幅區間；最後四捨五入至 0.1，至少增加 0.1。"],
-      [`encounterBoss${key}Max`, `${label}上限`, "+倍率", .01, 20, .01, "同一組區間內均勻抽取；不回收已取得的 POT。"],
+  ["V273 BOSS / 每次必加倍率", "boss-group", [
+    ...[["Small","小增幅",20],["Medium","中增幅",20],["Large","大增幅",20],["Jackpot","頭獎增幅",50]].flatMap(([key,label,ceiling]) => [
+      [`encounterBoss${key}Weight`, `${label}權重`, "權重", 0, 10000, .1, "四組權重正規化後抽籤，總和必須大於零。"],
+      [`encounterBoss${key}Min`, `${label}下限`, "+倍率", .01, ceiling, .01, "第一隻 BOSS 的增幅區間；最後四捨五入至 0.1，至少增加 0.1。"],
+      [`encounterBoss${key}Max`, `${label}上限`, "+倍率", .01, ceiling, .01, "同一組區間內均勻抽取；不回收已取得的 POT。"],
     ]),
     ["encounterBossDepthGrowth", "每隻後續 BOSS 增幅成長", "比例", 0, 1, .01, "增幅乘以 1 + (BOSS 序號 - 1) × 成長。"],
+    ["encounterBossDepthGrowthCap", "後續 BOSS 增幅成長上限", "倍", 1, 5, .05, "限制深追成長倍數；只限制序號成長，不限制頭獎本身。"],
   ]],
   ["251 一般波 / 危險程度", "system-group", [
     ...[[1,"普通"],[2,"進階"],[3,"危險"]].flatMap(([grade,label]) => [
@@ -942,8 +949,197 @@ try { channel = new BroadcastChannel(PARAM_CHANNEL); } catch {}
 function loadParams() { try { return cleanParams(migrateBossParams(JSON.parse(localStorage.getItem(PARAM_STORAGE_KEY) || "{}"))); } catch { return cleanParams(); } }
 function migrateEncounterRewardParams(input) {
   const revision = Number(input.encounterRewardRevision) || 0;
-  if (revision >= 259) return input;
+  if (revision >= 273) return input;
   const next = {...input};
+  if (revision === 272) {
+    const defaults272 = {
+      encounterRewardScale:.43, encounterPotEntryPower:.64, encounterChest2Max:2.35,
+      encounterGrade2AtkMul:3.4, encounterGrade3AtkMul:3,
+      encounterBossSmallMax:.45,
+      encounterBossMediumMin:1.20, encounterBossMediumMax:4.50,
+      encounterBossLargeMin:4.00, encounterBossLargeMax:7.00,
+      encounterBossDepthGrowth:.08, encounterBossDepthGrowthCap:1.25,
+    };
+    for (const [key,value] of Object.entries(defaults272)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 273;
+    return next;
+  }
+  if (revision === 271) {
+    const defaults271 = {
+      encounterBossMediumMax:4.00, encounterBossLargeMax:6.50, encounterBossJackpotMax:22.00,
+    };
+    for (const [key,value] of Object.entries(defaults271)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 272;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 270) {
+    const defaults270 = {
+      encounterBossLargeMax:7.00, encounterBossJackpotMax:28.00,
+      hero_electric_damage:82, hero_neutral_damage:103,
+    };
+    for (const [key,value] of Object.entries(defaults270)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 271;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 269) {
+    const defaults269 = {
+      encounterRewardScale:.48,
+      encounterGrade1HpMul:1.38, encounterGrade2HpMul:1.04, encounterGrade3HpMul:.88,
+      encounterBaseHitCap:65,
+      encounterBossSmallWeight:61, encounterBossMediumWeight:27, encounterBossLargeWeight:9, encounterBossJackpotWeight:3,
+    };
+    for (const [key,value] of Object.entries(defaults269)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 270;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 268) {
+    const defaults268 = {
+      encounterRewardScale:.50,
+      encounterGrade1HpMul:1.35, encounterGrade2HpMul:1.02, encounterGrade3HpMul:.86,
+      encounterGrade1AtkMul:8, encounterGrade2AtkMul:6, encounterGrade3AtkMul:5,
+      encounterBaseHitCap:120,
+      encounterChest1Min:.01, encounterChest1Max:2.02,
+      encounterChest2Min:.20, encounterChest2Max:2.40,
+      encounterChest3Min:.40, encounterChest3Max:3.40,
+      encounterChest4Min:.80, encounterChest4Max:5.60,
+      hero_fire_damage:105, hero_ice_damage:198, hero_electric_damage:88,
+      hero_poison_damage:109, hero_neutral_damage:91,
+    };
+    for (const [key,value] of Object.entries(defaults268)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 269;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 267) {
+    const defaults267 = {
+      encounterRewardScale:.54,
+      encounterBossSmallWeight:59, encounterBossMediumWeight:30, encounterBossLargeWeight:9, encounterBossJackpotWeight:2,
+      encounterBossSmallMin:.10, encounterBossSmallMax:.35,
+      encounterBossMediumMin:1.50, encounterBossMediumMax:3.40,
+      encounterBossLargeMin:4.00, encounterBossLargeMax:6.00,
+      encounterBossJackpotMin:6.00, encounterBossJackpotMax:26.00,
+    };
+    for (const [key,value] of Object.entries(defaults267)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 268;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 266) {
+    if (input.encounterRewardScale === undefined || Number(input.encounterRewardScale) === .50) next.encounterRewardScale = DEFAULT_PARAMS.encounterRewardScale;
+    next.encounterRewardRevision = 267;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 265) {
+    const defaults265 = {
+      encounterRewardScale:.86,
+      encounterChest1Min:.30, encounterChest1Max:1.77,
+      encounterChest2Min:.35, encounterChest2Max:1.80,
+      encounterChest3Min:.66, encounterChest3Max:1.90,
+      encounterChest4Min:.70, encounterChest4Max:2.00,
+      encounterBossSmallWeight:70, encounterBossMediumWeight:22,
+      encounterBossLargeWeight:6.5, encounterBossJackpotWeight:1.5,
+      encounterBossSmallMin:.10, encounterBossSmallMax:.40,
+      encounterBossMediumMin:1.30, encounterBossMediumMax:2.30,
+      encounterBossLargeMin:3.50, encounterBossLargeMax:5.50,
+    };
+    for (const [key,value] of Object.entries(defaults265)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 266;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 264) {
+    const defaults264 = {
+      encounterGrade1HpMul:1.45, encounterGrade2HpMul:.98, encounterGrade3HpMul:.90,
+      encounterGrade1AtkMul:6, encounterGrade2AtkMul:4.5, encounterGrade3AtkMul:3.5,
+      encounterBaseHitCap:100,
+    };
+    for (const [key,value] of Object.entries(defaults264)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 265;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 263) {
+    if (input.encounterRewardScale === undefined || Number(input.encounterRewardScale) === .85) {
+      next.encounterRewardScale = DEFAULT_PARAMS.encounterRewardScale;
+    }
+    next.encounterRewardRevision = 264;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 262) {
+    const defaults262 = {
+      hero_fire_damage:140,
+      hero_ice_damage:220,
+      hero_electric_damage:88,
+      hero_poison_damage:84,
+      hero_neutral_damage:70,
+    };
+    for (const [key,value] of Object.entries(defaults262)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 263;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 261) {
+    const defaults261 = {
+      encounterRewardScale:.86, encounterPotEntryPower:.70,
+      encounterBossSmallWeight:73, encounterBossMediumWeight:19, encounterBossLargeWeight:7.5, encounterBossJackpotWeight:.5,
+      encounterBossSmallMin:.15, encounterBossSmallMax:.45,
+      encounterBossMediumMin:1.30, encounterBossMediumMax:2.30,
+      encounterBossLargeMin:3.50, encounterBossLargeMax:5.50,
+      encounterBossJackpotMin:18.00, encounterBossJackpotMax:42.00,
+      encounterBossDepthGrowth:.08, encounterBossDepthGrowthCap:1.25,
+    };
+    for (const [key,value] of Object.entries(defaults261)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 262;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 260) {
+    const defaults260 = {
+      encounterRewardScale:.81,
+      encounterBossSmallWeight:76, encounterBossMediumWeight:19, encounterBossLargeWeight:5,
+      encounterBossSmallMin:.50, encounterBossSmallMax:.75,
+      encounterBossMediumMin:1.30, encounterBossMediumMax:2.20,
+      encounterBossLargeMin:4.00, encounterBossLargeMax:6.00,
+      encounterBossDepthGrowth:.25,
+    };
+    for (const [key,value] of Object.entries(defaults260)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    for (const key of ["encounterPotEntryPower", "encounterBossJackpotWeight", "encounterBossJackpotMin", "encounterBossJackpotMax", "encounterBossDepthGrowthCap"]) {
+      if (input[key] === undefined) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 261;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 259) {
+    const defaults259 = {
+      encounterRewardScale:.82,
+      encounterBossSmallWeight:85, encounterBossMediumWeight:13, encounterBossLargeWeight:2,
+      encounterBossSmallMin:.75, encounterBossSmallMax:1.05,
+      encounterBossMediumMin:1.30, encounterBossMediumMax:2.00,
+      encounterBossLargeMin:2.00, encounterBossLargeMax:3.00,
+      encounterBossDepthGrowth:.10,
+    };
+    for (const [key,value] of Object.entries(defaults259)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 260;
+    return migrateEncounterRewardParams(next);
+  }
   if (revision === 258) {
     const defaults258 = {
       encounterRewardScale:.94,
@@ -957,7 +1153,7 @@ function migrateEncounterRewardParams(input) {
       if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
     }
     next.encounterRewardRevision = 259;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 257) {
     const defaults257 = {
@@ -2278,6 +2474,7 @@ function cleanParams(input={}) {
   next.encounterRtpTargetMin = clamp(next.encounterRtpTargetMin, 0, 1);
   next.encounterRtpTargetMax = clamp(next.encounterRtpTargetMax, next.encounterRtpTargetMin, 1);
   next.encounterRewardScale = clamp(next.encounterRewardScale, .01, 5);
+  next.encounterPotEntryPower = clamp(next.encounterPotEntryPower, 0, 1);
   next.encounterChestUpgradeChance = clamp(next.encounterChestUpgradeChance, 0, 1);
   next.encounterHpDepthGrowth = clamp(next.encounterHpDepthGrowth, 0, .5);
   next.encounterHpDepthCap = clamp(next.encounterHpDepthCap, 1, 5);
@@ -2287,12 +2484,14 @@ function cleanParams(input={}) {
     next[`encounterGrade${grade}HpMul`] = clamp(next[`encounterGrade${grade}HpMul`], .5, 3);
     next[`encounterGrade${grade}AtkMul`] = clamp(next[`encounterGrade${grade}AtkMul`], 1, 20);
   }
-  ["Chest1", "Chest2", "Chest3", "Chest4", "BossChest", "BossSmall", "BossMedium", "BossLarge"].forEach(part => {
-    next[`encounter${part}Min`] = clamp(next[`encounter${part}Min`], .01, 20);
-    next[`encounter${part}Max`] = clamp(next[`encounter${part}Max`], next[`encounter${part}Min`], 20);
+  ["Chest1", "Chest2", "Chest3", "Chest4", "BossChest", "BossSmall", "BossMedium", "BossLarge", "BossJackpot"].forEach(part => {
+    const ceiling = part === "BossJackpot" ? 50 : 20;
+    next[`encounter${part}Min`] = clamp(next[`encounter${part}Min`], .01, ceiling);
+    next[`encounter${part}Max`] = clamp(next[`encounter${part}Max`], next[`encounter${part}Min`], ceiling);
   });
-  ["Small", "Medium", "Large"].forEach(part => { next[`encounterBoss${part}Weight`] = Math.max(0, next[`encounterBoss${part}Weight`]); });
+  ["Small", "Medium", "Large", "Jackpot"].forEach(part => { next[`encounterBoss${part}Weight`] = Math.max(0, next[`encounterBoss${part}Weight`]); });
   next.encounterBossDepthGrowth = clamp(next.encounterBossDepthGrowth, 0, 1);
+  next.encounterBossDepthGrowthCap = clamp(next.encounterBossDepthGrowthCap, 1, 5);
   next.encounterRushSpeedCap = clamp(next.encounterRushSpeedCap, 40, 96);
   next.encounterTankSingleDamageMul = clamp(next.encounterTankSingleDamageMul, .5, 3);
   next.encounterTankAreaDamageMul = clamp(next.encounterTankAreaDamageMul, .1, 1);
@@ -2606,8 +2805,8 @@ function parameterLogic(key) {
   if (key === "moneyMul") return "遭遇戰：整波 POT 原值 = BET × 寶箱區間抽籤 × 本值 × 寶箱整體係數；小數跨波累積後取整";
   if (key === "encounterChestUpgradeChance") return "每張一般牌獨立以此機率升一級寶箱；不改危險度，最高第4級，不含BOSS專屬寶箱";
   if (key.startsWith("encounterRtpTarget")) return "只用於檢核；實測 RTP = 實際 Collect 總額 / 實際投入總額";
-  if (/^encounter(?:Chest\d|BossChest)/.test(key) || key === "encounterRewardScale") return "候選規則：整波 POT = floor(BET × 區間抽籤 × moneyMul × encounterRewardScale + 上波小數餘額)，餘額留到下一波";
-  if (key.startsWith("encounterBoss")) return "BOSS 增幅 = max(0.1, round(權重抽籤區間值 × 深度成長, 0.1))";
+  if (/^encounter(?:Chest\d|BossChest)/.test(key) || ["encounterRewardScale","encounterPotEntryPower"].includes(key)) return "候選規則：整波 POT = floor(BET × 區間抽籤 × moneyMul × encounterRewardScale ÷ 當下累積倍率 ^ encounterPotEntryPower + 上波小數餘額)，餘額留到下一波";
+  if (key.startsWith("encounterBoss")) return "BOSS 增幅 = max(0.1, round(權重抽籤區間值 × min(深度成長, 成長上限), 0.1))";
   if (key.startsWith("encounter")) return "僅遭遇戰原型使用；由 game.js 同名參數讀取";
   const modern = {
     mathCarryShapeEnabled:"啟用時：先算 fundedMean，再做等期望值兩點分布；E[重排彩金 | 當下狀態] = fundedMean，不額外增加RTP",
@@ -4298,8 +4497,8 @@ function applyToGame() {
     ui.status.textContent = "未更新：金錢係數範圍為 0–5，經驗係數範圍為 0.1–5。";
     return;
   }
-  if (["Small", "Medium", "Large"].every(part => params[`encounterBoss${part}Weight`] === 0)) {
-    ui.status.textContent = "未更新：BOSS 三組增幅權重不可全部為零。";
+  if (["Small", "Medium", "Large", "Jackpot"].every(part => params[`encounterBoss${part}Weight`] === 0)) {
+    ui.status.textContent = "未更新：BOSS 四組增幅權重不可全部為零。";
     return;
   }
   if ([1,2,3].some(tier => ["Min","Max"].some(part => params[`encounterChest${tier}${part}`] >= params[`encounterChest${tier + 1}${part}`]))) {
@@ -4340,15 +4539,12 @@ ui.import.addEventListener("click", () => {
       const unknown=Object.keys(imported).filter(key=>!Object.hasOwn(params,key));
       if(unknown.length) throw new Error(`不支援的設定欄位：${unknown.slice(0,3).join("、")}`);
       let candidate={...params,...imported};
-      let error=validateCurrentDraft(candidate);
+      const currentRewardRevision=Number(DEFAULT_PARAMS.encounterRewardRevision)||0;
+      const legacyRewards=currentImportNeedsRewardMigration(imported,currentRewardRevision);
+      if(legacyRewards) candidate=migrateEncounterRewardParams(candidate);
+      const error=validateCurrentDraft(candidate);
       if(error) throw new Error(error);
-      const legacyRewards=Object.hasOwn(imported,"balanceRevision")&&(Number(imported.encounterRewardRevision)||0)<259;
-      if(legacyRewards) {
-        candidate={...params,...migrateEncounterRewardParams(imported)};
-        error=validateCurrentDraft(candidate);
-        if(error) throw new Error(error);
-      }
-      params=cleanParams(candidate); build(); ui.status.textContent=legacyRewards?"舊版遭遇戰設定已轉換為 259 草稿，尚未套用到遊戲。":"已匯入草稿，尚未套用到遊戲。";
+      params=cleanParams(candidate); build(); ui.status.textContent=legacyRewards?`舊版遭遇戰設定已轉換為 ${currentRewardRevision} 草稿，尚未套用到遊戲。`:"已匯入草稿，尚未套用到遊戲。";
     } else { params=cleanParams(imported); build(); applyToGame(); }
   } catch(error) { ui.status.textContent = `沒有匯入：${error.message}`; }
 });

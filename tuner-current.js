@@ -45,7 +45,7 @@ function buildCurrentTuner() {
   const metadata=new Map([...commonRows,...encounterRows,...bossDifficultyRows,...HERO_GLOBAL_ROWS[0][2]].map(row=>[row[0],row]));
   const matrix=(title,headers,rows,note="",id="")=>currentMatrixSection(title,headers,rows,metadata,note,id);
   const advanced=(title,content,id)=>`<details class="technical-details advanced-settings" id="${id}"><summary>${escapeHtml(title)}</summary>${content}</details>`;
-  const bossParts=[["Small","小增幅"],["Medium","中增幅"],["Large","大增幅"]];
+  const bossParts=[["Small","小增幅"],["Medium","中增幅"],["Large","大增幅"],["Jackpot","頭獎增幅"]];
   put("combatSettings",
     matrix("卡牌難度倍率",["危險度","血量修正 ×","攻擊修正 ×"],[1,2,3].map((grade)=>[
       ["普通","進階","危險"][grade-1],`encounterGrade${grade}HpMul`,`encounterGrade${grade}AtkMul`]),"修正會乘上卡牌原本的基礎值，並不是完整難度或固定通關率。","combatGradeMatrix")+
@@ -63,13 +63,15 @@ function buildCurrentTuner() {
     matrix("各級獎金倍率",["寶箱等級","下限 × BET","上限 × BET"],[1,2,3,4].map(tier=>[
       ["普通","進階","稀有","傳說"][tier-1],`encounterChest${tier}Min`,`encounterChest${tier}Max`]),"這是整波獎金的抽取區間，還要乘整體金錢係數；不是開箱單獨給的金額。","chestRangeMatrix")+
     matrix("整波獎金縮放",["設定","金額倍率 ×"],[["整波獎金係數","encounterRewardScale"]])+
-    advanced("進階金錢設定",matrix("額外全域倍率",["設定","金額倍率 ×"],[["全部金錢再乘","moneyMul"]],"與整波獎金係數相乘；保持 1 就不追加調整。"),"chestAdvanced"));
+    advanced("進階金錢設定",
+      matrix("額外全域倍率",["設定","金額倍率 ×"],[["全部金錢再乘","moneyMul"]],"與整波獎金係數相乘；保持 1 就不追加調整。")+
+      matrix("王後 POT 入場",["設定","換算強度 %"],[["依當下累積倍率折算","encounterPotEntryPower"]],"0% 會完整重複放大後續 BET；100% 完全按當下倍率換算。V273 使用 100%，BET 變大仍會提高實得金額。"),"chestAdvanced"));
   put("bossSettings",
     matrix("倍率抽取權重",["增幅類型","抽取權重","實際機率"],bossParts.map(([key,label])=>[
       label,`encounterBoss${key}Weight`,{html:`<span class="probability-value" data-boss-probability="${key}">--</span>`}]),"機率由各組權重除以權重總和換算，不需要加總成 100。","bossWeightMatrix")+
     matrix("倍率增加區間",["增幅類型","最少增加（倍）","最多增加（倍）"],bossParts.map(([key,label])=>[
       label,`encounterBoss${key}Min`,`encounterBoss${key}Max`]),"這是第一隻 BOSS 的增幅；每次至少 +0.1，最後四捨五入到 0.1。","bossIncrementMatrix")+
-    matrix("後續 BOSS 倍率成長",["設定","每隻成長 %"],[["每往後一隻，增加首王增幅的","encounterBossDepthGrowth"]])+
+    matrix("後續 BOSS 倍率成長",["設定","每隻成長 %","最多放大 ×"],[["每往後一隻","encounterBossDepthGrowth","encounterBossDepthGrowthCap"]],"成長上限只限制後續王的序號加成，不限制頭獎區間。")+
     matrix("護衛小怪獎金",["來源","下限 × BET","上限 × BET"],[["護衛擊殺","encounterBossChestMin","encounterBossChestMax"]],"只分給護衛小怪。BOSS 專屬寶箱只開倍率，沒有通關金錢，也不給經驗。")+
     advanced("進階 BOSS 戰鬥設定",
       matrix("BOSS 難度倍率",["基礎難度","血量 ×","攻擊 ×","移速 ×"],BOSS_DIFFICULTY_TIERS.slice(1).map(([,label,,hp,atk,speed])=>[label,hp,atk,speed]))+
@@ -147,13 +149,19 @@ function refreshCurrentState() {
   const element=document.getElementById("currentDraftState");
   element.textContent=count?`${count} 項草稿變更，尚未套用`:"設定無未套用變更";
   element.classList.toggle("is-dirty",count>0);
-  const total=["Small","Medium","Large"].reduce((sum,key)=>sum+Math.max(0,Number(params[`encounterBoss${key}Weight`])||0),0);
+  const total=["Small","Medium","Large","Jackpot"].reduce((sum,key)=>sum+Math.max(0,Number(params[`encounterBoss${key}Weight`])||0),0);
   document.querySelectorAll("[data-boss-probability]").forEach(cell=>{
     const weight=Math.max(0,Number(params[`encounterBoss${cell.dataset.bossProbability}Weight`])||0);
     cell.textContent=params.encounterEconomyEnabled<.5?"未啟用":total?`${(weight/total*100).toFixed(2)}%`:"權重不可全為 0";
   });
   const inactive=params.encounterEconomyEnabled<.5;
   document.getElementById("currentBossModeNote").hidden=!inactive;
+}
+
+function currentImportNeedsRewardMigration(imported,currentRevision) {
+  if(!imported||typeof imported!=="object"||Array.isArray(imported)) return false;
+  const hasKnownVersion=Object.hasOwn(imported,"encounterRewardRevision")||Object.hasOwn(imported,"balanceRevision");
+  return hasKnownVersion&&(Number(imported.encounterRewardRevision)||0)<Math.max(0,Number(currentRevision)||0);
 }
 
 function validateCurrentDraft(candidate) {
@@ -165,10 +173,10 @@ function validateCurrentDraft(candidate) {
   }
   const pairs=[...Array.from({length:4},(_,i)=>[`encounterChest${i+1}Min`,`encounterChest${i+1}Max`]),
     ["encounterBossChestMin","encounterBossChestMax"],["encounterRtpTargetMin","encounterRtpTargetMax"],
-    ...["Small","Medium","Large"].map(tier=>[`encounterBoss${tier}Min`,`encounterBoss${tier}Max`]),
+    ...["Small","Medium","Large","Jackpot"].map(tier=>[`encounterBoss${tier}Min`,`encounterBoss${tier}Max`]),
     ...[1,2,3,4,5].map(band=>[`band_${band}_countMin`,`band_${band}_countMax`])];
   for(const [min,max] of pairs) if(candidate[min]>candidate[max]) return `${min} 不可大於上限。`;
-  if(["Small","Medium","Large"].every(tier=>candidate[`encounterBoss${tier}Weight`]===0)) return "BOSS 三組倍率權重不可全部為零。";
+  if(["Small","Medium","Large","Jackpot"].every(tier=>candidate[`encounterBoss${tier}Weight`]===0)) return "BOSS 四組倍率權重不可全部為零。";
   if([1,2,3].some(tier=>["Min","Max"].some(part=>candidate[`encounterChest${tier}${part}`]>=candidate[`encounterChest${tier+1}${part}`]))) return "高級寶箱的上下限須逐級提高；區間可以重疊。";
   return "";
 }

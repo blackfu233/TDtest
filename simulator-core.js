@@ -125,20 +125,38 @@
     if (state.wave >= config.maxWave) return true;
     if (config.collectPolicy === "boss1") return state.bossSeen >= 1;
     if (config.collectPolicy === "boss2") return state.bossSeen >= 2;
+    if (config.collectPolicy === "delayedBoss2") {
+      const hpRatio = state.hp / Math.max(1, baseHp);
+      const returnRatio = state.payout / Math.max(1, totalBet);
+      return state.bossSeen >= 2 || (state.bossSeen >= 1 && (returnRatio >= 2 || hpRatio <= .5));
+    }
+    if (config.collectPolicy === "tail5") {
+      const hpRatio = state.hp / Math.max(1, baseHp);
+      const returnRatio = state.payout / Math.max(1, totalBet);
+      return state.bossSeen >= 5 || (state.bossSeen >= 1 && hpRatio <= .5) || (state.bossSeen >= 2 && returnRatio >= 10);
+    }
     if (config.collectPolicy === "preboss") return (Number(state.bossDanger) || 0) >= 2 && state.wave > 0;
     if (config.collectPolicy === "wave5") return state.wave >= 5;
     if (config.collectPolicy === "wave10") return state.wave >= 10;
     if (config.collectPolicy === "wave20") return state.wave >= 20;
     if (config.collectPolicy === "profit") return state.payout > totalBet;
     if (config.collectPolicy === "adaptive") {
+      if (state.bossSeen < 1) return false;
       const hpRatio = state.hp / Math.max(1, baseHp);
       const returnRatio = state.payout / Math.max(1, totalBet);
       return hpRatio <= .35 || (state.bossSeen >= 1 && returnRatio >= 1.45) || ((Number(state.bossDanger) || 0) >= 2 && hpRatio < .62 && returnRatio >= .85);
     }
     if (["humanConservative","humanBalanced","humanChaser","humanGreedyChaser"].includes(config.collectPolicy)) {
+      if (state.bossSeen < 1) return false;
       return rng() < humanCollectProbability(config.collectPolicy,state,totalBet,baseHp,context);
     }
     return false;
+  }
+
+  function isRunCompleted(state) {
+    const bossTarget = Math.max(0, Number(state.bossTarget) || 0);
+    if (bossTarget > 0) return state.hp > 0 && state.bossSeen >= bossTarget;
+    return state.hp > 0 && state.wave >= 30;
   }
 
   function finalizeWaveRecord(record, state, cleared, ticket=null) {
@@ -146,6 +164,9 @@
     record.finished = true;
     record.cleared = !!cleared;
     record.hp = Math.max(0, state.hp);
+    record.damageTaken = Math.max(0, (Number(record.startHp) || 0) - record.hp);
+    record.damaged = record.damageTaken > 0;
+    record.died = !cleared && record.hp <= 0;
     record.pot = state.pot;
     record.payout = cleared ? state.payout : 0;
     record.basePayout = cleared ? Math.min(state.payout,state.pot) : 0;
@@ -183,6 +204,7 @@
     const rng = seededRandom(seed ^ 0x9e3779b9);
     const forcedHeroId = config.forcedHeroId || HERO_SAMPLE_ORDER[(seed >>> 0) % HERO_SAMPLE_ORDER.length];
     engine.setSeed(seed);
+    engine.setEncounterPolicy?.(config.encounterPolicy || "adaptive");
     engine.resetRun(playerWallet, betIndex);
     const fullSnapshot = () => engine.snapshot();
     const liteSnapshot = () => engine.snapshotLite ? engine.snapshotLite() : engine.snapshot();
@@ -252,6 +274,7 @@
         endingWallet:Math.max(0,Number(state.wallet) || 0) + payout,
         collected:true,
         completed:!!isCompleted,
+        reason:isCompleted ? "complete" : "collect",
         alreadySettled:!!isCompleted,
         mathPoolAtDecision:copy(fullState.mathPool || null),
         mathPoolCapHits:Math.max(0,Number(fullState.mathPoolCapHits)||0),
@@ -319,10 +342,21 @@
 
       if (state.wave > activeWave) {
         activeWave = state.wave;
-        const boss = !!state.spawnBoss;
         const waveStartState = fullSnapshot();
+        const boss = !!waveStartState.encounter?.boss || !!state.spawnBoss;
         activeWaveRecord = {
           wave:activeWave,boss,cumulativeBet:totalBet,waveBet:pendingWaveBet?.bet || state.currentBet,
+          startHp:Math.max(0,Number(waveStartState.hp) || 0),
+          lane:waveStartState.encounter?.lane || (boss ? "boss" : "unknown"),
+          formation:waveStartState.encounter?.formation || (boss ? "boss" : "unknown"),
+          encounterAttr:waveStartState.encounter?.attr || waveStartState.currentWaveAttr || "neutral",
+          threat:Number(waveStartState.encounter?.threat) || (boss ? 4 : 0),
+          reward:Number(waveStartState.encounter?.reward) || (boss ? 4 : 0),
+          attributeState:waveStartState.encounter?.attributeState || "even",
+          roleState:waveStartState.encounter?.roleState || "even",
+          attributePower:Number(waveStartState.encounter?.attributePower) || 1,
+          roleReadiness:Number(waveStartState.encounter?.roleReadiness) || 0,
+          rewardBudget:Math.max(0,Number(waveStartState.waveReward?.budget) || 0),
           beforePayout:pendingWaveBet?.beforePayout || 0,beforeBasePayout:pendingWaveBet?.beforeBasePayout || 0,
           beforeBossPayout:pendingWaveBet?.beforeBossPayout || 0,
           modelClearChance:Number(waveStartState.mathTicket?.clearChance) || 0,
@@ -338,7 +372,7 @@
           modelSingleShare:Number(waveStartState.mathTicket?.singleShare) || 0,
           modelAreaShare:Number(waveStartState.mathTicket?.areaShare) || 0,
           modelControlShare:Number(waveStartState.mathTicket?.controlShare) || 0,
-          finished:false,cleared:false,hp:0,pot:0,payout:0,basePayout:0,bossPayout:0,marginalPayout:0,
+          finished:false,cleared:false,hp:0,damageTaken:0,damaged:false,died:false,pot:0,payout:0,basePayout:0,bossPayout:0,marginalPayout:0,
         };
         pendingWaveBet = null;
         waveRecords.push(activeWaveRecord);
@@ -415,13 +449,13 @@
       }
 
       if (state.over) {
-        if (activeWaveRecord && !activeWaveRecord.finished) finalizeWaveRecord(activeWaveRecord, state, state.wave >= 30 && state.hp > 0, engine.mathTicket?.());
-        completed = state.wave >= 30 && state.hp > 0;
+        completed = isRunCompleted(state);
+        if (activeWaveRecord && !activeWaveRecord.finished) finalizeWaveRecord(activeWaveRecord, state, completed, engine.mathTicket?.());
         state = fullSnapshot();
         if (completed && !decisionOutcome) captureDecision(state,true);
         return finishTrajectory({
           payout:0,bets:totalBet,wave:state.wave,hp:state.hp,pot:state.pot,endingWallet:state.wallet,
-          collected:false,completed:false,bossEvents,hero:state.hero || null,towers:state.towers || [],
+          collected:false,completed:false,reason:state.hp <= 0 ? "defeat" : "ended",bossEvents,hero:state.hero || null,towers:state.towers || [],
         });
       }
 
@@ -432,36 +466,36 @@
         if (!decisionOutcome && canCollect && (noNextBet || shouldCollect(
           config,state,totalBet,config.baseHp || 1000,rng,{bossJustKilled:lastBossKillWave === state.wave}
         ))) {
-          captureDecision(state,state.wave >= 30);
+          captureDecision(state,isRunCompleted(state));
           collected = true;
         }
-        if (decisionOutcome && config.stopAtCollectDecision) {
+        if (decisionOutcome && config.stopAtCollectDecision !== false) {
           return finishTrajectory({
             payout:0,bets:totalBet,wave:state.wave,hp:state.hp,pot:state.pot,endingWallet:state.wallet,
             collected:false,completed:false,bossEvents,hero:state.hero || null,towers:state.towers || [],
           });
         }
         if (state.wave >= config.maxWave) {
-          if (!decisionOutcome && canCollect) captureDecision(state,state.wave >= 30);
+          if (!decisionOutcome && canCollect) captureDecision(state,isRunCompleted(state));
           state = fullSnapshot();
           return finishTrajectory({
             payout:0,bets:totalBet,wave:state.wave,hp:state.hp,pot:state.pot,endingWallet:state.wallet,
-            collected:false,completed:false,bossEvents,hero:state.hero || null,towers:state.towers || [],
+            collected:false,completed:false,reason:"max-wave",bossEvents,hero:state.hero || null,towers:state.towers || [],
           });
         }
         if (noNextBet) {
           state = fullSnapshot();
           return finishTrajectory({
             payout:0,bets:totalBet,wave:state.wave,hp:state.hp,pot:state.pot,endingWallet:state.wallet,
-            collected:false,completed:false,bossEvents,hero:state.hero || null,towers:state.towers || [],
+            collected:false,completed:false,reason:"bankroll",bossEvents,hero:state.hero || null,towers:state.towers || [],
           });
         }
         if (!placeBet()) {
-          if (!decisionOutcome && canCollect) captureDecision(state,state.wave >= 30);
+          if (!decisionOutcome && canCollect) captureDecision(state,isRunCompleted(state));
           state = fullSnapshot();
           return finishTrajectory({
             payout:0,bets:totalBet,wave:state.wave,hp:state.hp,pot:state.pot,endingWallet:state.wallet,
-            collected:false,completed:false,bossEvents,hero:state.hero || null,towers:state.towers || [],
+            collected:false,completed:false,reason:"bankroll",bossEvents,hero:state.hero || null,towers:state.towers || [],
           });
         }
         continue;

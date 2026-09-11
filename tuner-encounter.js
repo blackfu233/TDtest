@@ -23,7 +23,10 @@
       const tier = id === "boss" ? 4 : id;
       const prefix = id === "boss" ? "encounterBossChest" : `encounterChest${tier}`;
       const [low,high] = id === "boss" || balanced ? [params[`${prefix}Min`],params[`${prefix}Max`]] : rules.unbalancedBands[tier];
-      const potLow = bet*low*scale, potHigh = bet*high*scale;
+      const cashLow = bet*low*scale, cashHigh = bet*high*scale;
+      const entryPrice = balanced ? Math.pow(multiplier,clamp(n(params.encounterPotEntryPower,1),0,1)) : 1;
+      const potLow = cashLow/entryPrice;
+      const potHigh = cashHigh/entryPrice;
       const epsilon=Number.EPSILON*Math.max(1,Math.abs(potLow),Math.abs(potHigh))*4;
       const coinMin = Math.max(0,Math.floor(potLow+epsilon)), coinMax = Math.max(0,Math.ceil(potHigh-epsilon));
       const clearShare=id==="boss"?0:rules.clearShare;
@@ -54,13 +57,14 @@
         atk:f.atkMul*ramp(lane.atkMul)*params[`encounterGrade${lane.threat}AtkMul`],
         speed:f.speedMul*lane.speedMul,range:f.range};
     }));
-    const bossWeights = ["Small","Medium","Large"].map(part=>Math.max(0,n(params[`encounterBoss${part}Weight`])));
+    const bossParts = ["Small","Medium","Large","Jackpot"];
+    const bossWeights = bossParts.map(part=>Math.max(0,n(params[`encounterBoss${part}Weight`])));
     const totalBossWeight = bossWeights.reduce((a,b)=>a+b,0);
     return {bet,multiplier,wave,scale,expScale,balanced,chests,laneRewards,formations,
       experience:[1,2,3,4].map(grade=>({grade,killExpFactor:rules.killExpFactors[grade]*expScale})),
       bossSchedule:Array.from({length:rules.boss.total},(_,i)=>({ordinal:i+1,min:(i+1)*rules.boss.min,max:(i+1)*rules.boss.max})),
       bossHazard:Array.from({length:rules.boss.max-rules.boss.min+1},(_,i)=>({wave:rules.boss.min+i,probability:1/(rules.boss.max-rules.boss.min-i+1)})),
-      bossTiers:["Small","Medium","Large"].map((part,i)=>({part,weight:bossWeights[i],
+      bossTiers:bossParts.map((part,i)=>({part,weight:bossWeights[i],
         probability:totalBossWeight ? bossWeights[i]/totalBossWeight : null,
         low:params[`encounterBoss${part}Min`],high:params[`encounterBoss${part}Max`]}))};
   }
@@ -77,7 +81,7 @@
     const tr = (cells,grade="") => `<tr${grade?` data-grade="${grade}"`:""}>${cells.map(cell=>`<td>${cell}</td>`).join("")}</tr>`;
     doc.getElementById("encounterSourceBuild").textContent=rules.build;
     doc.getElementById("encounterRewardBasis").textContent =
-      `當波 BET ${fmt(data.bet)}；全波 POT = BET × 區間抽籤 × 金錢係數 ${fmt(params.moneyMul)}${data.balanced?` × 寶箱係數 ${fmt(params.encounterRewardScale)}`:"（未校準玩法規則）"}。經驗係數 ${fmt(data.expScale)}。`;
+      `當波 BET ${fmt(data.bet)}；全波獎金基礎 = BET × 區間抽籤 × 金錢係數 ${fmt(params.moneyMul)}${data.balanced?` × 寶箱係數 ${fmt(params.encounterRewardScale)}；新增 POT 再除以當下累積倍率 ${fmt(data.multiplier)} 的 ${pct(params.encounterPotEntryPower)} 次方`:"（未校準玩法規則）"}。經驗係數 ${fmt(data.expScale)}。`;
     table("encounterRewardReferenceBody",data.chests.filter(c=>!current||c.id!=="boss").map(c=>tr(current?[
       c.id==="boss"?"BOSS 專屬":tierNames[c.tier],range(c.potLow,c.potHigh),fmt(c.meanPot),range(c.clearMin,c.clearMax),range(c.valueLow,c.valueHigh)
     ]:[
@@ -97,7 +101,7 @@
       table("currentBossEscortBody",[tr(["護衛擊殺",range(escort.potLow,escort.potHigh),fmt(escort.meanPot)]),tr(["BOSS 寶箱","只開倍率","金錢 0 / EXP 0"])]);
       const round=value=>Math.max(.1,Math.round(value*10)/10);
       table("currentBossIncrementBody",data.bossSchedule.map(b=>tr([
-        `第 ${b.ordinal} 隻`,...data.bossTiers.map(t=>{const growth=1+(b.ordinal-1)*params.encounterBossDepthGrowth;return data.balanced?`+${range(round(t.low*growth),round(t.high*growth))}`:"未啟用";})
+        `第 ${b.ordinal} 隻`,...data.bossTiers.map(t=>{const growth=Math.min(params.encounterBossDepthGrowthCap,1+(b.ordinal-1)*params.encounterBossDepthGrowth);return data.balanced?`+${range(round(t.low*growth),round(t.high*growth))}`:"未啟用";})
       ])));
     }
     const laneRewards=current?calculate(params,{bet:100}).laneRewards:data.laneRewards;
@@ -124,8 +128,8 @@
       a.label,pct(1/rules.boss.archetypes.length),a.hpMul,a.atkMul,a.speedMul,a.preludeMul,a.eliteCount,"BOSS 專屬 / 不給 EXP"
     ])));
     table("encounterBossRewardBody",!data.balanced ? ["<tr><td colspan=\"5\">未校準玩法模式：以下候選 BOSS 增幅權重不生效，沿用該模式的 BOSS 倍率規則。</td></tr>"] : data.bossTiers.map((b,i)=>tr([
-      ["小增幅","中增幅","大增幅"][i],b.weight,b.probability===null?"無效：權重皆零":pct(b.probability),
-      `+${range(b.low,b.high)}`,current?`每往後一隻，多加首王增幅的 ${pct(params.encounterBossDepthGrowth)}；最少 +0.1`:`增幅 × [1 + (序號 − 1) × ${fmt(params.encounterBossDepthGrowth)}]，四捨五入至 0.1，至少 +0.1`
+      ["小增幅","中增幅","大增幅","頭獎增幅"][i],b.weight,b.probability===null?"無效：權重皆零":pct(b.probability),
+      `+${range(b.low,b.high)}`,current?`每往後一隻，多加首王增幅的 ${pct(params.encounterBossDepthGrowth)}，最多放大 ${fmt(params.encounterBossDepthGrowthCap)} 倍；最少 +0.1`:`增幅 × min(${fmt(params.encounterBossDepthGrowthCap)}, 1 + (序號 − 1) × ${fmt(params.encounterBossDepthGrowth)})，四捨五入至 0.1，至少 +0.1`
     ])));
   }
 

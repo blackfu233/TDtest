@@ -8,6 +8,8 @@ const vm = require("node:vm");
 const project = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(project, "game.js"), "utf8");
 const worker = fs.readFileSync(path.join(project, "simulator-worker.js"), "utf8");
+const simulatorCore = fs.readFileSync(path.join(project, "simulator-core.js"), "utf8");
+const simulatorSource = fs.readFileSync(path.join(project, "simulator.js"), "utf8");
 const tuningRules = require("../encounter-tuning-data.js");
 const tuningView = require("../tuner-encounter.js");
 
@@ -17,6 +19,7 @@ function fixture(legacy=false) {
   const context = vm.createContext(sandbox);
   const run = code => vm.runInContext(code, context);
   run(worker.slice(0, worker.indexOf('importScripts("simulator-core.js')));
+  run(simulatorCore);
   run(legacy ? source.replace("const ENCOUNTER_DRAFT_PROTOTYPE = true;", "const ENCOUNTER_DRAFT_PROTOTYPE = false;") : source);
   run(`
     function setup(seed=751) {
@@ -45,8 +48,89 @@ function fixture(legacy=false) {
 
 test("encounter tuner fixed-rule snapshot matches the actual game source", () => {
   assert.deepEqual(tuningRules, require("../tools/export-encounter-tuning.cjs").readRules());
+  assert.deepEqual(tuningRules.defaultParams, fixture()("DEFAULT_PARAMS"));
   for (const probabilities of Object.values(tuningRules.formationProbabilities))
     assert.ok(Math.abs(Object.values(probabilities).reduce((a,b)=>a+b,0)-1)<1e-12);
+});
+
+test("simulator surfaces require the same build as the game engine", () => {
+  const build=fixture()("BUILD_VERSION");
+  const html=fs.readFileSync(path.join(project,"simulator.html"),"utf8");
+  const worker=fs.readFileSync(path.join(project,"simulator-worker.js"),"utf8");
+  const reportVersion=simulatorSource.match(/const SIMULATOR_REPORT_VERSION = "([^"]+)";/)?.[1];
+  assert.ok(html.includes(`index.html?headless=1&amp;v=${build}`));
+  assert.ok(html.includes(`simulator-core.js?v=${build}`));
+  assert.ok(reportVersion);
+  assert.ok(html.includes(`simulator.js?v=${reportVersion}`));
+  assert.ok(worker.includes(`simulator-core.js?v=${build}`));
+  assert.ok(worker.includes(`game.js?v=${build}`));
+  assert.ok(worker.includes('type:"ready", build:engine.build'));
+  assert.ok(simulatorSource.includes(`const SIMULATOR_BUILD_VERSION = "${build}"`));
+  assert.ok(simulatorSource.includes("message.build !== SIMULATOR_BUILD_VERSION"));
+  assert.ok(simulatorSource.includes("engineBuild:engine?.build || null"));
+});
+
+test("simulator uses the encounter RTP range and keeps 20k wave slices inspectable", () => {
+  const helpersStart=simulatorSource.indexOf("function configuredLegacyPoolRtp");
+  const helpersEnd=simulatorSource.indexOf("function stableParamString");
+  const depthStart=simulatorSource.indexOf("function buildDepthValidation");
+  const depthEnd=simulatorSource.indexOf("function buildConditionalWaveSliceInfo");
+  assert.ok(helpersStart>=0 && helpersEnd>helpersStart && depthStart>=0 && depthEnd>depthStart);
+  const sandbox={};
+  vm.runInNewContext(`${simulatorSource.slice(helpersStart,helpersEnd)}\n${simulatorSource.slice(depthStart,depthEnd)}`,sandbox);
+  const target=JSON.parse(JSON.stringify(sandbox.configuredRtpTarget({
+    encounterEconomyEnabled:1,encounterRtpTargetMin:.96,encounterRtpTargetMax:1,
+    mathPoolEnabled:1,mathTargetRtp:.95,
+  })));
+  assert.deepEqual(target,{min:.96,max:1,center:.98,mode:"range"});
+  assert.equal(sandbox.targetRangeDeviation(.98,target),0);
+  assert.equal(sandbox.targetRangeDeviation(.12,target),.84);
+  assert.equal(sandbox.targetRangeOverlapsInterval(.95,.97,target),true);
+  const waves=Array.from({length:30},(_,index)=>({wave:index+1,samples:667,checkpointRtp:.98,cashoutCi95:.01}));
+  const depth=JSON.parse(JSON.stringify(sandbox.buildDepthValidation(waves,20000,target,.01,false)));
+  assert.equal(depth.minimumSamples,100);
+  assert.equal(depth.waveCount,30);
+  assert.equal(depth.targetInIntervals,true);
+  assert.equal(depth.pass,true);
+});
+
+test("simulator ends the run at the first collect decision by default", () => {
+  const run=fixture();
+  const result=run(`TDSimCore.runOne(__tdHeadless,{
+    baseBet:100,baseHp:1000,startWallet:10000,maxWave:20,strategy:"balanced",
+    encounterPolicy:"adaptive",accuracy:1,collectPolicy:"wave5",rerollChance:0,walletMode:"independent"
+  },10000,90210)`);
+  assert.equal(result.reason,"collect");
+  assert.equal(result.wave,5);
+  assert.equal(result.waveRecords.length,5);
+  assert.equal(result.bets,500);
+});
+
+test("visual randomness cannot advance deterministic gameplay randomness", () => {
+  const run=fixture();
+  const values=run(`(()=>{
+    __tdHeadless.setSeed(987654321);const expected=gameplayRandom();
+    __tdHeadless.setSeed(987654321);for(let i=0;i<200;i++)fxRandom();
+    return {expected,actual:gameplayRandom()};
+  })()`);
+  assert.equal(values.actual,values.expected);
+});
+
+test("all published encounter strategies remain selectable in headless simulations", () => {
+  const run=fixture();
+  const result=run(`(()=>{
+    const choices=[
+      {lane:"steady",threat:1,reward:1,attr:"neutral",role:"area",pressureFactor:1},
+      {lane:"tactical",threat:2,reward:2,attr:"neutral",role:"control",pressureFactor:1},
+      {lane:"greedy",threat:3,reward:3,attr:"neutral",role:"single",pressureFactor:1}
+    ];
+    __tdHeadless.setSeed(908);const expectedRandom=pick(choices).lane;
+    __tdHeadless.setSeed(908);__tdHeadless.setEncounterPolicy("random");const random=encounterAutoChoice(choices).lane;
+    __tdHeadless.setEncounterPolicy("countered");const countered=encounterAutoChoice(choices).lane;
+    return {expectedRandom,random,countered};
+  })()`);
+  assert.equal(result.random,result.expectedRandom);
+  assert.equal(result.countered,"greedy");
 });
 
 test("encounter tuner payout ranges, clear money and EXP agree with game reward rolls", () => {
@@ -55,7 +139,7 @@ test("encounter tuner payout ranges, clear money and EXP agree with game reward 
     const params=run(`__tdHeadless.setParams(${JSON.stringify(candidate)}); __tdHeadless.params()`);
     const preview=tuningView.calculate(params,{bet:100,multiplier:2});
     for(const chest of preview.chests) {
-      const rewards=run(`Array.from({length:20},()=>rollEncounterWaveReward({reward:${chest.tier},boss:${chest.id==="boss"}},100))`);
+      const rewards=run(`state.bossAdd=1;Array.from({length:20},()=>rollEncounterWaveReward({reward:${chest.tier},boss:${chest.id==="boss"}},100))`);
       for(const reward of rewards) {
         assert.ok(reward.budget>=chest.coinMin && reward.budget<=chest.coinMax);
         assert.equal(reward.clearExp,chest.clearExp);
@@ -65,7 +149,7 @@ test("encounter tuner payout ranges, clear money and EXP agree with game reward 
     }
   }
   const preview=tuningView.calculate(run("__tdHeadless.setParams({}); __tdHeadless.params()"));
-  assert.ok(Math.abs(preview.chests[0].meanPot-84.87)<1e-10);
+  assert.ok(Math.abs(preview.chests[0].meanPot-34.64)<1e-10);
   assert.deepEqual(preview.chests.map(c=>c.clearExp),[0,0,0,0,0]);
   assert.deepEqual(preview.experience.map(c=>c.killExpFactor),[.8,1.05,1.42,1.9]);
 });
@@ -86,7 +170,7 @@ test("encounter tuner composition preview uses current wave and combat parameter
   }
 });
 
-test("259 retains broad prize ranges and a rising chest hierarchy", () => {
+test("273 retains broad prize ranges, profit chances and a rising chest hierarchy", () => {
   const run=fixture(),preview=tuningView.calculate(run("__tdHeadless.params()"),{bet:100});
   const samples=run(`[1,2,3,4].map(tier=>{
     const amounts=Array.from({length:2000},(_,i)=>{
@@ -97,12 +181,27 @@ test("259 retains broad prize ranges and a rising chest hierarchy", () => {
       profit:amounts.filter(v=>v>100).length/amounts.length,min:Math.min(...amounts),max:Math.max(...amounts)};
   })`);
   samples.forEach((sample,i)=>{
-    assert.ok(sample.min<100 && sample.max>100);
+    assert.ok(sample.max-sample.min>50);
     assert.ok(Math.abs(sample.mean-preview.chests[i].meanPot)<.025,JSON.stringify({sample,preview:preview.chests[i]}));
     assert.ok(Math.abs(sample.profit-preview.chests[i].profitChance)<.006);
     if(i) assert.ok(sample.mean>samples[i-1].mean);
   });
-  assert.deepEqual(preview.chests.slice(0,4).map(c=>[Math.round(c.potLow),Math.round(c.potHigh)]),[[25,145],[29,148],[54,156],[57,164]]);
+  assert.deepEqual(preview.chests.slice(0,4).map(c=>[Math.round(c.potLow),Math.round(c.potHigh)]),[[2,67],[15,105],[35,165],[69,260]]);
+});
+
+test("post-BOSS rewards use the published partial entry price without double counting the full multiplier", () => {
+  const run=fixture();
+  const result=run(`(()=>{
+    setup();Math.random=()=>.5;state.rewardRoundingCarry=0;
+    const base=rollEncounterWaveReward({reward:2,boss:false},100).budget;
+    state.bossAdd=2;state.rewardRoundingCarry=0;
+    const postBoss=rollEncounterWaveReward({reward:2,boss:false},100).budget;
+    return {base,postBoss,multiplier:1+state.bossAdd};
+  })()`);
+  assert.ok(result.postBoss<result.base,result);
+  assert.ok(Math.abs((result.postBoss*result.multiplier)/result.base-1)<.04,result);
+  const preview=tuningView.calculate(run("__tdHeadless.params()"),{bet:100,multiplier:3});
+  assert.ok(Math.abs(preview.chests[1].meanPot-59.9705/3)<1e-10);
 });
 
 test("chest upgrades change only money, never kill EXP or clear EXP", () => {
@@ -150,7 +249,7 @@ test("BOSS chest awards multiplier only; escorts keep money and clear adds neith
   assert.equal(result.finalPot,result.afterClear.pot);
 });
 
-test("259 preset migration is shared, scoped, idempotent and preserves custom prize groups", () => {
+test("273 preset migration is shared, scoped, idempotent and preserves custom prize groups", () => {
   const run=fixture(),defaults=run("__tdHeadless.params()");
   const tuner=fs.readFileSync(path.join(project,"tuner.js"),"utf8");
   const extract=text=>text.slice(text.indexOf("function migrateEncounterRewardParams("),text.indexOf("function migrateBossParams("));
@@ -188,14 +287,14 @@ test("259 preset migration is shared, scoped, idempotent and preserves custom pr
   assert.deepEqual(preset252,defaults);
   const custom252=migrate({...defaults,encounterRewardRevision:252,encounterRewardScale:.97});
   assert.equal(custom252.encounterRewardScale,.97);
-  assert.equal(custom252.encounterRewardRevision,259);
+  assert.equal(custom252.encounterRewardRevision,273);
   const preset253=migrate({...defaults,encounterRewardRevision:253,encounterRewardScale:1.04,
     hero_ice_damage:160,hero_ice_rate:.58,hero_ice_secondaryMul:.68,hero_neutral_damage:60});
   assert.deepEqual(preset253,defaults);
   const custom253=migrate({...preset253,encounterRewardRevision:253,encounterRewardScale:.96,hero_ice_damage:205});
   assert.equal(custom253.encounterRewardScale,.96);
   assert.equal(custom253.hero_ice_damage,205);
-  assert.equal(custom253.encounterRewardRevision,259);
+  assert.equal(custom253.encounterRewardRevision,273);
   const preset254=migrate({...defaults,encounterRewardRevision:254,
     encounterBossSmallWeight:88,encounterBossMediumWeight:11,encounterBossLargeWeight:1,
     encounterBossSmallMin:.10,encounterBossSmallMax:.40,encounterBossMediumMin:.50,encounterBossMediumMax:1,
@@ -204,7 +303,7 @@ test("259 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom254=migrate({...preset254,encounterRewardRevision:254,encounterBossMediumMax:1.25});
   assert.equal(custom254.encounterBossMediumMax,1.25);
   assert.equal(custom254.encounterBossSmallMax,defaults.encounterBossSmallMax);
-  assert.equal(custom254.encounterRewardRevision,259);
+  assert.equal(custom254.encounterRewardRevision,273);
   const preset255={...defaults,encounterRewardRevision:255,
     encounterRewardScale:.99,encounterHpDepthGrowth:.13,encounterHpDepthCap:3,encounterGrade2HpMul:1.05,encounterGrade3HpMul:1,
     encounterBossSmallWeight:70,encounterBossMediumWeight:23,encounterBossLargeWeight:7,
@@ -216,7 +315,7 @@ test("259 preset migration is shared, scoped, idempotent and preserves custom pr
   assert.equal(custom255.encounterGrade2HpMul,1.01);
   assert.equal(custom255.encounterHpDepthGrowth,defaults.encounterHpDepthGrowth);
   assert.equal(custom255.encounterMinionBaseHitLimit,1);
-  assert.equal(custom255.encounterRewardRevision,259);
+  assert.equal(custom255.encounterRewardRevision,273);
   const preset256={...defaults,encounterRewardRevision:256,
     encounterRewardScale:.93,encounterHpDepthGrowth:.075,encounterHpDepthCap:2,
     encounterGrade2HpMul:.95,encounterGrade3HpMul:.82,
@@ -226,14 +325,14 @@ test("259 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom256=migrate({...preset256,encounterChest3Max:2.20});
   assert.equal(custom256.encounterChest3Max,2.20);
   assert.equal(custom256.encounterGrade3HpMul,defaults.encounterGrade3HpMul);
-  assert.equal(custom256.encounterRewardRevision,259);
+  assert.equal(custom256.encounterRewardRevision,273);
   const preset257={...defaults,encounterRewardRevision:257,encounterRewardScale:.96,
     encounterChest1Min:.25,encounterChest1Max:1.75,encounterChest3Min:.60,encounterChest3Max:1.90};
   assert.deepEqual(migrate(preset257),defaults);
   const custom257=migrate({...preset257,encounterChest1Max:1.79});
   assert.equal(custom257.encounterChest1Max,1.79);
   assert.equal(custom257.encounterChest3Min,defaults.encounterChest3Min);
-  assert.equal(custom257.encounterRewardRevision,259);
+  assert.equal(custom257.encounterRewardRevision,273);
   const preset258={...defaults,encounterRewardRevision:258,encounterRewardScale:.94,
     encounterBossSmallWeight:90,encounterBossMediumWeight:9,encounterBossLargeWeight:1,
     encounterBossSmallMin:.10,encounterBossSmallMax:.18,encounterBossMediumMin:.30,encounterBossMediumMax:.60,
@@ -242,7 +341,95 @@ test("259 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom258=migrate({...preset258,encounterBossMediumMax:.75});
   assert.equal(custom258.encounterBossMediumMax,.75);
   assert.equal(custom258.encounterBossSmallMin,defaults.encounterBossSmallMin);
-  assert.equal(custom258.encounterRewardRevision,259);
+  assert.equal(custom258.encounterRewardRevision,273);
+  const preset259={...defaults,encounterRewardRevision:259,encounterRewardScale:.82,
+    encounterBossSmallWeight:85,encounterBossMediumWeight:13,encounterBossLargeWeight:2,
+    encounterBossSmallMin:.75,encounterBossSmallMax:1.05,encounterBossMediumMin:1.30,encounterBossMediumMax:2,
+    encounterBossLargeMin:2,encounterBossLargeMax:3,encounterBossDepthGrowth:.10};
+  assert.deepEqual(migrate(preset259),defaults);
+  const custom259=migrate({...preset259,encounterBossLargeMax:3.5});
+  assert.equal(custom259.encounterBossLargeMax,3.5);
+  assert.equal(custom259.encounterBossSmallWeight,defaults.encounterBossSmallWeight);
+  assert.equal(custom259.encounterRewardRevision,273);
+  const preset260={...defaults,encounterRewardRevision:260,encounterRewardScale:.81,
+    encounterBossSmallWeight:76,encounterBossMediumWeight:19,encounterBossLargeWeight:5,
+    encounterBossSmallMin:.50,encounterBossSmallMax:.75,encounterBossMediumMin:1.30,encounterBossMediumMax:2.20,
+    encounterBossLargeMin:4,encounterBossLargeMax:6,encounterBossDepthGrowth:.25};
+  assert.deepEqual(migrate(preset260),defaults);
+  const custom260=migrate({...preset260,encounterBossMediumMax:2.6});
+  assert.equal(custom260.encounterBossMediumMax,2.6);
+  assert.equal(custom260.encounterBossJackpotWeight,defaults.encounterBossJackpotWeight);
+  assert.equal(custom260.encounterRewardRevision,273);
+  const preset261={...defaults,encounterRewardRevision:261,encounterRewardScale:.86,encounterPotEntryPower:.70,
+    encounterBossSmallWeight:73,encounterBossMediumWeight:19,encounterBossLargeWeight:7.5,encounterBossJackpotWeight:.5,
+    encounterBossSmallMin:.15,encounterBossSmallMax:.45,encounterBossMediumMin:1.30,encounterBossMediumMax:2.30,
+    encounterBossLargeMin:3.50,encounterBossLargeMax:5.50,encounterBossJackpotMin:18,encounterBossJackpotMax:42,
+    encounterBossDepthGrowth:.08,encounterBossDepthGrowthCap:1.25};
+  assert.deepEqual(migrate(preset261),defaults);
+  const custom261=migrate({...preset261,encounterBossJackpotMax:30});
+  assert.equal(custom261.encounterBossJackpotMax,30);
+  assert.equal(custom261.encounterBossSmallWeight,defaults.encounterBossSmallWeight);
+  assert.equal(custom261.encounterRewardRevision,273);
+  const preset262={...defaults,encounterRewardRevision:262,
+    hero_fire_damage:140,hero_ice_damage:220,hero_electric_damage:88,hero_poison_damage:84,hero_neutral_damage:70};
+  assert.deepEqual(migrate(preset262),defaults);
+  const custom262=migrate({...preset262,hero_fire_damage:126});
+  assert.equal(custom262.hero_fire_damage,126);
+  assert.equal(custom262.hero_neutral_damage,defaults.hero_neutral_damage);
+  assert.equal(custom262.encounterRewardRevision,273);
+  const preset263={...defaults,encounterRewardRevision:263,encounterRewardScale:.85};
+  assert.deepEqual(migrate(preset263),defaults);
+  const custom263=migrate({...preset263,encounterRewardScale:.83});
+  assert.equal(custom263.encounterRewardScale,.83);
+  assert.equal(custom263.encounterRewardRevision,273);
+  const preset264={...defaults,encounterRewardRevision:264,
+    encounterGrade1HpMul:1.45,encounterGrade2HpMul:.98,encounterGrade3HpMul:.90,
+    encounterGrade1AtkMul:6,encounterGrade2AtkMul:4.5,encounterGrade3AtkMul:3.5,encounterBaseHitCap:100};
+  assert.deepEqual(migrate(preset264),defaults);
+  const custom264=migrate({...preset264,encounterGrade2AtkMul:5.25});
+  assert.equal(custom264.encounterGrade1AtkMul,defaults.encounterGrade1AtkMul);
+  assert.equal(custom264.encounterGrade2AtkMul,5.25);
+  assert.equal(custom264.encounterRewardRevision,273);
+  const preset265={...defaults,encounterRewardRevision:265,
+    encounterRewardScale:.86,
+    encounterChest1Min:.30,encounterChest1Max:1.77,encounterChest2Min:.35,encounterChest2Max:1.80,
+    encounterChest3Min:.66,encounterChest3Max:1.90,encounterChest4Min:.70,encounterChest4Max:2.00,
+    encounterBossSmallWeight:70,encounterBossMediumWeight:22,encounterBossLargeWeight:6.5,encounterBossJackpotWeight:1.5,
+    encounterBossSmallMin:.10,encounterBossSmallMax:.40,encounterBossMediumMin:1.30,encounterBossMediumMax:2.30,
+    encounterBossLargeMin:3.50,encounterBossLargeMax:5.50};
+  assert.deepEqual(migrate(preset265),defaults);
+  const custom265=migrate({...preset265,encounterChest3Max:3.25,encounterBossMediumMax:3.55});
+  assert.equal(custom265.encounterChest3Max,3.25);
+  assert.equal(custom265.encounterBossMediumMax,3.55);
+  assert.equal(custom265.encounterRewardRevision,273);
+  const preset266=migrate({...defaults,encounterRewardRevision:266,encounterRewardScale:.50});
+  assert.deepEqual(preset266,defaults);
+  const custom266=migrate({...preset266,encounterRewardRevision:266,encounterRewardScale:.51});
+  assert.equal(custom266.encounterRewardScale,.51);
+  assert.equal(custom266.encounterRewardRevision,273);
+  const preset267=migrate({...defaults,encounterRewardRevision:267,encounterRewardScale:.54,
+    encounterBossSmallWeight:59,encounterBossMediumWeight:30,encounterBossLargeWeight:9,encounterBossJackpotWeight:2,
+    encounterBossSmallMin:.10,encounterBossSmallMax:.35,encounterBossMediumMin:1.50,encounterBossMediumMax:3.40,
+    encounterBossLargeMin:4,encounterBossLargeMax:6,encounterBossJackpotMin:6,encounterBossJackpotMax:26});
+  assert.deepEqual(preset267,defaults);
+  const custom267=migrate({...preset267,encounterRewardRevision:267,encounterBossJackpotMax:27});
+  assert.equal(custom267.encounterBossJackpotMax,27);
+  assert.equal(custom267.encounterRewardRevision,273);
+  const preset270=migrate({...defaults,encounterRewardRevision:270,
+    encounterBossLargeMax:7,encounterBossJackpotMax:28,hero_electric_damage:82,hero_neutral_damage:103});
+  assert.deepEqual(preset270,defaults);
+  const custom270=migrate({...preset270,encounterRewardRevision:270,encounterBossJackpotMax:24});
+  assert.equal(custom270.encounterBossJackpotMax,24);
+  assert.equal(custom270.encounterBossLargeMax,defaults.encounterBossLargeMax);
+  assert.equal(custom270.hero_neutral_damage,defaults.hero_neutral_damage);
+  assert.equal(custom270.encounterRewardRevision,273);
+  const preset271=migrate({...defaults,encounterRewardRevision:271,
+    encounterBossMediumMax:4,encounterBossLargeMax:6.5,encounterBossJackpotMax:22});
+  assert.deepEqual(preset271,defaults);
+  const custom271=migrate({...preset271,encounterRewardRevision:271,encounterBossMediumMax:4.2});
+  assert.equal(custom271.encounterBossMediumMax,4.2);
+  assert.equal(custom271.encounterBossLargeMax,defaults.encounterBossLargeMax);
+  assert.equal(custom271.encounterRewardRevision,273);
 });
 
 test("regular enemies breach once without a kill reward while BOSS attacks remain persistent", () => {
@@ -279,21 +466,21 @@ test("BOSS schedule preview follows the actual random 7-14 encounter rule", () =
 
 test("BOSS increment tiers separate common, meaningful and jackpot outcomes", () => {
   const run=fixture();
-  const configured=run("[params.encounterBossSmallWeight,params.encounterBossMediumWeight,params.encounterBossLargeWeight,params.encounterBossDepthGrowth]");
-  const values=run(`["Small","Medium","Large"].map(part=>{
-    for(const key of ["Small","Medium","Large"]) params["encounterBoss"+key+"Weight"]=key===part?1:0;
+  const configured=run("[params.encounterBossSmallWeight,params.encounterBossMediumWeight,params.encounterBossLargeWeight,params.encounterBossJackpotWeight,params.encounterBossDepthGrowth,params.encounterBossDepthGrowthCap]");
+  const values=run(`["Small","Medium","Large","Jackpot"].map(part=>{
+    for(const key of ["Small","Medium","Large","Jackpot"]) params["encounterBoss"+key+"Weight"]=key===part?1:0;
     const draws=Array.from({length:1001},(_,i)=>{Math.random=()=>i/1001;return rollEncounterBossAdd(1)});
     return [...new Set(draws)].sort((a,b)=>a-b);
   })`);
-  assert.deepEqual(values.map(v=>[v[0],v.at(-1),v.length]),[[.8,1,3],[1.3,2,8],[2,3,11]]);
-  assert.deepEqual(configured,[85,13,2,.10]);
+  assert.deepEqual(values.map(v=>[v[0],v.at(-1),v.length]),[[.1,.3,3],[1,3.2,23],[3.5,6,26],[7,24,171]]);
+  assert.deepEqual(configured,[63,27,8,2,.08,1.25]);
 });
 
 test("prototype has a distinct economic identity; legacy math remains available outside prototype", () => {
   const run = fixture();
   assert.equal(run("certifiedMathEnabled()"), false);
   assert.equal(run("__tdHeadless.params().mathModelEnabled"), 0);
-  assert.equal(run("__tdHeadless.snapshot().economyMode"), "encounter-rtp-candidate-259");
+  assert.equal(run("__tdHeadless.snapshot().economyMode"), "encounter-rtp-candidate-273");
   assert.deepEqual(run("[params.encounterRtpTargetMin, params.encounterRtpTargetMax]"), [.96, 1]);
   const legacy = fixture(true);
   assert.equal(legacy("certifiedMathEnabled()"), true);
@@ -307,6 +494,10 @@ test("encounter tuning defaults match the game and external updates wait until t
   const tunerDefaults = JSON.parse(JSON.stringify(vm.runInNewContext(`(${block[1]})`)));
   const run = fixture();
   assert.deepEqual(run("ENCOUNTER_PARAM_DEFAULTS"), tunerDefaults);
+  const heroSource=tuner.slice(tuner.indexOf("const HERO_TUNING"),tuner.indexOf("const HERO_FIELDS"));
+  const tunerHeroes=vm.runInNewContext(`${heroSource};HERO_TUNING`);
+  tunerHeroes.forEach(([id,,,,base])=>Object.entries(base).forEach(([field,value])=>
+    assert.equal(value,tuningRules.defaultParams[`hero_${id}_${field}`],`${id}.${field}`)));
   const result = run(`(() => {
     setup();
     const before = {...params};
@@ -474,7 +665,7 @@ test("additional regular-wave growth is bounded and independent of player state"
   assert.equal(data.before[2].hpMul,data.before[3].hpMul);
 });
 
-test("v259 retains the selected card-grade HP and attack hierarchy", () => {
+test("v273 retains the selected card-grade HP and attack hierarchy", () => {
   const run=fixture();
   const result=run(`(() => {
     setup();
@@ -485,7 +676,7 @@ test("v259 retains the selected card-grade HP and attack hierarchy", () => {
     const previous=ENCOUNTER_LANES.map(l=>encounterCombatProfile(formation,l,12));
     return {current,previous};
   })()`);
-  const hpRatios=[1,.98/.85,.90/.72],atkRatios=[6/10,4.5/14,3.5/11.5];
+  const hpRatios=[1.38/1.45,1/.85,.82/.72],atkRatios=[4.5/10,2.4/14,1.6/11.5];
   result.current.forEach((profile,index)=>{
     assert.ok(Math.abs(profile.hpMul/result.previous[index].hpMul-hpRatios[index])<1e-12);
     assert.ok(Math.abs(profile.atkMul/result.previous[index].atkMul-atkRatios[index])<1e-12);
@@ -519,7 +710,7 @@ test("regular-wave per-hit ceiling applies to elite enemies but not legacy comba
       startWave(card("greedy","elite","fire"));updateSpawn(1/60);
       return state.monsters.find(monster=>monster.elite).atk;
     })()`);
-    if(legacy)assert.ok(atk>100);else assert.equal(atk,100);
+    if(legacy)assert.ok(atk>55);else assert.equal(atk,55);
   }
 });
 
@@ -536,7 +727,7 @@ test("chest bounds rise by tier while overlapping; payout survives upgrades and 
     })()`);
     assert.ok(bounds[0] > previous[0] && bounds[1] > previous[1]);
     if(tier>1) assert.ok(bounds[0]<previous[1]);
-    assert.ok(bounds[0]<100 && bounds[1]>100);
+    if(tier>1) assert.ok(bounds[1]>100);
     previous = bounds;
     const result = run(`(() => {
       setup(); state.wallet -= 100; state.pot = 37; state.bossAdd = 2;
@@ -713,9 +904,9 @@ test("BOSS increments stay positive, have a larger tail, and ignore player histo
     __tdHeadless.setSeed(8132); const b=rollEncounterBossAdd(3);
     return {minimum,firstLarge,fifthLarge,a,b};
   })()`);
-  assert.equal(data.minimum, .8);
-  assert.equal(data.firstLarge, 3);
-  assert.ok(data.fifthLarge > data.firstLarge);
+  assert.equal(data.minimum, .1);
+  assert.equal(data.firstLarge, 24);
+  assert.equal(data.fifthLarge, 30);
   assert.equal(data.a, data.b);
 });
 
