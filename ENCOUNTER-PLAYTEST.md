@@ -1,8 +1,30 @@
 # Encounter Combat and Rewards Playtest
 
-Current build: `continue-hierarchy242`.
-Economy identity: `encounter-playtest-unbalanced`.
-This is an explicitly uncalibrated gameplay prototype, not an RTP-approved release.
+Current build: `encounter-risk-reward278`.
+Economy identity: `encounter-rtp-candidate-278`.
+This is an RTP candidate under validation, not an approved release.
+
+## Risk and Reward Revision 278
+
+- Regular cards show estimated no-damage rate instead of a misleading survival rate.
+- Neutral grade baselines are 86% / 68% / 50%; attribute countering and role readiness
+  apply bounded visible adjustments without changing the selected encounter.
+- The four regular chest tiers keep their V274 mean POT while using wider, low-skewed
+  distributions. Even the normal chest now has a small chance to profit on that wave.
+- At BET 100 and 1x, tier 1-4 payout ranges are 2-137 / 15-183 / 36-206 / 72-320 POT;
+  rounded mean POT remains 36.48 / 63.15 / 104.87 / 173.26.
+- The tuner exposes the distribution shape and calculates the same mean and profit chance
+  as the game. BOSS escort rewards remain uniform and the exclusive chest remains multiplier-only.
+- A 1,000-run exploratory adaptive-strategy sample produced 98.09% RTP, 16.2% 2x wins and
+  1.3% 5x wins. This is directional evidence, not a formal certification.
+
+## Wave Settlement Revision 277
+
+- Regular and BOSS escort kills reserve their POT instead of incrementing the HUD per enemy.
+- A successful wave credits the reserved kill POT and clear bonus once. Final payout math is unchanged.
+- BOSS-exclusive chests still award multiplier only; escort POT is identified as wave loot.
+- Cards label their percentage as an estimate. Values at or below 50% are red, 51-74% are yellow,
+  and values at or above 75% are green.
 
 ## Decision Hierarchy Revision 242
 
@@ -44,7 +66,8 @@ No hidden win-rate target or player-state compensation is used.
 
 - Each regular offer contains three distinct formations and threat grades 1, 2, 3.
 - Threat grades change actual enemy health, attack, count and spawn cadence.
-  They are not preselected win/loss probabilities. No success percentage is shown.
+  Each card shows a current-build no-damage estimate derived from its grade,
+  attribute match and role readiness; it does not preselect the outcome.
 - Formation determines the actual roster: swarm = batches of weak melee units;
   rush = fast melee batches; armor = fewer durable tanks; siege = ranged attackers;
   elite = one elite leader followed by a small escort.
@@ -66,19 +89,23 @@ reward artwork unobstructed, and remain distinct from full-size BOSS cards.
 
 ## Reward Contract
 
-At equal paid wave BET and the default `moneyMul = 1`:
+At equal paid wave BET, 1x cumulative multiplier and the default `moneyMul = 1`:
 
-| Chest tier | Total new POT / wave BET |
-| --- | --- |
-| 1 | 0.45-0.65 |
-| 2 | 1.00-1.35 |
-| 3 | 2.40-3.10 |
-| 4 | 4.80-6.00 |
+| Chest tier | POT / BET range | Mean POT / BET | Single-wave profit chance |
+| --- | --- | --- | --- |
+| 1 | 0.023-1.368 | 0.365 | 10.3% |
+| 2 | 0.160-1.824 | 0.632 | 23.7% |
+| 3 | 0.365-2.052 | 1.049 | 48.6% |
+| 4 | 0.730-3.192 | 1.733 | 78.1% |
 
-Regular threat grades 1/2/3 use chest tiers 1/2/3 respectively, with a 10% tier-4
-upgrade for threat grade 3. All BOSS cards use tier 4 and exclusive BOSS artwork.
-The total reward is rolled once on wave commitment. Kills distribute 60%; clearing
-the wave grants the remaining 40% once. Integer rounding reconciles to the total.
+Regular threat grades 1/2/3 use chest tiers 1/2/3 respectively, with a 10% one-tier
+upgrade chance. All BOSS cards use exclusive BOSS artwork and a multiplier-only chest.
+The total reward is rolled once on wave commitment. Kills reserve up to 60%; clearing
+the wave credits the reserved amount and remaining 40% to POT once. Integer rounding
+reconciles to the same total, so this presentation change does not alter RTP.
+Before commitment, each regular card shows the full-wave POT range for its already
+selected chest tier and current paid BET. BOSS cards show the possible multiplier
+increment instead of presenting escort POT as the main reward.
 These are POT increments, not cashout multipliers or RTP. The existing cumulative
 BOSS multiplier still applies at settlement. Existing at-risk POT loss on death
 is unchanged; a failed wave grants no clear bonus.

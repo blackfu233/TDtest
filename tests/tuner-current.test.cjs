@@ -6,7 +6,7 @@ const rules=require(path.join(root,"encounter-tuning-data.js"));
 function validationContext() {
   const context=vm.createContext({});
   vm.runInContext(fs.readFileSync(path.join(root,"tuner-current.js"),"utf8"),context);
-  vm.runInContext('currentBounds.set("expMul",{min:.1,max:5});currentBounds.set("encounterChestUpgradeChance",{min:0,max:1});',context);
+  vm.runInContext('currentBounds.set("expMul",{min:.1,max:5});currentBounds.set("encounterChestUpgradeChance",{min:0,max:1});currentBounds.set("encounterChest1Shape",{min:.25,max:10});',context);
   return context;
 }
 test("current draft validation accepts defaults without rewriting them",()=>{
@@ -17,20 +17,18 @@ test("current draft validation accepts defaults without rewriting them",()=>{
 });
 test("current imports migrate every older encounter revision before display",()=>{
   const context=validationContext();
-  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:269},273),true);
-  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:260},273),true);
-  assert.equal(context.currentImportNeedsRewardMigration({balanceRevision:211},273),true);
-  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:271},273),true);
-  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:272},273),true);
-  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:273},273),false);
-  assert.equal(context.currentImportNeedsRewardMigration({},273),false);
+  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:269},278),true);
+  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:274},278),true);
+  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:277},278),true);
+  assert.equal(context.currentImportNeedsRewardMigration({encounterRewardRevision:278},278),false);
+  assert.equal(context.currentImportNeedsRewardMigration({},278),false);
 });
 test("current draft rejects invalid values, reversed ranges and impossible reward weights",()=>{
   const context=validationContext(),defaults={...rules.encounterDefaults,expMul:1};
   assert.equal(context.validateCurrentDraft({...defaults,encounterBossSmallWeight:0,encounterBossMediumWeight:0,encounterBossLargeWeight:0,encounterBossJackpotWeight:1}),"");
   for(const invalid of [null,[],{...defaults,expMul:"2"},{...defaults,expMul:NaN},{...defaults,expMul:-1},
     {...defaults,encounterChestUpgradeChance:20},{...defaults,encounterRtpTargetMin:1.1},
-    {...defaults,encounterChest1Min:2.03},{...defaults,encounterChest1Max:0},
+    {...defaults,encounterChest1Min:3.01},{...defaults,encounterChest1Max:0},{...defaults,encounterChest1Shape:20},
     {...defaults,encounterBossChestMin:3,encounterBossChestMax:1},
     {...defaults,encounterBossJackpotMin:30,encounterBossJackpotMax:20},
     {...defaults,band_1_countMin:30,band_1_countMax:20},
@@ -61,11 +59,12 @@ test("editable matrices align related controls and retain validation bounds",()=
   vm.runInContext(fs.readFileSync(path.join(root,"tuner-current.js"),"utf8"),context);
   const metadata=new Map([
     ["encounterChest1Min",["encounterChest1Min","普通下限","倍",.01,20,.01,"整波下限"]],
-    ["encounterChest1Max",["encounterChest1Max","普通上限","倍",.01,20,.01,"整波上限"]]
+    ["encounterChest1Max",["encounterChest1Max","普通上限","倍",.01,20,.01,"整波上限"]],
+    ["encounterChest1Shape",["encounterChest1Shape","低獎集中","倍",.25,10,.01,"分布"]]
   ]);
-  const html=context.currentMatrixSection("獎金倍率",["寶箱","下限","上限"],[["普通","encounterChest1Min","encounterChest1Max"]],metadata);
-  assert(html.includes('<th scope="row">普通</th><td><input data-key="encounterChest1Min"></td><td><input data-key="encounterChest1Max"></td>'));
-  assert.deepEqual(calls.map(item=>item.key),["encounterChest1Min","encounterChest1Max"]);
+  const html=context.currentMatrixSection("獎金倍率",["寶箱","下限","上限","集中"],[["普通","encounterChest1Min","encounterChest1Max","encounterChest1Shape"]],metadata);
+  assert(html.includes('<th scope="row">普通</th><td><input data-key="encounterChest1Min"></td><td><input data-key="encounterChest1Max"></td><td><input data-key="encounterChest1Shape"></td>'));
+  assert.deepEqual(calls.map(item=>item.key),["encounterChest1Min","encounterChest1Max","encounterChest1Shape"]);
   assert.equal(vm.runInContext('currentBounds.get("encounterChest1Min").min',context),.01);
   assert(html.includes('class="table-notes"'));
   assert(!html.includes("open="));

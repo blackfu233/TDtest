@@ -60,12 +60,12 @@ function buildCurrentTuner() {
       section("出怪節奏與保護上限",["spawnInterval","encounterRushSpeedCap","encounterBaseHitCap"]),"combatAdvanced"));
   put("chestSettings",
     matrix("寶箱升級機率",["適用卡牌","升一級機率 %"],[["普通、進階、危險","encounterChestUpgradeChance"]],"每張牌各抽一次，只升一級；不增加怪物難度，也不會變成 BOSS 寶箱。","chestChanceMatrix")+
-    matrix("各級獎金倍率",["寶箱等級","下限 × BET","上限 × BET"],[1,2,3,4].map(tier=>[
-      ["普通","進階","稀有","傳說"][tier-1],`encounterChest${tier}Min`,`encounterChest${tier}Max`]),"這是整波獎金的抽取區間，還要乘整體金錢係數；不是開箱單獨給的金額。","chestRangeMatrix")+
+    matrix("各級獎金倍率",["寶箱等級","下限 × BET","上限 × BET","低獎集中 ×"],[1,2,3,4].map(tier=>[
+      ["普通","進階","稀有","傳說"][tier-1],`encounterChest${tier}Min`,`encounterChest${tier}Max`,`encounterChest${tier}Shape`]),"這是整波獎金分布；集中係數 1 為均勻，越高越常出低獎、但仍保留表列大獎。","chestRangeMatrix")+
     matrix("整波獎金縮放",["設定","金額倍率 ×"],[["整波獎金係數","encounterRewardScale"]])+
     advanced("進階金錢設定",
       matrix("額外全域倍率",["設定","金額倍率 ×"],[["全部金錢再乘","moneyMul"]],"與整波獎金係數相乘；保持 1 就不追加調整。")+
-      matrix("王後 POT 入場",["設定","換算強度 %"],[["依當下累積倍率折算","encounterPotEntryPower"]],"0% 會完整重複放大後續 BET；100% 完全按當下倍率換算。V273 使用 100%，BET 變大仍會提高實得金額。"),"chestAdvanced"));
+      matrix("王後 POT 入場",["設定","換算強度 %"],[["依當下累積倍率折算","encounterPotEntryPower"]],"0% 會完整重複放大後續 BET；100% 完全按當下倍率換算。V278 使用 100%，BET 變大仍會提高實得金額。"),"chestAdvanced"));
   put("bossSettings",
     matrix("倍率抽取權重",["增幅類型","抽取權重","實際機率"],bossParts.map(([key,label])=>[
       label,`encounterBoss${key}Weight`,{html:`<span class="probability-value" data-boss-probability="${key}">--</span>`}]),"機率由各組權重除以權重總和換算，不需要加總成 100。","bossWeightMatrix")+

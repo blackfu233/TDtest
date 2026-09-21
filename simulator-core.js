@@ -352,6 +352,7 @@
           encounterAttr:waveStartState.encounter?.attr || waveStartState.currentWaveAttr || "neutral",
           threat:Number(waveStartState.encounter?.threat) || (boss ? 4 : 0),
           reward:Number(waveStartState.encounter?.reward) || (boss ? 4 : 0),
+          estimatedClear:Number(waveStartState.encounter?.estimatedClear) || 0,
           attributeState:waveStartState.encounter?.attributeState || "even",
           roleState:waveStartState.encounter?.roleState || "even",
           attributePower:Number(waveStartState.encounter?.attributePower) || 1,

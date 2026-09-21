@@ -107,18 +107,11 @@ const WAVE_FIELDS = [["hpMul","血量倍率"],["eliteWeight","菁英權重"],["e
 const EXP_BASE = [95,125,155,190,225,290,330,370,415,460,510,565,625,690,760,835,915,1000,1090,1185,1285,1390,1500,1615,1735,1860,1990,2125,2265,2410,2560,2715,2875,3040,3210,3385,3565,3750,3940];
 const HERO_TUNING = [
   ["fire","烈焰戰士","火","爆燃火球",{ damage:126, rate:.72, range:780, status:26, statusTime:2.0, splash:58, secondaryMul:.58, targets:1, projectileSpeed:680, zoneDuration:0 }],
-  ["ice","寒霜獵手","冰","貫穿冰槍",{ damage:170, rate:.58, range:980, status:.24, statusTime:1.35, splash:0, secondaryMul:.72, targets:3, projectileSpeed:1250, zoneDuration:0 }],
-  ["electric","雷霆特工","電","連鎖電弧",{ damage:76, rate:1.35, range:900, status:.12, statusTime:1.0, splash:0, secondaryMul:.62, targets:3, projectileSpeed:0, zoneDuration:0 }],
-  ["poison","劇毒術士","毒","腐蝕毒囊",{ damage:58, rate:.68, range:820, status:22, statusTime:2.6, splash:54, secondaryMul:.50, targets:1, projectileSpeed:520, zoneDuration:2.0 }],
-  ["neutral","戰術傭兵","無","三連實彈",{ damage:46, rate:.92, range:940, status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0 }],
+  ["ice","寒霜獵手","冰","貫穿冰槍",{ damage:172, rate:.70, range:980, status:.24, statusTime:1.35, splash:0, secondaryMul:.75, targets:3, projectileSpeed:1250, zoneDuration:0 }],
+  ["electric","雷霆特工","電","連鎖電弧",{ damage:84, rate:1.35, range:900, status:.12, statusTime:1.0, splash:0, secondaryMul:.62, targets:3, projectileSpeed:0, zoneDuration:0 }],
+  ["poison","劇毒術士","毒","腐蝕毒囊",{ damage:107, rate:.76, range:820, status:25, statusTime:2.6, splash:58, secondaryMul:.50, targets:1, projectileSpeed:520, zoneDuration:2.0 }],
+  ["neutral","戰術傭兵","無","三連實彈",{ damage:112, rate:.92, range:940, status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0 }],
 ];
-[
-  ["fire", { damage:118 }],
-  ["ice", { damage:176, rate:.70, secondaryMul:.75 }],
-  ["electric", { damage:80 }],
-  ["poison", { damage:107, rate:.76, status:25, splash:58 }],
-  ["neutral", { damage:116 }],
-].forEach(([id, values]) => Object.assign(HERO_TUNING.find(hero => hero[0] === id)[4], values));
 const HERO_FIELDS = [
   ["damage","傷害",0,1000,1],["rate","攻速",.05,10,.01],["range","射程",100,1200,10],
   ["status","狀態強度",0,200,.01],["statusTime","狀態時間",0,10,.05],["splash","範圍",0,200,1],
@@ -424,10 +417,10 @@ function upgradeRequirementText(text) {
 }
 
 const ENCOUNTER_PARAM_DEFAULTS = {
-  encounterRewardRevision:273,
+  encounterRewardRevision:278,
   encounterEconomyEnabled:1,
   encounterRtpTargetMin:.96, encounterRtpTargetMax:1,
-  encounterRewardScale:.433,
+  encounterRewardScale:.456,
   encounterPotEntryPower:1,
   encounterChestUpgradeChance:.10,
   encounterHpDepthGrowth:.09, encounterHpDepthCap:2,
@@ -435,16 +428,16 @@ const ENCOUNTER_PARAM_DEFAULTS = {
   encounterGrade1AtkMul:4.5, encounterGrade2AtkMul:2.4, encounterGrade3AtkMul:1.6,
   encounterBaseHitCap:55,
   encounterMinionBaseHitLimit:1,
-  encounterChest1Min:.05, encounterChest1Max:1.55,
-  encounterChest2Min:.35, encounterChest2Max:2.42,
-  encounterChest3Min:.80, encounterChest3Max:3.80,
-  encounterChest4Min:1.60, encounterChest4Max:6.00,
+  encounterChest1Min:.05, encounterChest1Max:3.00, encounterChest1Shape:2.933,
+  encounterChest2Min:.35, encounterChest2Max:4.00, encounterChest2Shape:2.527,
+  encounterChest3Min:.80, encounterChest3Max:4.50, encounterChest3Shape:1.467,
+  encounterChest4Min:1.60, encounterChest4Max:7.00, encounterChest4Shape:1.455,
   encounterBossChestMin:.19, encounterBossChestMax:.31,
-  encounterBossSmallWeight:63, encounterBossMediumWeight:27, encounterBossLargeWeight:8, encounterBossJackpotWeight:2,
+  encounterBossSmallWeight:61, encounterBossMediumWeight:29, encounterBossLargeWeight:8, encounterBossJackpotWeight:2,
   encounterBossSmallMin:.10, encounterBossSmallMax:.35,
   encounterBossMediumMin:1.00, encounterBossMediumMax:3.20,
-  encounterBossLargeMin:3.50, encounterBossLargeMax:6.00,
-  encounterBossJackpotMin:7.00, encounterBossJackpotMax:24.00,
+  encounterBossLargeMin:3.50, encounterBossLargeMax:5.40,
+  encounterBossJackpotMin:7.00, encounterBossJackpotMax:19.50,
   encounterBossDepthGrowth:.08, encounterBossDepthGrowthCap:1.25,
   encounterRushSpeedCap:78,
   encounterTankSingleDamageMul:1.35, encounterTankAreaDamageMul:.60,
@@ -470,7 +463,7 @@ bossFirstMinWave:1,bossFirstChance:8,bossFirstChanceInc:12,bossFirstChanceCap:68
   modelBossKillRate:.70,modelClearRate10:.63,modelClearRate20:.18,modelClearRate30:.06,
   upgradeDamage40:1.4,upgradeDamage35:1.35,upgradeDamage30:1.3,upgradeRate25:1.25,upgradeRate20:1.2,upgradeRange25:1.25,upgradeDuration50:1.5,upgradeDotDamage100:2,upgradeExtraChain:3,upgradePathDamage:50,upgradeVulnerable15:.15,upgradeSlow25:.25,
 };
-DEFAULT_PARAMS.balanceRevision = 211;
+DEFAULT_PARAMS.balanceRevision = 212;
 DEFAULT_PARAMS.mathGeneralRtpShare = .52;
 DEFAULT_PARAMS.mathBossRtpShare = .43;
 DEFAULT_PARAMS.mathPostBossIncrementBossShare = .90;
@@ -574,11 +567,11 @@ DEFAULT_PARAMS.mathClearBand2 = .955;
 DEFAULT_PARAMS.mathClearBand3 = .925;
 DEFAULT_PARAMS.mathClearBand4 = .875;
 DEFAULT_PARAMS.mathClearBand5 = .835;
-DEFAULT_PARAMS.mathHeroPower_fire = 1;
-DEFAULT_PARAMS.mathHeroPower_ice = 1;
-DEFAULT_PARAMS.mathHeroPower_electric = 1;
+DEFAULT_PARAMS.mathHeroPower_fire = 1.06;
+DEFAULT_PARAMS.mathHeroPower_ice = .98;
+DEFAULT_PARAMS.mathHeroPower_electric = 1.05;
 DEFAULT_PARAMS.mathHeroPower_poison = 1;
-DEFAULT_PARAMS.mathHeroPower_neutral = 1;
+DEFAULT_PARAMS.mathHeroPower_neutral = .98;
 DEFAULT_PARAMS.mathTowerBossPower_flame = .68;
 DEFAULT_PARAMS.mathTowerBossPower_grenade = .64;
 DEFAULT_PARAMS.mathTowerBossPower_cryo = 1.88;
@@ -838,25 +831,26 @@ PARAM_GROUPS.unshift([
   ],
 ]);
 const ENCOUNTER_PARAM_GROUPS = [
-  ["V273 候選版 / 驗證目標", "economy-group", [
+  ["V278 候選版 / 驗證目標", "economy-group", [
     ["encounterEconomyEnabled", "候選彩金規則", "0 / 1", 0, 1, 1, "1 使用新版寶箱與 BOSS 增幅；0 回到未校準玩法版，不啟用舊版水池。"],
     ["encounterRtpTargetMin", "RTP 目標下限", "比例", 0, 1, .01, "驗證目標，不是即時控制派彩的開關。"],
     ["encounterRtpTargetMax", "RTP 目標上限", "比例", 0, 1, .01, "仍須以完整對局與不同合法策略模擬驗證。"],
     ["encounterRewardScale", "寶箱整體係數", "倍", .01, 5, .01, "抽籤前固定套用，不隨玩家已得倍率、POT 或血量改變。"],
-    ["encounterPotEntryPower", "王後 POT 入場換算強度", "比例", 0, 1, .01, "0 代表後續 BET 直接換成 POT；1 代表完全按當下倍率折算；V273 使用 100%，讓 BET 成長增加實得金額但不重複放大 RTP。"],
+    ["encounterPotEntryPower", "王後 POT 入場換算強度", "比例", 0, 1, .01, "0 代表後續 BET 直接換成 POT；1 代表完全按當下倍率折算；V278 使用 100%，讓 BET 成長增加實得金額但不重複放大 RTP。"],
     ["moneyMul", "金錢全域係數", "倍", 0, 5, .05, "目前遭遇戰實際使用；乘在整波寶箱預算上，不是停用參數。"],
     ["expMul", "經驗全域係數", "倍", .1, 5, .05, "只影響擊殺經驗；寶箱升級、開箱與通關均不增加經驗。"],
   ]],
-  ["V273 寶箱 / 完成整波的原始 POT", "economy-group", [
+  ["V278 寶箱 / 完成整波的原始 POT", "economy-group", [
     ["encounterChestUpgradeChance", "一般波寶箱升一級機率", "比例", 0, 1, .01, "普通、進階、危險牌各自抽籤，只升一級；不提高怪物危險等級，不會變成 BOSS 專屬寶箱。0.10 代表 10%。"],
     ...[1,2,3,4].flatMap(tier => [
       [`encounterChest${tier}Min`, `第 ${tier} 級寶箱下限`, "當波 BET 倍數", .01, 20, .01, "尚未乘 moneyMul、寶箱整體係數及累積 BOSS 倍率；60% 擊殺、40% 通關。"],
-      [`encounterChest${tier}Max`, `第 ${tier} 級寶箱上限`, "當波 BET 倍數", .01, 20, .01, "區間內均勻抽取；區間可以重疊，但上下限須隨等級提高。寶箱不給經驗，也不改變打怪經驗。"],
+      [`encounterChest${tier}Max`, `第 ${tier} 級寶箱上限`, "當波 BET 倍數", .01, 20, .01, "最高可能獎金；區間可以重疊，但上下限須隨等級提高。寶箱不給經驗。"],
+      [`encounterChest${tier}Shape`, `第 ${tier} 級低獎集中係數`, "倍", .25, 10, .001, "1 為均勻分布；越高越常抽到低額，但仍保留少數大獎。"],
     ]),
     ["encounterBossChestMin", "BOSS 護衛獎金下限", "當波 BET 倍數", .01, 20, .01, "只分給護衛擊殺；BOSS 專屬寶箱只開倍率、不給金錢或經驗。沿用舊參數鍵以相容匯入。"],
     ["encounterBossChestMax", "BOSS 護衛獎金上限", "當波 BET 倍數", .01, 20, .01, "區間內均勻抽取，全部分給護衛，不再扣出通關金錢。"],
   ]],
-  ["V273 BOSS / 每次必加倍率", "boss-group", [
+  ["V278 BOSS / 每次必加倍率", "boss-group", [
     ...[["Small","小增幅",20],["Medium","中增幅",20],["Large","大增幅",20],["Jackpot","頭獎增幅",50]].flatMap(([key,label,ceiling]) => [
       [`encounterBoss${key}Weight`, `${label}權重`, "權重", 0, 10000, .1, "四組權重正規化後抽籤，總和必須大於零。"],
       [`encounterBoss${key}Min`, `${label}下限`, "+倍率", .01, ceiling, .01, "第一隻 BOSS 的增幅區間；最後四捨五入至 0.1，至少增加 0.1。"],
@@ -949,8 +943,39 @@ try { channel = new BroadcastChannel(PARAM_CHANNEL); } catch {}
 function loadParams() { try { return cleanParams(migrateBossParams(JSON.parse(localStorage.getItem(PARAM_STORAGE_KEY) || "{}"))); } catch { return cleanParams(); } }
 function migrateEncounterRewardParams(input) {
   const revision = Number(input.encounterRewardRevision) || 0;
-  if (revision >= 273) return input;
+  if (revision >= 278) return input;
   const next = {...input};
+  if (revision >= 274) {
+    const defaults274 = {
+      encounterChest1Min:.05, encounterChest1Max:1.55,
+      encounterChest2Min:.35, encounterChest2Max:2.42,
+      encounterChest3Min:.80, encounterChest3Max:3.80,
+      encounterChest4Min:1.60, encounterChest4Max:6.00,
+    };
+    const unchanged = Object.entries(defaults274).every(([key,value]) => input[key] === undefined || Number(input[key]) === value);
+    const alreadyUpdated = Object.keys(defaults274).every(key => input[key] === undefined || Number(input[key]) === DEFAULT_PARAMS[key]);
+    for (const tier of [1,2,3,4]) {
+      if (unchanged) {
+        next[`encounterChest${tier}Min`] = DEFAULT_PARAMS[`encounterChest${tier}Min`];
+        next[`encounterChest${tier}Max`] = DEFAULT_PARAMS[`encounterChest${tier}Max`];
+      }
+      next[`encounterChest${tier}Shape`] = unchanged || alreadyUpdated ? DEFAULT_PARAMS[`encounterChest${tier}Shape`] : 1;
+    }
+    next.encounterRewardRevision = 278;
+    return next;
+  }
+  if (revision === 273) {
+    const defaults273 = {
+      encounterRewardScale:.433,
+      encounterBossSmallWeight:63, encounterBossMediumWeight:27,
+      encounterBossLargeMax:6.00, encounterBossJackpotMax:24.00,
+    };
+    for (const [key,value] of Object.entries(defaults273)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 274;
+    return migrateEncounterRewardParams(next);
+  }
   if (revision === 272) {
     const defaults272 = {
       encounterRewardScale:.43, encounterPotEntryPower:.64, encounterChest2Max:2.35,
@@ -964,7 +989,7 @@ function migrateEncounterRewardParams(input) {
       if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
     }
     next.encounterRewardRevision = 273;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 271) {
     const defaults271 = {
@@ -2464,6 +2489,13 @@ function migrateBossParams(input={}) {
     });
     next.balanceRevision = 211;
   }
+  if ((Number(input.balanceRevision) || 0) < 212) {
+    [
+      "hero_fire_damage", "hero_ice_damage", "hero_electric_damage", "hero_neutral_damage",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_neutral",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 212;
+  }
   return migrateEncounterRewardParams(next);
 }
 function cleanParams(input={}) {
@@ -2489,6 +2521,7 @@ function cleanParams(input={}) {
     next[`encounter${part}Min`] = clamp(next[`encounter${part}Min`], .01, ceiling);
     next[`encounter${part}Max`] = clamp(next[`encounter${part}Max`], next[`encounter${part}Min`], ceiling);
   });
+  [1,2,3,4].forEach(tier => { next[`encounterChest${tier}Shape`] = clamp(next[`encounterChest${tier}Shape`], .25, 10); });
   ["Small", "Medium", "Large", "Jackpot"].forEach(part => { next[`encounterBoss${part}Weight`] = Math.max(0, next[`encounterBoss${part}Weight`]); });
   next.encounterBossDepthGrowth = clamp(next.encounterBossDepthGrowth, 0, 1);
   next.encounterBossDepthGrowthCap = clamp(next.encounterBossDepthGrowthCap, 1, 5);

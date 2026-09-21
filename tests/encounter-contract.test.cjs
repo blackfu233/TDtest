@@ -149,7 +149,7 @@ test("encounter tuner payout ranges, clear money and EXP agree with game reward 
     }
   }
   const preview=tuningView.calculate(run("__tdHeadless.setParams({}); __tdHeadless.params()"));
-  assert.ok(Math.abs(preview.chests[0].meanPot-34.64)<1e-10);
+  assert.ok(Math.abs(preview.chests[0].meanPot-36.48)<.01);
   assert.deepEqual(preview.chests.map(c=>c.clearExp),[0,0,0,0,0]);
   assert.deepEqual(preview.experience.map(c=>c.killExpFactor),[.8,1.05,1.42,1.9]);
 });
@@ -170,7 +170,7 @@ test("encounter tuner composition preview uses current wave and combat parameter
   }
 });
 
-test("273 retains broad prize ranges, profit chances and a rising chest hierarchy", () => {
+test("278 preserves mean RTP while widening prize tails and adding profit chances", () => {
   const run=fixture(),preview=tuningView.calculate(run("__tdHeadless.params()"),{bet:100});
   const samples=run(`[1,2,3,4].map(tier=>{
     const amounts=Array.from({length:2000},(_,i)=>{
@@ -186,22 +186,23 @@ test("273 retains broad prize ranges, profit chances and a rising chest hierarch
     assert.ok(Math.abs(sample.profit-preview.chests[i].profitChance)<.006);
     if(i) assert.ok(sample.mean>samples[i-1].mean);
   });
-  assert.deepEqual(preview.chests.slice(0,4).map(c=>[Math.round(c.potLow),Math.round(c.potHigh)]),[[2,67],[15,105],[35,165],[69,260]]);
+  assert.deepEqual(preview.chests.slice(0,4).map(c=>[Math.round(c.potLow),Math.round(c.potHigh)]),[[2,137],[16,182],[36,205],[73,319]]);
+  assert.ok(preview.chests[0].profitChance>.09);
 });
 
 test("post-BOSS rewards use the published partial entry price without double counting the full multiplier", () => {
   const run=fixture();
   const result=run(`(()=>{
-    setup();Math.random=()=>.5;state.rewardRoundingCarry=0;
-    const base=rollEncounterWaveReward({reward:2,boss:false},100).budget;
-    state.bossAdd=2;state.rewardRoundingCarry=0;
-    const postBoss=rollEncounterWaveReward({reward:2,boss:false},100).budget;
+    setup();state.rewardRoundingCarry=0;__tdHeadless.setSeed(1024);
+    const base=rollEncounterWaveReward({reward:2,boss:false},1000).budget;
+    state.bossAdd=2;state.rewardRoundingCarry=0;__tdHeadless.setSeed(1024);
+    const postBoss=rollEncounterWaveReward({reward:2,boss:false},1000).budget;
     return {base,postBoss,multiplier:1+state.bossAdd};
   })()`);
   assert.ok(result.postBoss<result.base,result);
-  assert.ok(Math.abs((result.postBoss*result.multiplier)/result.base-1)<.04,result);
+  assert.ok(Math.abs((result.postBoss*result.multiplier)/result.base-1)<.04,JSON.stringify(result));
   const preview=tuningView.calculate(run("__tdHeadless.params()"),{bet:100,multiplier:3});
-  assert.ok(Math.abs(preview.chests[1].meanPot-59.9705/3)<1e-10);
+  assert.ok(Math.abs(preview.chests[1].meanPot-63.156/3)<.01);
 });
 
 test("chest upgrades change only money, never kill EXP or clear EXP", () => {
@@ -220,7 +221,7 @@ test("chest upgrades change only money, never kill EXP or clear EXP", () => {
   });
 });
 
-test("BOSS chest awards multiplier only; escorts keep money and clear adds neither money nor EXP", () => {
+test("BOSS chest awards multiplier only; escort money settles once at wave clear", () => {
   const run=fixture();
   const result=run(`(()=>{
     setup();const selected=buildBossEncounterChoices(7)[0];startWave(selected);
@@ -239,17 +240,19 @@ test("BOSS chest awards multiplier only; escorts keep money and clear adds neith
     checkWaveClear();
     return {afterEscorts,afterBoss,afterClear,finalPot:state.pot,reward:state.waveReward};
   })()`);
-  assert.equal(result.afterEscorts,result.reward.budget);
+  assert.equal(result.afterEscorts,0);
   assert.equal(result.reward.id,"boss-escorts");
   assert.equal(result.reward.clearBonus,0);
   assert.equal(result.reward.claimedBonus,0);
   assert.equal(result.afterBoss.pot,result.afterEscorts);
   assert.ok(result.afterBoss.add>0);
-  assert.deepEqual(result.afterClear,result.afterBoss);
+  assert.equal(result.afterClear.pot,result.reward.budget);
+  assert.equal(result.afterClear.exp,result.afterBoss.exp);
+  assert.equal(result.afterClear.add,result.afterBoss.add);
   assert.equal(result.finalPot,result.afterClear.pot);
 });
 
-test("273 preset migration is shared, scoped, idempotent and preserves custom prize groups", () => {
+test("278 preset migration is shared, scoped, idempotent and preserves custom prize groups", () => {
   const run=fixture(),defaults=run("__tdHeadless.params()");
   const tuner=fs.readFileSync(path.join(project,"tuner.js"),"utf8");
   const extract=text=>text.slice(text.indexOf("function migrateEncounterRewardParams("),text.indexOf("function migrateBossParams("));
@@ -272,6 +275,13 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   assert.equal(custom.encounterBossMediumMax,.95);
   assert.equal(custom.encounterBossLargeMax,3.2);
   assert.ok(Math.abs(custom.encounterBossChestMax-.6)<1e-12);
+  const preset274=migrate({...defaults,encounterRewardRevision:274,
+    encounterChest1Min:.05,encounterChest1Max:1.55,encounterChest2Min:.35,encounterChest2Max:2.42,
+    encounterChest3Min:.80,encounterChest3Max:3.80,encounterChest4Min:1.60,encounterChest4Max:6.00});
+  assert.deepEqual(preset274,defaults);
+  const custom274=migrate({...preset274,encounterRewardRevision:274,encounterChest2Max:2.5});
+  assert.equal(custom274.encounterChest2Max,2.5);
+  assert.deepEqual([1,2,3,4].map(tier=>custom274[`encounterChest${tier}Shape`]),[1,1,1,1]);
   const preset251={...defaults,encounterRewardRevision:251,
     encounterGrade1HpMul:1.45,encounterGrade2HpMul:.85,encounterGrade3HpMul:.72,
     encounterGrade1AtkMul:10,encounterGrade2AtkMul:14,encounterGrade3AtkMul:11.5,encounterBaseHitCap:300,
@@ -287,14 +297,14 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   assert.deepEqual(preset252,defaults);
   const custom252=migrate({...defaults,encounterRewardRevision:252,encounterRewardScale:.97});
   assert.equal(custom252.encounterRewardScale,.97);
-  assert.equal(custom252.encounterRewardRevision,273);
+  assert.equal(custom252.encounterRewardRevision,278);
   const preset253=migrate({...defaults,encounterRewardRevision:253,encounterRewardScale:1.04,
     hero_ice_damage:160,hero_ice_rate:.58,hero_ice_secondaryMul:.68,hero_neutral_damage:60});
   assert.deepEqual(preset253,defaults);
   const custom253=migrate({...preset253,encounterRewardRevision:253,encounterRewardScale:.96,hero_ice_damage:205});
   assert.equal(custom253.encounterRewardScale,.96);
   assert.equal(custom253.hero_ice_damage,205);
-  assert.equal(custom253.encounterRewardRevision,273);
+  assert.equal(custom253.encounterRewardRevision,278);
   const preset254=migrate({...defaults,encounterRewardRevision:254,
     encounterBossSmallWeight:88,encounterBossMediumWeight:11,encounterBossLargeWeight:1,
     encounterBossSmallMin:.10,encounterBossSmallMax:.40,encounterBossMediumMin:.50,encounterBossMediumMax:1,
@@ -303,7 +313,7 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom254=migrate({...preset254,encounterRewardRevision:254,encounterBossMediumMax:1.25});
   assert.equal(custom254.encounterBossMediumMax,1.25);
   assert.equal(custom254.encounterBossSmallMax,defaults.encounterBossSmallMax);
-  assert.equal(custom254.encounterRewardRevision,273);
+  assert.equal(custom254.encounterRewardRevision,278);
   const preset255={...defaults,encounterRewardRevision:255,
     encounterRewardScale:.99,encounterHpDepthGrowth:.13,encounterHpDepthCap:3,encounterGrade2HpMul:1.05,encounterGrade3HpMul:1,
     encounterBossSmallWeight:70,encounterBossMediumWeight:23,encounterBossLargeWeight:7,
@@ -315,7 +325,7 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   assert.equal(custom255.encounterGrade2HpMul,1.01);
   assert.equal(custom255.encounterHpDepthGrowth,defaults.encounterHpDepthGrowth);
   assert.equal(custom255.encounterMinionBaseHitLimit,1);
-  assert.equal(custom255.encounterRewardRevision,273);
+  assert.equal(custom255.encounterRewardRevision,278);
   const preset256={...defaults,encounterRewardRevision:256,
     encounterRewardScale:.93,encounterHpDepthGrowth:.075,encounterHpDepthCap:2,
     encounterGrade2HpMul:.95,encounterGrade3HpMul:.82,
@@ -325,14 +335,14 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom256=migrate({...preset256,encounterChest3Max:2.20});
   assert.equal(custom256.encounterChest3Max,2.20);
   assert.equal(custom256.encounterGrade3HpMul,defaults.encounterGrade3HpMul);
-  assert.equal(custom256.encounterRewardRevision,273);
+  assert.equal(custom256.encounterRewardRevision,278);
   const preset257={...defaults,encounterRewardRevision:257,encounterRewardScale:.96,
     encounterChest1Min:.25,encounterChest1Max:1.75,encounterChest3Min:.60,encounterChest3Max:1.90};
   assert.deepEqual(migrate(preset257),defaults);
   const custom257=migrate({...preset257,encounterChest1Max:1.79});
   assert.equal(custom257.encounterChest1Max,1.79);
   assert.equal(custom257.encounterChest3Min,defaults.encounterChest3Min);
-  assert.equal(custom257.encounterRewardRevision,273);
+  assert.equal(custom257.encounterRewardRevision,278);
   const preset258={...defaults,encounterRewardRevision:258,encounterRewardScale:.94,
     encounterBossSmallWeight:90,encounterBossMediumWeight:9,encounterBossLargeWeight:1,
     encounterBossSmallMin:.10,encounterBossSmallMax:.18,encounterBossMediumMin:.30,encounterBossMediumMax:.60,
@@ -341,7 +351,7 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom258=migrate({...preset258,encounterBossMediumMax:.75});
   assert.equal(custom258.encounterBossMediumMax,.75);
   assert.equal(custom258.encounterBossSmallMin,defaults.encounterBossSmallMin);
-  assert.equal(custom258.encounterRewardRevision,273);
+  assert.equal(custom258.encounterRewardRevision,278);
   const preset259={...defaults,encounterRewardRevision:259,encounterRewardScale:.82,
     encounterBossSmallWeight:85,encounterBossMediumWeight:13,encounterBossLargeWeight:2,
     encounterBossSmallMin:.75,encounterBossSmallMax:1.05,encounterBossMediumMin:1.30,encounterBossMediumMax:2,
@@ -350,7 +360,7 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom259=migrate({...preset259,encounterBossLargeMax:3.5});
   assert.equal(custom259.encounterBossLargeMax,3.5);
   assert.equal(custom259.encounterBossSmallWeight,defaults.encounterBossSmallWeight);
-  assert.equal(custom259.encounterRewardRevision,273);
+  assert.equal(custom259.encounterRewardRevision,278);
   const preset260={...defaults,encounterRewardRevision:260,encounterRewardScale:.81,
     encounterBossSmallWeight:76,encounterBossMediumWeight:19,encounterBossLargeWeight:5,
     encounterBossSmallMin:.50,encounterBossSmallMax:.75,encounterBossMediumMin:1.30,encounterBossMediumMax:2.20,
@@ -359,7 +369,7 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom260=migrate({...preset260,encounterBossMediumMax:2.6});
   assert.equal(custom260.encounterBossMediumMax,2.6);
   assert.equal(custom260.encounterBossJackpotWeight,defaults.encounterBossJackpotWeight);
-  assert.equal(custom260.encounterRewardRevision,273);
+  assert.equal(custom260.encounterRewardRevision,278);
   const preset261={...defaults,encounterRewardRevision:261,encounterRewardScale:.86,encounterPotEntryPower:.70,
     encounterBossSmallWeight:73,encounterBossMediumWeight:19,encounterBossLargeWeight:7.5,encounterBossJackpotWeight:.5,
     encounterBossSmallMin:.15,encounterBossSmallMax:.45,encounterBossMediumMin:1.30,encounterBossMediumMax:2.30,
@@ -369,19 +379,19 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom261=migrate({...preset261,encounterBossJackpotMax:30});
   assert.equal(custom261.encounterBossJackpotMax,30);
   assert.equal(custom261.encounterBossSmallWeight,defaults.encounterBossSmallWeight);
-  assert.equal(custom261.encounterRewardRevision,273);
+  assert.equal(custom261.encounterRewardRevision,278);
   const preset262={...defaults,encounterRewardRevision:262,
     hero_fire_damage:140,hero_ice_damage:220,hero_electric_damage:88,hero_poison_damage:84,hero_neutral_damage:70};
   assert.deepEqual(migrate(preset262),defaults);
   const custom262=migrate({...preset262,hero_fire_damage:126});
   assert.equal(custom262.hero_fire_damage,126);
   assert.equal(custom262.hero_neutral_damage,defaults.hero_neutral_damage);
-  assert.equal(custom262.encounterRewardRevision,273);
+  assert.equal(custom262.encounterRewardRevision,278);
   const preset263={...defaults,encounterRewardRevision:263,encounterRewardScale:.85};
   assert.deepEqual(migrate(preset263),defaults);
   const custom263=migrate({...preset263,encounterRewardScale:.83});
   assert.equal(custom263.encounterRewardScale,.83);
-  assert.equal(custom263.encounterRewardRevision,273);
+  assert.equal(custom263.encounterRewardRevision,278);
   const preset264={...defaults,encounterRewardRevision:264,
     encounterGrade1HpMul:1.45,encounterGrade2HpMul:.98,encounterGrade3HpMul:.90,
     encounterGrade1AtkMul:6,encounterGrade2AtkMul:4.5,encounterGrade3AtkMul:3.5,encounterBaseHitCap:100};
@@ -389,7 +399,7 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom264=migrate({...preset264,encounterGrade2AtkMul:5.25});
   assert.equal(custom264.encounterGrade1AtkMul,defaults.encounterGrade1AtkMul);
   assert.equal(custom264.encounterGrade2AtkMul,5.25);
-  assert.equal(custom264.encounterRewardRevision,273);
+  assert.equal(custom264.encounterRewardRevision,278);
   const preset265={...defaults,encounterRewardRevision:265,
     encounterRewardScale:.86,
     encounterChest1Min:.30,encounterChest1Max:1.77,encounterChest2Min:.35,encounterChest2Max:1.80,
@@ -401,12 +411,12 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   const custom265=migrate({...preset265,encounterChest3Max:3.25,encounterBossMediumMax:3.55});
   assert.equal(custom265.encounterChest3Max,3.25);
   assert.equal(custom265.encounterBossMediumMax,3.55);
-  assert.equal(custom265.encounterRewardRevision,273);
+  assert.equal(custom265.encounterRewardRevision,278);
   const preset266=migrate({...defaults,encounterRewardRevision:266,encounterRewardScale:.50});
   assert.deepEqual(preset266,defaults);
   const custom266=migrate({...preset266,encounterRewardRevision:266,encounterRewardScale:.51});
   assert.equal(custom266.encounterRewardScale,.51);
-  assert.equal(custom266.encounterRewardRevision,273);
+  assert.equal(custom266.encounterRewardRevision,278);
   const preset267=migrate({...defaults,encounterRewardRevision:267,encounterRewardScale:.54,
     encounterBossSmallWeight:59,encounterBossMediumWeight:30,encounterBossLargeWeight:9,encounterBossJackpotWeight:2,
     encounterBossSmallMin:.10,encounterBossSmallMax:.35,encounterBossMediumMin:1.50,encounterBossMediumMax:3.40,
@@ -414,22 +424,29 @@ test("273 preset migration is shared, scoped, idempotent and preserves custom pr
   assert.deepEqual(preset267,defaults);
   const custom267=migrate({...preset267,encounterRewardRevision:267,encounterBossJackpotMax:27});
   assert.equal(custom267.encounterBossJackpotMax,27);
-  assert.equal(custom267.encounterRewardRevision,273);
+  assert.equal(custom267.encounterRewardRevision,278);
   const preset270=migrate({...defaults,encounterRewardRevision:270,
     encounterBossLargeMax:7,encounterBossJackpotMax:28,hero_electric_damage:82,hero_neutral_damage:103});
   assert.deepEqual(preset270,defaults);
   const custom270=migrate({...preset270,encounterRewardRevision:270,encounterBossJackpotMax:24});
-  assert.equal(custom270.encounterBossJackpotMax,24);
+  assert.equal(custom270.encounterBossJackpotMax,defaults.encounterBossJackpotMax);
   assert.equal(custom270.encounterBossLargeMax,defaults.encounterBossLargeMax);
   assert.equal(custom270.hero_neutral_damage,defaults.hero_neutral_damage);
-  assert.equal(custom270.encounterRewardRevision,273);
+  assert.equal(custom270.encounterRewardRevision,278);
   const preset271=migrate({...defaults,encounterRewardRevision:271,
     encounterBossMediumMax:4,encounterBossLargeMax:6.5,encounterBossJackpotMax:22});
   assert.deepEqual(preset271,defaults);
   const custom271=migrate({...preset271,encounterRewardRevision:271,encounterBossMediumMax:4.2});
   assert.equal(custom271.encounterBossMediumMax,4.2);
   assert.equal(custom271.encounterBossLargeMax,defaults.encounterBossLargeMax);
-  assert.equal(custom271.encounterRewardRevision,273);
+  assert.equal(custom271.encounterRewardRevision,278);
+  const preset273=migrate({...defaults,encounterRewardRevision:273,encounterRewardScale:.433,
+    encounterBossSmallWeight:63,encounterBossMediumWeight:27,encounterBossLargeMax:6,encounterBossJackpotMax:24});
+  assert.deepEqual(preset273,defaults);
+  const custom273=migrate({...preset273,encounterRewardRevision:273,encounterRewardScale:.44,encounterBossJackpotMax:21});
+  assert.equal(custom273.encounterRewardScale,.44);
+  assert.equal(custom273.encounterBossJackpotMax,21);
+  assert.equal(custom273.encounterRewardRevision,278);
 });
 
 test("regular enemies breach once without a kill reward while BOSS attacks remain persistent", () => {
@@ -472,15 +489,15 @@ test("BOSS increment tiers separate common, meaningful and jackpot outcomes", ()
     const draws=Array.from({length:1001},(_,i)=>{Math.random=()=>i/1001;return rollEncounterBossAdd(1)});
     return [...new Set(draws)].sort((a,b)=>a-b);
   })`);
-  assert.deepEqual(values.map(v=>[v[0],v.at(-1),v.length]),[[.1,.3,3],[1,3.2,23],[3.5,6,26],[7,24,171]]);
-  assert.deepEqual(configured,[63,27,8,2,.08,1.25]);
+  assert.deepEqual(values.map(v=>[v[0],v.at(-1),v.length]),[[.1,.3,3],[1,3.2,23],[3.5,5.4,20],[7,19.5,126]]);
+  assert.deepEqual(configured,[61,29,8,2,.08,1.25]);
 });
 
 test("prototype has a distinct economic identity; legacy math remains available outside prototype", () => {
   const run = fixture();
   assert.equal(run("certifiedMathEnabled()"), false);
   assert.equal(run("__tdHeadless.params().mathModelEnabled"), 0);
-  assert.equal(run("__tdHeadless.snapshot().economyMode"), "encounter-rtp-candidate-273");
+  assert.equal(run("__tdHeadless.snapshot().economyMode"), "encounter-rtp-candidate-278");
   assert.deepEqual(run("[params.encounterRtpTargetMin, params.encounterRtpTargetMax]"), [.96, 1]);
   const legacy = fixture(true);
   assert.equal(legacy("certifiedMathEnabled()"), true);
@@ -512,7 +529,7 @@ test("encounter tuning defaults match the game and external updates wait until t
   assert.equal(result.pending,null);
 });
 
-test("offers have three distinct formations; grades and rewards do not depend on player's build or HP", () => {
+test("offers keep fixed combat and rewards while their displayed no-damage estimate reacts to the build", () => {
   const run = fixture();
   for (let seed=1; seed<=50; seed+=1) {
     const offers = run(`(() => {
@@ -523,14 +540,47 @@ test("offers have three distinct formations; grades and rewards do not depend on
       ["laser", "cryo", "needle"].forEach(id => addTower(TOWERS.find(t => t.id === id)));
       __tdHeadless.setSeed(${seed});
       const after = buildRegularEncounterChoices(1);
-      const strip = choices => choices.map(({matchup, ...rest}) => rest);
-      return [strip(before), strip(after)];
+      const strip = choices => choices.map(({matchup, estimatedClear, ...rest}) => rest);
+      return [strip(before), strip(after), before.map(x => x.estimatedClear), after.map(x => x.estimatedClear)];
     })()`);
     assert.deepEqual(offers[0], offers[1]);
     assert.equal(new Set(offers[0].map(x => x.formation)).size, 3);
     assert.deepEqual(offers[0].map(x => x.threat).sort(), [1, 2, 3]);
-    assert.ok(offers[0].every(x => x.estimatedClear === null));
+    assert.ok([...offers[2], ...offers[3]].every(chance => Number.isInteger(chance) && chance >= 20 && chance <= 97));
+    assert.notDeepEqual(offers[2], offers[3]);
   }
+});
+
+test("regular risk percentage uses calibrated no-damage baselines", () => {
+  const run=fixture();
+  assert.deepEqual(run("[1,2,3].map(threat=>estimateRegularEncounterNoDamage(threat,{attributePower:1,roleReadiness:1/3,hpRatio:1}))"),[86,68,50]);
+  assert.equal(run("estimateRegularEncounterNoDamage(2,{attributePower:1,roleReadiness:1/3,hpRatio:.1})"),68);
+});
+
+test("card decision info shows full-wave POT ranges and BOSS multiplier ranges without rolling RNG", () => {
+  const run = fixture();
+  const result = run(`(() => {
+    setup(); state.rewardRoundingCarry=.5;
+    const regular=buildRegularEncounterChoices(1)[0];
+    const boss=buildBossEncounterChoices(7)[0];
+    __tdHeadless.setSeed(20260921);const expected=gameplayRandom();
+    __tdHeadless.setSeed(20260921);const regularPreview=encounterRewardPreview(regular),bossPreview=encounterRewardPreview(boss),actual=gameplayRandom();
+    return {regular,regularPreview,bossPreview,expected,actual};
+  })()`);
+  assert.equal(result.actual,result.expected);
+  assert.equal(result.regularPreview.unit,"pot");
+  assert.ok(result.regularPreview.low >= 0 && result.regularPreview.high > result.regularPreview.low);
+  assert.match(result.regularPreview.text,/^\+\d+～\d+ POT$/);
+  assert.equal(result.bossPreview.unit,"multiplier");
+  assert.ok(result.bossPreview.low >= .1 && result.bossPreview.high > result.bossPreview.low);
+  assert.match(result.bossPreview.text,/^\+\d+\.\d～\d+\.\dx$/);
+});
+
+test("card decision colors separate clear risk and reward rarity", () => {
+  const run = fixture();
+  assert.deepEqual(run("[97,75,74,51,50,25].map(encounterClearTone)"), ["safe","safe","risk","risk","danger","danger"]);
+  assert.deepEqual(run("[1,2,3,4].map(reward => encounterRewardTone({reward,boss:false}))"), ["normal","advanced","rare","legendary"]);
+  assert.equal(run("encounterRewardTone({reward:1,boss:true})"), "legendary");
 });
 
 test("all regular grades can upgrade their chest once without changing combat or using BOSS art", () => {
@@ -665,7 +715,7 @@ test("additional regular-wave growth is bounded and independent of player state"
   assert.equal(data.before[2].hpMul,data.before[3].hpMul);
 });
 
-test("v273 retains the selected card-grade HP and attack hierarchy", () => {
+test("v278 retains the selected card-grade HP and attack hierarchy", () => {
   const run=fixture();
   const result=run(`(() => {
     setup();
@@ -740,16 +790,17 @@ test("chest bounds rise by tier while overlapping; payout survives upgrades and 
       const unchanged = before === JSON.stringify(state.waveReward);
       while (state.spawn) updateSpawn(1);
       state.monsters.forEach(kill);
-      const killPot = state.pot;
+      const killPot = state.pot, pendingPot = state.waveReward.pendingPot;
       state.monsters = []; checkWaveClear();
       const fullPot = state.pot, award = payout();
       checkWaveClear();
       const duplicate = state.pot;
       collect(); const wallet = state.wallet; collect();
-      return { budget, bonus, unchanged, killPot, fullPot, award, duplicate, wallet, secondWallet:state.wallet };
+      return { budget, bonus, unchanged, killPot, pendingPot, fullPot, award, duplicate, wallet, secondWallet:state.wallet };
     })()`);
     assert.ok(result.unchanged);
-    assert.equal(result.killPot, 37 + result.budget - result.bonus);
+    assert.equal(result.killPot, 37);
+    assert.equal(result.pendingPot, result.budget - result.bonus);
     assert.equal(result.fullPot, 37 + result.budget);
     assert.equal(result.award, result.fullPot * 3);
     assert.equal(result.duplicate, result.fullPot);
@@ -905,8 +956,8 @@ test("BOSS increments stay positive, have a larger tail, and ignore player histo
     return {minimum,firstLarge,fifthLarge,a,b};
   })()`);
   assert.equal(data.minimum, .1);
-  assert.equal(data.firstLarge, 24);
-  assert.equal(data.fifthLarge, 30);
+  assert.equal(data.firstLarge, 19.5);
+  assert.equal(data.fifthLarge, 24.4);
   assert.equal(data.a, data.b);
 });
 

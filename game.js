@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-balance273";
+const BUILD_VERSION = "encounter-risk-reward278";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
 const DEBUG_BIOME = (() => {
@@ -734,18 +734,11 @@ const ATTRIBUTE_DISPLAY = {
 };
 const HEROES = [
   { id:"fire", name:"烈焰戰士", attr:"火", attrKey:"fire", attackMode:"blast", damage:126, rate:.72, range:780, color:"#ff6b3d", status:26, statusTime:2.0, splash:58, secondaryMul:.58, targets:1, projectileSpeed:680, zoneDuration:0, attackTrait:"爆燃火球", desc:"重擊爆破｜範圍燃燒" },
-  { id:"ice", name:"寒霜獵手", attr:"冰", attrKey:"ice", attackMode:"pierce", damage:170, rate:.58, range:980, color:"#72d4ff", status:.24, statusTime:1.35, splash:0, secondaryMul:.72, targets:3, projectileSpeed:1250, zoneDuration:0, attackTrait:"貫穿冰槍", desc:"直線貫穿｜強力緩速" },
-  { id:"electric", name:"雷霆特工", attr:"電", attrKey:"electric", attackMode:"chain", damage:76, rate:1.35, range:900, color:"#d89cff", status:.12, statusTime:1.0, splash:0, secondaryMul:.62, targets:3, projectileSpeed:0, zoneDuration:0, attackTrait:"連鎖電弧", desc:"瞬發連鎖｜多目標" },
-  { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", attackMode:"cloud", damage:58, rate:.68, range:820, color:"#66d86f", status:22, statusTime:2.6, splash:54, secondaryMul:.50, targets:1, projectileSpeed:520, zoneDuration:2.0, attackTrait:"腐蝕毒囊", desc:"拋射毒囊｜持續毒區" },
-  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", attackMode:"burst", damage:46, rate:.92, range:940, color:"#d5dde8", status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0, attackTrait:"三連實彈", desc:"高速三連｜純傷害" },
+  { id:"ice", name:"寒霜獵手", attr:"冰", attrKey:"ice", attackMode:"pierce", damage:172, rate:.70, range:980, color:"#72d4ff", status:.24, statusTime:1.35, splash:0, secondaryMul:.75, targets:3, projectileSpeed:1250, zoneDuration:0, attackTrait:"貫穿冰槍", desc:"直線貫穿｜強力緩速" },
+  { id:"electric", name:"雷霆特工", attr:"電", attrKey:"electric", attackMode:"chain", damage:84, rate:1.35, range:900, color:"#d89cff", status:.12, statusTime:1.0, splash:0, secondaryMul:.62, targets:3, projectileSpeed:0, zoneDuration:0, attackTrait:"連鎖電弧", desc:"瞬發連鎖｜多目標" },
+  { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", attackMode:"cloud", damage:107, rate:.76, range:820, color:"#66d86f", status:25, statusTime:2.6, splash:58, secondaryMul:.50, targets:1, projectileSpeed:520, zoneDuration:2.0, attackTrait:"腐蝕毒囊", desc:"拋射毒囊｜持續毒區" },
+  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", attackMode:"burst", damage:112, rate:.92, range:940, color:"#d5dde8", status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0, attackTrait:"三連實彈", desc:"高速三連｜純傷害" },
 ];
-[
-  ["fire", { damage:118 }],
-  ["ice", { damage:176, rate:.70, secondaryMul:.75 }],
-  ["electric", { damage:80 }],
-  ["poison", { damage:107, rate:.76, status:25, splash:58 }],
-  ["neutral", { damage:116 }],
-].forEach(([id, values]) => Object.assign(HEROES.find(hero => hero.id === id), values));
 const UPGRADE_DIMENSIONS = {
   damage:{ label:"傷害", mark:"DMG" },
   speed:{ label:"攻速", mark:"SPD" },
@@ -865,10 +858,10 @@ const PROTOTYPE_BOSS_REPAIR = .35;
 // Prototype-only POT per paid BET; disjoint chest bands, not calibrated RTP.
 const ENCOUNTER_REWARD_BANDS = { 1:[.45,.65], 2:[1.00,1.35], 3:[2.40,3.10], 4:[4.80,6.00] };
 const ENCOUNTER_PARAM_DEFAULTS = {
-  encounterRewardRevision:273,
+  encounterRewardRevision:278,
   encounterEconomyEnabled:1,
   encounterRtpTargetMin:.96, encounterRtpTargetMax:1,
-  encounterRewardScale:.433,
+  encounterRewardScale:.456,
   encounterPotEntryPower:1,
   encounterChestUpgradeChance:.10,
   encounterHpDepthGrowth:.09, encounterHpDepthCap:2,
@@ -876,16 +869,16 @@ const ENCOUNTER_PARAM_DEFAULTS = {
   encounterGrade1AtkMul:4.5, encounterGrade2AtkMul:2.4, encounterGrade3AtkMul:1.6,
   encounterBaseHitCap:55,
   encounterMinionBaseHitLimit:1,
-  encounterChest1Min:.05, encounterChest1Max:1.55,
-  encounterChest2Min:.35, encounterChest2Max:2.42,
-  encounterChest3Min:.80, encounterChest3Max:3.80,
-  encounterChest4Min:1.60, encounterChest4Max:6.00,
+  encounterChest1Min:.05, encounterChest1Max:3.00, encounterChest1Shape:2.933,
+  encounterChest2Min:.35, encounterChest2Max:4.00, encounterChest2Shape:2.527,
+  encounterChest3Min:.80, encounterChest3Max:4.50, encounterChest3Shape:1.467,
+  encounterChest4Min:1.60, encounterChest4Max:7.00, encounterChest4Shape:1.455,
   encounterBossChestMin:.19, encounterBossChestMax:.31,
-  encounterBossSmallWeight:63, encounterBossMediumWeight:27, encounterBossLargeWeight:8, encounterBossJackpotWeight:2,
+  encounterBossSmallWeight:61, encounterBossMediumWeight:29, encounterBossLargeWeight:8, encounterBossJackpotWeight:2,
   encounterBossSmallMin:.10, encounterBossSmallMax:.35,
   encounterBossMediumMin:1.00, encounterBossMediumMax:3.20,
-  encounterBossLargeMin:3.50, encounterBossLargeMax:6.00,
-  encounterBossJackpotMin:7.00, encounterBossJackpotMax:24.00,
+  encounterBossLargeMin:3.50, encounterBossLargeMax:5.40,
+  encounterBossJackpotMin:7.00, encounterBossJackpotMax:19.50,
   encounterBossDepthGrowth:.08, encounterBossDepthGrowthCap:1.25,
   encounterRushSpeedCap:78,
   encounterTankSingleDamageMul:1.35, encounterTankAreaDamageMul:.60,
@@ -1283,7 +1276,7 @@ function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
 
 const DEFAULT_PARAMS = {
   ...ENCOUNTER_PARAM_DEFAULTS,
-  balanceRevision: 211,
+  balanceRevision: 212,
   mathModelEnabled: 1,
   mathTargetRtp: .95,
   mathPoolEnabled: 1,
@@ -1365,11 +1358,11 @@ const DEFAULT_PARAMS = {
   mathFirstBossDelayPenalty: .012,
   mathFirstBossGuaranteePenalty: 0,
   mathHpReference: .91,
-  mathHeroPower_fire: 1,
-  mathHeroPower_ice: 1,
-  mathHeroPower_electric: 1,
+  mathHeroPower_fire: 1.06,
+  mathHeroPower_ice: .98,
+  mathHeroPower_electric: 1.05,
   mathHeroPower_poison: 1,
-  mathHeroPower_neutral: 1,
+  mathHeroPower_neutral: .98,
   mathCoreRiskBonus: .050,
   mathTowerBossPower_flame: .68,
   mathTowerBossPower_grenade: .64,
@@ -1543,6 +1536,7 @@ function cleanParams(input={}) {
     next[`${prefix}Min`] = clamp(next[`${prefix}Min`], .01, ceiling);
     next[`${prefix}Max`] = clamp(next[`${prefix}Max`], next[`${prefix}Min`], ceiling);
   }
+  for (const tier of [1,2,3,4]) next[`encounterChest${tier}Shape`] = clamp(next[`encounterChest${tier}Shape`], .25, 10);
   for (const tier of ["Small", "Medium", "Large", "Jackpot"]) next[`encounterBoss${tier}Weight`] = Math.max(0, next[`encounterBoss${tier}Weight`]);
   next.encounterBossDepthGrowth = clamp(next.encounterBossDepthGrowth, 0, 1);
   next.encounterBossDepthGrowthCap = clamp(next.encounterBossDepthGrowthCap, 1, 5);
@@ -1740,8 +1734,39 @@ function loadParams() {
 
 function migrateEncounterRewardParams(input) {
   const revision = Number(input.encounterRewardRevision) || 0;
-  if (revision >= 273) return input;
+  if (revision >= 278) return input;
   const next = {...input};
+  if (revision >= 274) {
+    const defaults274 = {
+      encounterChest1Min:.05, encounterChest1Max:1.55,
+      encounterChest2Min:.35, encounterChest2Max:2.42,
+      encounterChest3Min:.80, encounterChest3Max:3.80,
+      encounterChest4Min:1.60, encounterChest4Max:6.00,
+    };
+    const unchanged = Object.entries(defaults274).every(([key,value]) => input[key] === undefined || Number(input[key]) === value);
+    const alreadyUpdated = Object.keys(defaults274).every(key => input[key] === undefined || Number(input[key]) === DEFAULT_PARAMS[key]);
+    for (const tier of [1,2,3,4]) {
+      if (unchanged) {
+        next[`encounterChest${tier}Min`] = DEFAULT_PARAMS[`encounterChest${tier}Min`];
+        next[`encounterChest${tier}Max`] = DEFAULT_PARAMS[`encounterChest${tier}Max`];
+      }
+      next[`encounterChest${tier}Shape`] = unchanged || alreadyUpdated ? DEFAULT_PARAMS[`encounterChest${tier}Shape`] : 1;
+    }
+    next.encounterRewardRevision = 278;
+    return next;
+  }
+  if (revision === 273) {
+    const defaults273 = {
+      encounterRewardScale:.433,
+      encounterBossSmallWeight:63, encounterBossMediumWeight:27,
+      encounterBossLargeMax:6.00, encounterBossJackpotMax:24.00,
+    };
+    for (const [key,value] of Object.entries(defaults273)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 274;
+    return migrateEncounterRewardParams(next);
+  }
   if (revision === 272) {
     const defaults272 = {
       encounterRewardScale:.43, encounterPotEntryPower:.64, encounterChest2Max:2.35,
@@ -1755,7 +1780,7 @@ function migrateEncounterRewardParams(input) {
       if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
     }
     next.encounterRewardRevision = 273;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 271) {
     const defaults271 = {
@@ -3246,6 +3271,13 @@ function migrateBossParams(input={}) {
     });
     next.balanceRevision = 211;
   }
+  if ((Number(input.balanceRevision) || 0) < 212) {
+    [
+      "hero_fire_damage", "hero_ice_damage", "hero_electric_damage", "hero_neutral_damage",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_neutral",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 212;
+  }
   return migrateEncounterRewardParams(next);
 }
 
@@ -3446,7 +3478,7 @@ function encounterEconomyEnabled() {
 }
 function economyMode() {
   return ENCOUNTER_DRAFT_PROTOTYPE
-    ? encounterEconomyEnabled() ? "encounter-rtp-candidate-273" : "encounter-playtest-unbalanced-273"
+    ? encounterEconomyEnabled() ? "encounter-rtp-candidate-278" : "encounter-playtest-unbalanced-278"
     : "legacy-math";
 }
 function mathPoolEnabled() {
@@ -4876,6 +4908,45 @@ function rewardForEstimatedClear(chance, boss=false) {
   return chance >= 80 ? 1 : chance >= 60 ? 2 : chance >= 45 ? 3 : 4;
 }
 
+function estimateRegularEncounterNoDamage(threat, matchup) {
+  const base = ({ 1:86, 2:68, 3:50 })[clamp(Number(threat) || 1, 1, 3)];
+  const attributeShift = ((Number(matchup?.attributePower) || 1) - 1) * 16;
+  const roleShift = ((Number(matchup?.roleReadiness) || 1 / 3) - 1 / 3) * 6;
+  return Math.round(clamp(base + attributeShift + roleShift, 20, 97));
+}
+
+function encounterRewardPreview(choice) {
+  if (choice.boss) {
+    const ordinal = state.bossSeen + 1;
+    const growth = Math.min(params.encounterBossDepthGrowthCap, 1 + (ordinal - 1) * params.encounterBossDepthGrowth);
+    const tiers = ["Small", "Medium", "Large", "Jackpot"].filter(tier => params[`encounterBoss${tier}Weight`] > 0);
+    const values = tiers.flatMap(tier => [params[`encounterBoss${tier}Min`], params[`encounterBoss${tier}Max`]]);
+    const low = Math.max(.1, Math.round(Math.min(...values) * growth * 10) / 10);
+    const high = Math.max(low, Math.round(Math.max(...values) * growth * 10) / 10);
+    return { label:"擊殺可得", text:`+${low.toFixed(1)}～${high.toFixed(1)}x`, low, high, unit:"multiplier" };
+  }
+  const tier = clamp(Number(choice.reward) || 1, 1, 4);
+  const bet = betForWave(Number(choice.wave) || state.wave + 1);
+  const entryMultiplier = Math.max(1, 1 + state.bossAdd);
+  const entryPrice = Math.pow(entryMultiplier, encounterEconomyEnabled() ? params.encounterPotEntryPower : 0);
+  const scale = bet * params.moneyMul * (encounterEconomyEnabled() ? params.encounterRewardScale : 1) / entryPrice;
+  const prefix = `encounterChest${tier}`;
+  const band = encounterEconomyEnabled()
+    ? [params[`${prefix}Min`], params[`${prefix}Max`]]
+    : ENCOUNTER_REWARD_BANDS[tier];
+  const low = Math.max(0, Math.floor(Math.min(...band) * scale));
+  const high = Math.max(low, Math.ceil(Math.max(...band) * scale));
+  return { label:"通關可得", text:`+${low}～${high} POT`, low, high, unit:"pot" };
+}
+
+function encounterClearTone(chance) {
+  return chance >= 75 ? "safe" : chance > 50 ? "risk" : "danger";
+}
+
+function encounterRewardTone(choice) {
+  return choice.boss ? "legendary" : ["normal", "advanced", "rare", "legendary"][clamp(Number(choice.reward) || 1, 1, 4) - 1];
+}
+
 function encounterContract(lane, formation) {
   const reward = Math.min(4, lane.reward + (gameplayRandom() < params.encounterChestUpgradeChance ? 1 : 0));
   return {
@@ -4917,13 +4988,14 @@ function buildRegularEncounterChoices(wave) {
     const tunedFormation = encounterCombatProfile(formation, lane, wave);
     const matchup = assessEncounterThreat({ formation:tunedFormation, attr, role:formation.role, wave });
     const contract = encounterContract(lane, tunedFormation, matchup);
+    const estimatedClear = estimateRegularEncounterNoDamage(contract.threat, matchup);
     const art = encounterArtFor(attr, formation);
     const enemyCount = Math.max(4, Math.round(baseEnemyCount * tunedFormation.countMul));
     return {
       id:`${wave}-${lane.id}-${formation.id}-${attr}-${index}`,
       wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
       lane:lane.id, laneLabel:lane.label, template:formation.template, attr,
-      threat:contract.threat, reward:contract.reward, estimatedClear:contract.estimatedClear,
+      threat:contract.threat, reward:contract.reward, estimatedClear,
       countMul:tunedFormation.countMul,
       hpMul:tunedFormation.hpMul,
       atkMul:tunedFormation.atkMul,
@@ -5095,6 +5167,8 @@ function renderEncounterDraft(choices, boss) {
     const button = document.createElement("button");
     const compositeCardArt = compositeEncounterCardArt(choice);
     const advice = encounterAdvisory(choice);
+    const clearLabel = choice.boss ? "預估擊殺率" : "預估無傷率";
+    const rewardPreview = encounterRewardPreview(choice);
     const option = document.createElement("div");
     option.className = `encounter-option advice-${advice.tone}`;
     option.style.setProperty("--deal-index", index);
@@ -5124,13 +5198,13 @@ function renderEncounterDraft(choices, boss) {
       ${choice.boss ? "" : `<span class="encounter-loot" aria-hidden="true">
         <img class="encounter-reward-art" src="assets/ui/encounter/${rewardArt}.webp" alt="">
       </span>`}`;
-    button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，獎勵等級 ${choice.reward}，${advice.reasons.map(reason => reason.text).join("，")}`);
+    button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，${clearLabel} ${choice.estimatedClear}%，${rewardPreview.label} ${rewardPreview.text}`);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
     option.appendChild(button);
     const footer = document.createElement("div");
     footer.className = "encounter-advice";
     footer.setAttribute("aria-hidden", "true");
-    footer.innerHTML = `<span class="advice-sources">${advice.sources.map(({tower}) => `<img src="${tower.isHero ? heroIconDataUrl(tower) : towerSpritePath(tower, towerVisualStage(tower))}" alt="">`).join("")}</span><span class="advice-reasons">${advice.reasons.map(reason => `<span class="advice-${reason.kind}">${reason.text}</span>`).join("")}</span><span class="advice-signal"></span>`;
+    footer.innerHTML = `<span class="encounter-metric encounter-clear tone-${encounterClearTone(choice.estimatedClear)}"><small>${clearLabel}</small><strong>${choice.estimatedClear}%</strong></span><span class="encounter-metric encounter-reward tone-${encounterRewardTone(choice)}"><small>${rewardPreview.label}</small><strong>${rewardPreview.text}</strong></span>`;
     option.appendChild(footer);
     ui.encounterList.appendChild(option);
     button.disabled = true;
@@ -5555,7 +5629,9 @@ function rollEncounterWaveReward(encounter, bet) {
   const prefix = encounter.boss ? "encounterBossChest" : `encounterChest${tier}`;
   const [low, high] = encounter.boss || encounterEconomyEnabled()
     ? [params[`${prefix}Min`], params[`${prefix}Max`]] : ENCOUNTER_REWARD_BANDS[tier];
-  const multiplier = low + gameplayRandom() * (high - low);
+  const rewardUniform = gameplayRandom();
+  const shape = encounter.boss || !encounterEconomyEnabled() ? 1 : params[`encounterChest${tier}Shape`];
+  const multiplier = low + Math.pow(rewardUniform, shape) * (high - low);
   const entryMultiplier = encounterEconomyEnabled() ? Math.max(1, 1 + state.bossAdd) : 1;
   const entryPrice = Math.pow(entryMultiplier, encounterEconomyEnabled() ? params.encounterPotEntryPower : 0);
   const budget = balancedRewardRound(bet * multiplier * params.moneyMul * (encounterEconomyEnabled() ? params.encounterRewardScale : 1) / entryPrice);
@@ -5563,7 +5639,7 @@ function rollEncounterWaveReward(encounter, bet) {
   return { id:encounter.boss ? "boss-escorts" : `chest-${tier}`, tier, multiplier, budget, remaining:budget - clearBonus,
     clearBonus, claimedBonus:0, weightRemaining:0,
     clearExp:Math.round(ENCOUNTER_CLEAR_EXP[tier] * params.expMul),
-    rules:economyMode(), rewardUniform:(multiplier - low) / Math.max(.000001, high - low) };
+    rules:economyMode(), rewardUniform };
 }
 
 function encounterNormalKind(encounter) {
@@ -7007,8 +7083,11 @@ function kill(m) {
   state.exp += (m.exp || 0) * params.expMul * Math.max(.5, Number(state.currentEncounter?.expMul) || 1);
   const amount = claimWaveReward(m);
   if (amount > 0) {
-    state.pot += amount;
-    showMoneyReward(m, amount);
+    if (ENCOUNTER_DRAFT_PROTOTYPE && state.currentEncounter) state.waveReward.pendingPot = (state.waveReward.pendingPot || 0) + amount;
+    else {
+      state.pot += amount;
+      showMoneyReward(m, amount);
+    }
   }
 }
 
@@ -7211,16 +7290,19 @@ function checkWaveClear() {
   if (state.over || state.bossRoll) return;
   if (!state.spawn && !state.monsters.length && state.waveActive) {
     const clearedEncounter = state.currentEncounter;
+    const pendingPot = Math.max(0, state.waveReward?.pendingPot || 0);
     const clearBonus = Math.max(0, state.waveReward?.clearBonus || 0);
-    if (clearBonus > 0) {
+    const wavePotAward = pendingPot + clearBonus;
+    if (wavePotAward > 0) {
+      state.waveReward.pendingPot = 0;
       state.waveReward.clearBonus = 0;
       state.waveReward.claimedBonus = clearBonus;
-      state.pot += clearBonus;
+      state.pot += wavePotAward;
       if (!HEADLESS_SIM) {
         const tier = state.waveReward.tier;
         const color = ["", "#badce5", "#59bbff", "#d591ff", "#ffd76e"][tier];
-        effect("encounterChest", {x:FIELD.w/2,y:FIELD.h*.30,color}, {x:FIELD.w/2,y:FIELD.h*.30}, {
-          amount:clearBonus, tier, boss:!!clearedEncounter?.boss, life:2.1
+        if (!clearedEncounter?.boss) effect("encounterChest", {x:FIELD.w/2,y:FIELD.h*.30,color}, {x:FIELD.w/2,y:FIELD.h*.30}, {
+          amount:wavePotAward, tier, boss:false, life:2.1
         });
         playSfx(tier >= 3 ? "elite" : "coin");
         pulsePotMoney();
@@ -7237,7 +7319,9 @@ function checkWaveClear() {
     state.waveActive = false;
     if (ENCOUNTER_DRAFT_PROTOTYPE) state.biomeWave += 1;
     playSfx("waveClear");
-    effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, { text:"波次完成", life:.9 });
+    effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, {
+      text:clearedEncounter?.boss && wavePotAward > 0 ? `護衛戰利品 +${wavePotAward} POT` : "波次完成", life:.9
+    });
     if (ENCOUNTER_DRAFT_PROTOTYPE && clearedEncounter?.boss) {
       applyBiomePresentation(false);
       if (prototypeRunComplete()) completeRun();
@@ -9944,6 +10028,7 @@ if (HEADLESS_SIM) {
       encounter:state.currentEncounter ? {
         boss:!!state.currentEncounter.boss, lane:state.currentEncounter.lane, formation:state.currentEncounter.formation,
         attr:state.currentEncounter.attr, threat:state.currentEncounter.threat, reward:state.currentEncounter.reward,
+        estimatedClear:Number(state.currentEncounter.estimatedClear) || 0,
         attributeState:state.currentEncounter.matchup?.attributeState || "even",
         roleState:state.currentEncounter.matchup?.roleState || "even",
         attributePower:Number(state.currentEncounter.matchup?.attributePower) || 1,

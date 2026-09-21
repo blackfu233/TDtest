@@ -23,6 +23,7 @@
       const tier = id === "boss" ? 4 : id;
       const prefix = id === "boss" ? "encounterBossChest" : `encounterChest${tier}`;
       const [low,high] = id === "boss" || balanced ? [params[`${prefix}Min`],params[`${prefix}Max`]] : rules.unbalancedBands[tier];
+      const shape = id === "boss" || !balanced ? 1 : clamp(n(params[`encounterChest${tier}Shape`],1),.25,10);
       const cashLow = bet*low*scale, cashHigh = bet*high*scale;
       const entryPrice = balanced ? Math.pow(multiplier,clamp(n(params.encounterPotEntryPower,1),0,1)) : 1;
       const potLow = cashLow/entryPrice;
@@ -30,10 +31,12 @@
       const epsilon=Number.EPSILON*Math.max(1,Math.abs(potLow),Math.abs(potHigh))*4;
       const coinMin = Math.max(0,Math.floor(potLow+epsilon)), coinMax = Math.max(0,Math.ceil(potHigh-epsilon));
       const clearShare=id==="boss"?0:rules.clearShare;
-      return {id,tier,low,high,potLow,potHigh,meanPot:(potLow+potHigh)/2,clearShare,
+      const meanPot=potLow+(potHigh-potLow)/(shape+1);
+      const profitThreshold=(bet/multiplier-potLow)/Math.max(Number.EPSILON,potHigh-potLow);
+      return {id,tier,low,high,shape,potLow,potHigh,meanPot,clearShare,
         coinMin,coinMax,clearMin:Math.round(coinMin*clearShare),clearMax:Math.round(coinMax*clearShare),
         valueLow:potLow*multiplier,valueHigh:potHigh*multiplier,
-        profitChance:potHigh===potLow ? Number(potLow*multiplier>bet) : clamp((potHigh-bet/multiplier)/(potHigh-potLow),0,1),
+        profitChance:potHigh===potLow ? Number(potLow*multiplier>bet) : profitThreshold<=0 ? 1 : profitThreshold>=1 ? 0 : 1-Math.pow(profitThreshold,1/shape),
         clearExp:Math.round(rules.clearExp[tier]*expScale)};
     });
     const laneRewards = rules.lanes.map(lane => {
@@ -81,7 +84,7 @@
     const tr = (cells,grade="") => `<tr${grade?` data-grade="${grade}"`:""}>${cells.map(cell=>`<td>${cell}</td>`).join("")}</tr>`;
     doc.getElementById("encounterSourceBuild").textContent=rules.build;
     doc.getElementById("encounterRewardBasis").textContent =
-      `當波 BET ${fmt(data.bet)}；全波獎金基礎 = BET × 區間抽籤 × 金錢係數 ${fmt(params.moneyMul)}${data.balanced?` × 寶箱係數 ${fmt(params.encounterRewardScale)}；新增 POT 再除以當下累積倍率 ${fmt(data.multiplier)} 的 ${pct(params.encounterPotEntryPower)} 次方`:"（未校準玩法規則）"}。經驗係數 ${fmt(data.expScale)}。`;
+      `當波 BET ${fmt(data.bet)}；全波獎金基礎 = BET × 寶箱分布抽籤 × 金錢係數 ${fmt(params.moneyMul)}${data.balanced?` × 寶箱係數 ${fmt(params.encounterRewardScale)}；新增 POT 再除以當下累積倍率 ${fmt(data.multiplier)} 的 ${pct(params.encounterPotEntryPower)} 次方`:"（未校準玩法規則）"}。經驗係數 ${fmt(data.expScale)}。`;
     table("encounterRewardReferenceBody",data.chests.filter(c=>!current||c.id!=="boss").map(c=>tr(current?[
       c.id==="boss"?"BOSS 專屬":tierNames[c.tier],range(c.potLow,c.potHigh),fmt(c.meanPot),range(c.clearMin,c.clearMax),range(c.valueLow,c.valueHigh)
     ]:[

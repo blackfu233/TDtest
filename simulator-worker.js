@@ -102,7 +102,7 @@ function installHeadlessDom() {
 }
 
 installHeadlessDom();
-importScripts("simulator-core.js?v=encounter-balance273", "game.js?v=encounter-balance273");
+importScripts("simulator-core.js?v=encounter-risk-reward278", "game.js?v=encounter-risk-reward278");
 
 const engine = self.__tdHeadless;
 if (!engine?.ready) throw new Error("Worker 戰鬥引擎載入失敗");
