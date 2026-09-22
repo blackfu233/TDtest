@@ -1,12 +1,42 @@
 # Encounter Combat and Rewards Playtest
 
-Current build: `encounter-risk-reward278`.
+Current build: `encounter-loadout-risk281`.
 Economy identity: `encounter-rtp-candidate-278`.
 This is an RTP candidate under validation, not an approved release.
 
+## Loadout-aware Risk Revision 281
+
+- Regular-card damage risk now compares the selected formation with the player's current
+  hero, towers and upgrades. Attribute counters use the combat multiplier actually applied
+  by the game; area, single-target, control and range value depend on the formation.
+- Damage, attack speed, extra attacks, class multipliers and relevant control upgrades feed
+  the estimate, so changing the loadout can visibly change the risk on the same encounter.
+- The estimate changes display and advice only. Combat, rewards and the V278 RTP candidate
+  economy are unchanged.
+
+## Damage-risk Display Revision 280
+
+- Regular cards show the chance that the base will take any damage: 20% or less is green,
+  21-40% is yellow, and above 40% is red.
+- The displayed probability remains sensitive to threat grade, attribute counters and role
+  readiness. It is calibrated against the simulator's actual damage-event rate.
+- When current HP makes the selected encounter materially lethal, the same risk value gains
+  a stronger red pulse instead of adding another percentage to the card.
+- BOSS cards continue to show estimated kill rate. Reward and RTP rules are unchanged.
+
+## Win-rate Display Revision 279 (superseded)
+
+- Regular cards now show estimated wave survival instead of no-damage rate.
+- The estimate combines the calibrated damage-event chance with current base HP and
+  the selected monster formation's observed damage severity. Attribute counters and
+  role readiness still affect the estimate through the same visible matchup model.
+- This is a predictive estimate, not a predetermined result. Simulator calibration now
+  compares it with actual wave clears; damage-event rate remains a separate report metric.
+- Reward rules and the V278 RTP candidate identity are unchanged.
+
 ## Risk and Reward Revision 278
 
-- Regular cards show estimated no-damage rate instead of a misleading survival rate.
+- Regular cards introduced a calibrated no-damage estimate; V279 supersedes its player-facing label with survival.
 - Neutral grade baselines are 86% / 68% / 50%; attribute countering and role readiness
   apply bounded visible adjustments without changing the selected encounter.
 - The four regular chest tiers keep their V274 mean POT while using wider, low-skewed
@@ -66,8 +96,8 @@ No hidden win-rate target or player-state compensation is used.
 
 - Each regular offer contains three distinct formations and threat grades 1, 2, 3.
 - Threat grades change actual enemy health, attack, count and spawn cadence.
-  Each card shows a current-build no-damage estimate derived from its grade,
-  attribute match and role readiness; it does not preselect the outcome.
+  Each card shows a current-build survival estimate derived from its grade,
+  attribute match, role readiness, formation and current base HP; it does not preselect the outcome.
 - Formation determines the actual roster: swarm = batches of weak melee units;
   rush = fast melee batches; armor = fewer durable tanks; siege = ranged attackers;
   elite = one elite leader followed by a small escort.

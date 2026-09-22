@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-risk-reward278";
+const BUILD_VERSION = "encounter-loadout-risk281";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
 const DEBUG_BIOME = (() => {
@@ -4813,9 +4813,62 @@ function encounterRoleReadiness(role) {
   return clamp((direct + flexible) / total, 0, 1);
 }
 
+const ENCOUNTER_ROLE_FIT = {
+  swarm:{ area:1.34, control:1.12, single:.68, general:1 },
+  rush:{ area:1.04, control:1.38, single:.84, general:1 },
+  armor:{ area:.58, control:.82, single:1.42, general:1 },
+  siege:{ area:.82, control:1.22, single:1.14, general:1 },
+  elite:{ area:.72, control:1.05, single:1.38, general:1 },
+};
+
+function encounterLoadoutFit(formationId, enemyAttr) {
+  const sources = [state.hero, ...state.towers].filter(Boolean);
+  if (!sources.length) return { combatFit:1, attributePower:1, rolePower:1, buildPower:1 };
+  const attrProfile = enemyAttributeProfile(enemyAttr);
+  const roleTable = ENCOUNTER_ROLE_FIT[formationId] || ENCOUNTER_ROLE_FIT.siege;
+  let totalPower = 0, effectivePower = 0, attributePower = 0, rolePower = 0, basePower = 0;
+  sources.forEach(source => {
+    const isHero = !!source.isHero;
+    const role = isHero ? encounterHeroRole() : TOWER_ROLE[source.id] || "general";
+    const damage = isHero ? heroDamage(source) : scaledDamage(source);
+    const rate = isHero ? heroParam(source, "rate", source.rate) * (source.rateMul || 1) : 1 / Math.max(.05, attackCooldown(source));
+    const extras = isHero ? source.extraShots || 0 : (source.extraShots || 0) + (source.extraProjectiles || 0) + (source.extraAreas || 0);
+    const power = Math.max(1, damage * rate * (1 + extras * .55));
+    const base = isHero
+      ? Math.max(1, (Number(source.damage) || damage) * (Number(source.rate) || rate))
+      : Math.max(1, (TOWER_BASE_PARAMS[source.id]?.damage || damage) * (TOWER_BASE_PARAMS[source.id]?.rate || rate));
+    const attrMul = Number(attrProfile[towerAttr(source)]) || 1;
+    let classMul = 1;
+    if (!isHero) {
+      const classKey = formationId === "armor" || formationId === "elite" ? "eliteMul" : "minionMul";
+      const fallback = TOWER_BASE_PARAMS[source.id]?.[classKey] ?? 1;
+      classMul = Math.max(.1, towerParam(source, classKey, fallback));
+      if (formationId === "armor") classMul *= role === "single" ? params.encounterTankSingleDamageMul : role === "area" ? params.encounterTankAreaDamageMul : 1;
+    }
+    let roleMul = roleTable[role] || 1;
+    if (formationId === "siege") roleMul *= .90 + clamp((isHero ? heroParam(source, "range", source.range) : scaledRange(source)) / 600, 0, 1.25) * .12;
+    if (["rush", "siege"].includes(formationId) && (source.slow || source.freeze || source.stun || source.root || source.pull)) roleMul *= 1.12;
+    const fit = attrMul * Math.sqrt(classMul) * roleMul;
+    totalPower += power;
+    basePower += base;
+    effectivePower += power * fit;
+    attributePower += power * attrMul;
+    rolePower += power * roleMul;
+  });
+  const upgradePower = Math.sqrt(clamp(totalPower / Math.max(1, basePower), .6, 2.8));
+  return {
+    combatFit:clamp(effectivePower / totalPower, .45, 1.85),
+    attributePower:attributePower / totalPower,
+    rolePower:rolePower / totalPower,
+    buildPower:clamp(mathBuildPower(false) * upgradePower, .25, 2.2),
+  };
+}
+
 function assessEncounterThreat({ formation, attr, role, wave, boss=false, difficulty=null }) {
-  const attributePower = encounterAttributeReadiness(attr);
+  const loadout = boss ? null : encounterLoadoutFit(formation.id, attr);
+  const attributePower = loadout?.attributePower ?? encounterAttributeReadiness(attr);
   const roleReadiness = encounterRoleReadiness(role);
+  const rolePower = loadout?.rolePower ?? (roleReadiness >= .56 ? 1.2 : roleReadiness < .18 ? .78 : 1);
   const hpRatio = clamp(state.hp / Math.max(1, params.baseHp), 0, 1);
   const pressure = (formation.countMul - 1) * .72
     + (formation.hpMul - 1) * .72
@@ -4836,9 +4889,12 @@ function assessEncounterThreat({ formation, attr, role, wave, boss=false, diffic
     score,
     attributePower,
     roleReadiness,
+    rolePower,
+    combatFit:loadout?.combatFit ?? 1,
+    buildPower:loadout?.buildPower ?? mathBuildPower(boss),
     hpRatio,
-    attributeState:attributePower >= 1.28 ? "good" : attributePower <= .72 ? "bad" : "even",
-    roleState:roleReadiness >= .56 ? "good" : roleReadiness < .18 ? "bad" : "even",
+    attributeState:attributePower >= 1.12 ? "good" : attributePower <= .88 ? "bad" : "even",
+    roleState:rolePower >= 1.12 ? "good" : rolePower <= .88 ? "bad" : "even",
   };
 }
 
@@ -4908,11 +4964,18 @@ function rewardForEstimatedClear(chance, boss=false) {
   return chance >= 80 ? 1 : chance >= 60 ? 2 : chance >= 45 ? 3 : 4;
 }
 
-function estimateRegularEncounterNoDamage(threat, matchup) {
-  const base = ({ 1:86, 2:68, 3:50 })[clamp(Number(threat) || 1, 1, 3)];
-  const attributeShift = ((Number(matchup?.attributePower) || 1) - 1) * 16;
-  const roleShift = ((Number(matchup?.roleReadiness) || 1 / 3) - 1 / 3) * 6;
-  return Math.round(clamp(base + attributeShift + roleShift, 20, 97));
+function estimateRegularEncounterDamageRisk(threat, matchup, formation="") {
+  const base = ({ 1:14, 2:36, 3:50 })[clamp(Number(threat) || 1, 1, 3)] + ({ swarm:-9, rush:16, armor:-5, siege:25, elite:17 }[formation] || 0);
+  const combatFit = Math.max(.45, Number(matchup?.combatFit) || 1);
+  const buildPower = Math.max(.25, Number(matchup?.buildPower) || 1);
+  return Math.round(clamp(base - Math.log(combatFit) * 25 - Math.log(buildPower) * 11, 3, 85));
+}
+
+function estimateRegularEncounterFatalRisk(damageRisk, threat, matchup, formation) {
+  const typicalDamage = ({ swarm:.24, rush:.20, armor:.22, siege:.17, elite:.10 })[formation] || .18;
+  const hpRatio = clamp(Number(matchup?.hpRatio) || 0, 0, 1);
+  const damageTail = 1 / (1 + Math.exp((hpRatio - typicalDamage) / (.08 + clamp(Number(threat) || 1, 1, 3) * .01)));
+  return Math.round(clamp(damageRisk * damageTail, 0, 95));
 }
 
 function encounterRewardPreview(choice) {
@@ -4943,6 +5006,10 @@ function encounterClearTone(chance) {
   return chance >= 75 ? "safe" : chance > 50 ? "risk" : "danger";
 }
 
+function encounterRiskTone(chance) {
+  return chance <= 20 ? "safe" : chance <= 40 ? "risk" : "danger";
+}
+
 function encounterRewardTone(choice) {
   return choice.boss ? "legendary" : ["normal", "advanced", "rare", "legendary"][clamp(Number(choice.reward) || 1, 1, 4) - 1];
 }
@@ -4950,7 +5017,7 @@ function encounterRewardTone(choice) {
 function encounterContract(lane, formation) {
   const reward = Math.min(4, lane.reward + (gameplayRandom() < params.encounterChestUpgradeChance ? 1 : 0));
   return {
-    estimatedClear:null,
+    estimatedRisk:null,
     threat:lane.threat,
     reward,
     pressureFactor:encounterPressureFactor(formation),
@@ -4988,14 +5055,15 @@ function buildRegularEncounterChoices(wave) {
     const tunedFormation = encounterCombatProfile(formation, lane, wave);
     const matchup = assessEncounterThreat({ formation:tunedFormation, attr, role:formation.role, wave });
     const contract = encounterContract(lane, tunedFormation, matchup);
-    const estimatedClear = estimateRegularEncounterNoDamage(contract.threat, matchup);
+    const estimatedRisk = estimateRegularEncounterDamageRisk(contract.threat, matchup, formation.id);
+    const estimatedFatal = estimateRegularEncounterFatalRisk(estimatedRisk, contract.threat, matchup, formation.id);
     const art = encounterArtFor(attr, formation);
     const enemyCount = Math.max(4, Math.round(baseEnemyCount * tunedFormation.countMul));
     return {
       id:`${wave}-${lane.id}-${formation.id}-${attr}-${index}`,
       wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
       lane:lane.id, laneLabel:lane.label, template:formation.template, attr,
-      threat:contract.threat, reward:contract.reward, estimatedClear,
+      threat:contract.threat, reward:contract.reward, estimatedRisk, estimatedFatal,
       countMul:tunedFormation.countMul,
       hpMul:tunedFormation.hpMul,
       atkMul:tunedFormation.atkMul,
@@ -5028,7 +5096,8 @@ function buildBehaviorPreviewChoices(wave) {
     return {
       id:`${wave}-behavior-preview-${formation.id}-${index}`,
       wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
-      lane:"preview", laneLabel:"", template:formation.template, attr, threat:previewThreat, reward:previewReward, estimatedClear:88,
+      lane:"preview", laneLabel:"", template:formation.template, attr, threat:previewThreat, reward:previewReward,
+      estimatedRisk:estimateRegularEncounterDamageRisk(previewThreat, matchup, formation.id), estimatedFatal:0,
       countMul:formation.countMul,
       hpMul:formation.hpMul,
       atkMul:formation.atkMul,
@@ -5125,10 +5194,10 @@ function encounterMatchupLabel(choice) {
 }
 
 function encounterAdvisory(choice) {
-  const attributePower = encounterAttributeReadiness(choice.attr);
-  const roleReadiness = encounterRoleReadiness(choice.role);
-  const attrGood = attributePower >= 1.18, attrBad = attributePower <= .88;
-  const roleGood = roleReadiness >= .35, roleBad = roleReadiness < .18;
+  const attributePower = Number(choice.matchup?.attributePower) || encounterAttributeReadiness(choice.attr);
+  const roleReadiness = Number(choice.matchup?.rolePower) || 1;
+  const attrGood = attributePower >= 1.12, attrBad = attributePower <= .88;
+  const roleGood = roleReadiness >= 1.12, roleBad = roleReadiness <= .88;
   const lowHp = state.hp < params.baseHp * .35;
   const roleNames = { area:"群攻有利", single:"點殺有利", control:"控場有利", boss:"對王有利" };
   const missingNames = { area:"缺少群攻", single:"缺少點殺", control:"缺少控場", boss:"對王不足" };
@@ -5167,7 +5236,10 @@ function renderEncounterDraft(choices, boss) {
     const button = document.createElement("button");
     const compositeCardArt = compositeEncounterCardArt(choice);
     const advice = encounterAdvisory(choice);
-    const clearLabel = choice.boss ? "預估擊殺率" : "預估無傷率";
+    const chance = choice.boss ? choice.estimatedClear : choice.estimatedRisk;
+    const chanceLabel = choice.boss ? "預估擊殺率" : "受損風險";
+    const chanceTone = choice.boss ? encounterClearTone(chance) : encounterRiskTone(chance);
+    const lethalRisk = !choice.boss && Number(choice.estimatedFatal) >= 15;
     const rewardPreview = encounterRewardPreview(choice);
     const option = document.createElement("div");
     option.className = `encounter-option advice-${advice.tone}`;
@@ -5198,13 +5270,13 @@ function renderEncounterDraft(choices, boss) {
       ${choice.boss ? "" : `<span class="encounter-loot" aria-hidden="true">
         <img class="encounter-reward-art" src="assets/ui/encounter/${rewardArt}.webp" alt="">
       </span>`}`;
-    button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，${clearLabel} ${choice.estimatedClear}%，${rewardPreview.label} ${rewardPreview.text}`);
+    button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，${chanceLabel} ${chance}%${lethalRisk ? "，有致命風險" : ""}，${rewardPreview.label} ${rewardPreview.text}`);
     button.addEventListener("click", () => selectEncounterChoice(choice, button));
     option.appendChild(button);
     const footer = document.createElement("div");
     footer.className = "encounter-advice";
     footer.setAttribute("aria-hidden", "true");
-    footer.innerHTML = `<span class="encounter-metric encounter-clear tone-${encounterClearTone(choice.estimatedClear)}"><small>${clearLabel}</small><strong>${choice.estimatedClear}%</strong></span><span class="encounter-metric encounter-reward tone-${encounterRewardTone(choice)}"><small>${rewardPreview.label}</small><strong>${rewardPreview.text}</strong></span>`;
+    footer.innerHTML = `<span class="encounter-metric encounter-clear tone-${chanceTone}${lethalRisk ? " lethal-risk" : ""}"><small>${chanceLabel}</small><strong>${chance}%</strong></span><span class="encounter-metric encounter-reward tone-${encounterRewardTone(choice)}"><small>${rewardPreview.label}</small><strong>${rewardPreview.text}</strong></span>`;
     option.appendChild(footer);
     ui.encounterList.appendChild(option);
     button.disabled = true;
@@ -9881,7 +9953,7 @@ function heroCooldownProgress(hero) {
 function updateDebugSnapshot(now = performance.now()) {
   if (now - lastDebugFrame < DEBUG_FRAME_MS) return;
   lastDebugFrame = now;
-  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, biome:currentBiomeConfig().id, biomeIndex:state.biomeIndex, biomeWave:state.biomeWave, bossAt:state.biomeBossAt, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, hero:state.hero?.heroId || null, towers:state.towers.length, encounter:state.currentEncounter ? { lane:state.currentEncounter.lane || "boss", estimatedClear:state.currentEncounter.estimatedClear, reward:state.currentEncounter.reward } : null, collect:canCollect(), upgrade:state.lastUpgradeDebug || null, audio:{ state:audioState.ctx?.state || "none", bgm:audioState.bgmTimer !== null, voices:audioState.bgmSources.size } });
+  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, biome:currentBiomeConfig().id, biomeIndex:state.biomeIndex, biomeWave:state.biomeWave, bossAt:state.biomeBossAt, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, hero:state.hero?.heroId || null, towers:state.towers.length, encounter:state.currentEncounter ? { lane:state.currentEncounter.lane || "boss", estimatedClear:state.currentEncounter.estimatedClear, estimatedRisk:state.currentEncounter.estimatedRisk, reward:state.currentEncounter.reward } : null, collect:canCollect(), upgrade:state.lastUpgradeDebug || null, audio:{ state:audioState.ctx?.state || "none", bgm:audioState.bgmTimer !== null, voices:audioState.bgmSources.size } });
   if (snapshot === lastDebugSnapshot) return;
   lastDebugSnapshot = snapshot;
   document.body.dataset.debug = snapshot;
@@ -10029,10 +10101,15 @@ if (HEADLESS_SIM) {
         boss:!!state.currentEncounter.boss, lane:state.currentEncounter.lane, formation:state.currentEncounter.formation,
         attr:state.currentEncounter.attr, threat:state.currentEncounter.threat, reward:state.currentEncounter.reward,
         estimatedClear:Number(state.currentEncounter.estimatedClear) || 0,
+        estimatedRisk:Number(state.currentEncounter.estimatedRisk) || 0,
+        estimatedFatal:Number(state.currentEncounter.estimatedFatal) || 0,
         attributeState:state.currentEncounter.matchup?.attributeState || "even",
         roleState:state.currentEncounter.matchup?.roleState || "even",
         attributePower:Number(state.currentEncounter.matchup?.attributePower) || 1,
         roleReadiness:Number(state.currentEncounter.matchup?.roleReadiness) || 0,
+        rolePower:Number(state.currentEncounter.matchup?.rolePower) || 1,
+        combatFit:Number(state.currentEncounter.matchup?.combatFit) || 1,
+        loadoutPower:Number(state.currentEncounter.matchup?.buildPower) || 1,
       } : null,
       waveReward:state.waveReward ? {
         rules:state.waveReward.rules, budget:state.waveReward.budget, remaining:state.waveReward.remaining,
@@ -10082,7 +10159,10 @@ if (HEADLESS_SIM) {
       lane:choice.lane,
       formation:choice.formation,
       attr:choice.attr,
-      estimatedClear:choice.estimatedClear,
+      estimatedRisk:choice.estimatedRisk,
+      estimatedFatal:choice.estimatedFatal,
+      combatFit:choice.matchup?.combatFit,
+      loadoutPower:choice.matchup?.buildPower,
       threat:choice.threat,
       reward:choice.reward,
       pressureFactor:choice.pressureFactor,

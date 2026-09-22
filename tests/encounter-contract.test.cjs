@@ -529,7 +529,7 @@ test("encounter tuning defaults match the game and external updates wait until t
   assert.equal(result.pending,null);
 });
 
-test("offers keep fixed combat and rewards while their displayed no-damage estimate reacts to the build", () => {
+test("offers keep fixed combat and rewards while damage and fatal-risk estimates react to the build and HP", () => {
   const run = fixture();
   for (let seed=1; seed<=50; seed+=1) {
     const offers = run(`(() => {
@@ -540,21 +540,50 @@ test("offers keep fixed combat and rewards while their displayed no-damage estim
       ["laser", "cryo", "needle"].forEach(id => addTower(TOWERS.find(t => t.id === id)));
       __tdHeadless.setSeed(${seed});
       const after = buildRegularEncounterChoices(1);
-      const strip = choices => choices.map(({matchup, estimatedClear, ...rest}) => rest);
-      return [strip(before), strip(after), before.map(x => x.estimatedClear), after.map(x => x.estimatedClear)];
+      const strip = choices => choices.map(({matchup, estimatedRisk, estimatedFatal, ...rest}) => rest);
+      return [strip(before), strip(after), before.map(x => [x.estimatedRisk,x.estimatedFatal]), after.map(x => [x.estimatedRisk,x.estimatedFatal])];
     })()`);
     assert.deepEqual(offers[0], offers[1]);
     assert.equal(new Set(offers[0].map(x => x.formation)).size, 3);
     assert.deepEqual(offers[0].map(x => x.threat).sort(), [1, 2, 3]);
-    assert.ok([...offers[2], ...offers[3]].every(chance => Number.isInteger(chance) && chance >= 20 && chance <= 97));
+    assert.ok([...offers[2], ...offers[3]].flat().every(chance => Number.isInteger(chance) && chance >= 0 && chance <= 95));
     assert.notDeepEqual(offers[2], offers[3]);
   }
 });
 
-test("regular risk percentage uses calibrated no-damage baselines", () => {
+test("regular cards expose calibrated damage risk and a separate low-HP fatal warning", () => {
   const run=fixture();
-  assert.deepEqual(run("[1,2,3].map(threat=>estimateRegularEncounterNoDamage(threat,{attributePower:1,roleReadiness:1/3,hpRatio:1}))"),[86,68,50]);
-  assert.equal(run("estimateRegularEncounterNoDamage(2,{attributePower:1,roleReadiness:1/3,hpRatio:.1})"),68);
+  assert.deepEqual(run("[1,2,3].map(threat=>estimateRegularEncounterDamageRisk(threat,{attributePower:1,roleReadiness:1/3}))"),[14,36,50]);
+  assert.deepEqual(run("[[14,1,'swarm'],[36,2,'armor'],[50,3,'elite']].map(([risk,threat,formation])=>estimateRegularEncounterFatalRisk(risk,threat,{hpRatio:.1},formation))"),[12,28,25]);
+});
+
+test("regular-card risk follows the current tower roles, attribute counter and upgrades", () => {
+  const run=fixture();
+  const result=run(`(() => {
+    setup();
+    const risk=(ids,formationId,attr="neutral",upgrade=false)=>{
+      state.hero=null;state.towers=[];
+      ids.forEach(id=>addTower(TOWERS.find(tower=>tower.id===id)));
+      if(upgrade){state.towers[0].damageMul=2;state.towers[0].rate*=1.5;state.towers[0].upgrades.push("測試強化");}
+      const lane=ENCOUNTER_LANES[1],formation=ENCOUNTER_FORMATIONS.find(item=>item.id===formationId);
+      const combat=encounterCombatProfile(formation,lane,8);
+      const matchup=assessEncounterThreat({formation:combat,attr,role:formation.role,wave:8});
+      return {risk:estimateRegularEncounterDamageRisk(lane.threat,matchup,formationId),...matchup};
+    };
+    const resisted=risk(["chain"],"swarm","electric").risk;
+    const countered=risk(["gas"],"swarm","electric").risk;
+    return {
+      swarmArea:risk(["flame","grenade","chain"],"swarm"),
+      swarmSingle:risk(["cryo","laser","needle"],"swarm"),
+      armorArea:risk(["flame","grenade","chain"],"armor"),
+      armorSingle:risk(["cryo","laser","needle"],"armor"),
+      base:risk(["laser"],"armor"),upgraded:risk(["laser"],"armor","neutral",true),resisted,countered,
+    };
+  })()`);
+  assert.ok(result.swarmArea.risk <= result.swarmSingle.risk - 8, JSON.stringify(result));
+  assert.ok(result.armorSingle.risk <= result.armorArea.risk - 8, JSON.stringify(result));
+  assert.ok(result.countered <= result.resisted - 5, JSON.stringify(result));
+  assert.ok(result.upgraded.risk <= result.base.risk - 2, JSON.stringify(result));
 });
 
 test("card decision info shows full-wave POT ranges and BOSS multiplier ranges without rolling RNG", () => {
@@ -576,9 +605,10 @@ test("card decision info shows full-wave POT ranges and BOSS multiplier ranges w
   assert.match(result.bossPreview.text,/^\+\d+\.\d～\d+\.\dx$/);
 });
 
-test("card decision colors separate clear risk and reward rarity", () => {
+test("card decision colors separate BOSS clear chance, regular damage risk and reward rarity", () => {
   const run = fixture();
   assert.deepEqual(run("[97,75,74,51,50,25].map(encounterClearTone)"), ["safe","safe","risk","risk","danger","danger"]);
+  assert.deepEqual(run("[0,20,21,40,41,80].map(encounterRiskTone)"), ["safe","safe","risk","risk","danger","danger"]);
   assert.deepEqual(run("[1,2,3,4].map(reward => encounterRewardTone({reward,boss:false}))"), ["normal","advanced","rare","legendary"]);
   assert.equal(run("encounterRewardTone({reward:1,boss:true})"), "legendary");
 });
@@ -611,7 +641,7 @@ test("all regular grades can upgrade their chest once without changing combat or
     assert.equal(row.guaranteed.reward, row.lane.reward + 1);
     assert.equal(row.upgraded.threat, row.normal.threat);
     assert.equal(row.upgraded.pressureFactor, row.normal.pressureFactor);
-    assert.equal(row.upgraded.estimatedClear, null);
+    assert.equal(row.upgraded.estimatedRisk, null);
     for (const art of row.art) {
       assert.ok(!art.includes("boss-card"));
       assert.ok(fs.existsSync(path.join(project, art)), `Missing upgraded chest card: ${art}`);

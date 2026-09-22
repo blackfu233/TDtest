@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>塔防調參工具</title>
-  <link rel="stylesheet" href="tuner.css?v=encounter-risk-reward278">
-  <link rel="stylesheet" href="tuner-current.css?v=encounter-risk-reward278">
+  <link rel="stylesheet" href="tuner.css?v=encounter-loadout-risk281">
+  <link rel="stylesheet" href="tuner-current.css?v=encounter-loadout-risk281">
 </head>
 <body data-tuner-mode="current">
   <main class="tool-shell">
     <header class="tool-header">
       <div><p class="eyebrow">塔防 · 遭遇戰版本</p><h1>調參工具</h1></div>
       <div class="actions">
-        <a class="ghost" href="index.html?v=encounter-risk-reward278" target="_blank" rel="noreferrer">開啟遊戲</a>
+        <a class="ghost" href="index.html?v=encounter-loadout-risk281" target="_blank" rel="noreferrer">開啟遊戲</a>
         <button id="applyBtn" type="button">套用到下一局</button>
       </div>
     </header>
@@ -117,15 +117,15 @@
         </section>
         <section id="jsonTab" class="tab-panel"><header class="page-heading"><h2>版本與存檔</h2></header><div id="versionSettings"></div>
           <section class="current-section"><h3>設定檔</h3><p class="page-note">匯入只更新草稿；按「套用到下一局」後才儲存到本機遊戲。設定檔保留相容用的舊欄位，不會自動更新 Git 或雲端版本。</p><div class="file-actions"><button id="exportBtn" type="button" class="ghost">匯出設定</button><button id="importBtn" type="button" class="ghost">匯入草稿</button><button id="resetBtn" type="button" class="ghost">還原預設草稿</button></div><textarea id="jsonText" spellcheck="false" aria-label="設定 JSON" placeholder="匯出的設定，或待匯入的 JSON"></textarea></section>
-          <section class="current-section"><h3>版本範圍</h3><p class="page-note">目前：遭遇戰與調參介面 V278。一般卡顯示預估無傷率；寶箱維持平均回報並增加少數單波獲利機會；BOSS 專屬寶箱仍只開倍率。</p><a href="tuner-legacy.html?v=tuner-organized249">開啟舊版參考（唯讀）</a></section>
+          <section class="current-section"><h3>版本範圍</h3><p class="page-note">目前：遭遇戰與調參介面 V280。一般卡顯示基地受損風險；寶箱沿用 V278 回報分布；BOSS 專屬寶箱仍只開倍率。</p><a href="tuner-legacy.html?v=tuner-organized249">開啟舊版參考（唯讀）</a></section>
         </section>
       </div>
     </div>
     <p id="statusText" class="status" role="status">設定僅在本機使用；進行中的對局維持原設定。</p>
   </main>
-  <script src="encounter-tuning-data.js?v=encounter-risk-reward278"></script>
-  <script src="tuner-encounter.js?v=encounter-risk-reward278"></script>
-  <script src="tuner-current.js?v=encounter-risk-reward278"></script>
-  <script src="tuner.js?v=encounter-risk-reward278"></script>
+  <script src="encounter-tuning-data.js?v=encounter-loadout-risk281"></script>
+  <script src="tuner-encounter.js?v=encounter-loadout-risk281"></script>
+  <script src="tuner-current.js?v=encounter-loadout-risk281"></script>
+  <script src="tuner.js?v=encounter-loadout-risk281"></script>
 </body>
 </html>

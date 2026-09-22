@@ -1,7 +1,7 @@
 "use strict";
 // Generated from game.js by tools/export-encounter-tuning.cjs.
 globalThis.TD_ENCOUNTER_TUNING = {
-  "build": "encounter-risk-reward278",
+  "build": "encounter-loadout-risk281",
   "economyMode": "encounter-rtp-candidate-278",
   "defaultParams": {
     "encounterRewardRevision": 278,
@@ -1749,6 +1749,6 @@ globalThis.TD_ENCOUNTER_TUNING = {
     ]
   },
   "clearShare": 0.4,
-  "engineSha256": "064a881601ee49c48169e96d892405a75d4b54a0bd8da5ff8fff69be4eb966ab"
+  "engineSha256": "8a44d577e8f1c39e1a8bf64ce4b5a2dd9f618848bce560b158654b67078aa73c"
 };
 if (typeof module !== "undefined") module.exports = globalThis.TD_ENCOUNTER_TUNING;
