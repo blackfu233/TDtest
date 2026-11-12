@@ -1,8 +1,8 @@
 "use strict";
 // Generated from game.js by tools/export-encounter-tuning.cjs.
 globalThis.TD_ENCOUNTER_TUNING = {
-  "build": "encounter-persistent-balance284",
-  "economyMode": "encounter-rtp-candidate-284",
+  "build": "encounter-milestone285",
+  "economyMode": "encounter-milestone-unbalanced-285",
   "defaultParams": {
     "encounterRewardRevision": 284,
     "encounterEconomyEnabled": 1,
@@ -1744,9 +1744,42 @@ globalThis.TD_ENCOUNTER_TUNING = {
       3.6,
       5.5,
       8
+    ],
+    "milestoneSettlement": true,
+    "weightFactors": [
+      [
+        1,
+        1,
+        1,
+        1
+      ],
+      [
+        1.05,
+        0.8,
+        1.15,
+        1.5
+      ],
+      [
+        1.1,
+        0.6,
+        1.3,
+        2
+      ],
+      [
+        1.15,
+        0.4,
+        1.45,
+        2.5
+      ],
+      [
+        1.2,
+        0.2,
+        1.6,
+        3
+      ]
     ]
   },
   "clearShare": 0.4,
-  "engineSha256": "fa06f8e552819c2d1d811c047b28405203844914988f9596b59ef42fc4304925"
+  "engineSha256": "204134a3403fb49a786094cbb5f2f5ca3ae1c1b564db1073a4b32fbf1aa3742d"
 };
 if (typeof module !== "undefined") module.exports = globalThis.TD_ENCOUNTER_TUNING;

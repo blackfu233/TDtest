@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>塔防 RTP 模擬工具</title>
-  <link rel="stylesheet" href="simulator.css?v=encounter-persistent-balance284">
+  <link rel="stylesheet" href="simulator.css?v=encounter-milestone285">
 </head>
 <body>
   <main class="sim-shell">
@@ -12,7 +12,7 @@
       <div>
         <p class="eyebrow">Tower Defense Prototype</p>
         <h1>RTP 模擬工具</h1>
-        <p class="subtext">使用正式戰鬥邏輯模擬 RTP、逐王擊殺率、每波存活切片與 Build 表現。</p>
+        <p class="subtext">V285 里程碑測試，RTP 未校準。總派彩包含先前各區已入帳獎金；V284 驗證結果不適用。</p>
       </div>
       <nav class="header-actions" aria-label="工具連結">
         <a class="button secondary" href="tuner.html" target="_blank" rel="noreferrer">調參工具</a>
@@ -135,7 +135,7 @@
     <section id="wavesTab" class="result-panel">
       <div class="section-heading"><div><h2>固定波次 Collect RTP（Crash 報表）</h2><p>同一批玩家皆從第 1 波開始；每列代表最晚在該波 Collect，途中失敗則賠付為 0，若先完成五戰區則自動結算。</p></div></div>
       <div class="table-wrap"><table class="wide-table"><thead><tr><th>波次</th><th>全部樣本</th><th>進入波次</th><th>成功 Collect</th><th>條件通過率</th><th>固定收手成功率</th><th>獲利局率（含死亡）</th><th>存活獲利率</th><th>2x+</th><th>5x+</th><th>最大倍數</th><th>存活者平均 HP</th><th>基地 HP%（含死亡）</th><th>平均 POT</th><th>POT 加權平均倍率</th><th>平均已付 BET</th><th>一般波 RTP</th><th>BOSS RTP</th><th>Cash Out RTP</th><th>95% 區間</th><th>BOSS 波比例</th></tr></thead><tbody id="waveBody"></tbody></table></div>
-      <div class="section-heading compact"><div><h3>POT 深追風險</h3><p>追蹤每波清場當下的可 Collect 帳面倍率，以及玩家帶著獲利繼續後歸零的比例。</p></div></div>
+      <div class="section-heading compact"><div><h3>POT 深追風險</h3><p>回收比包含已入帳與本區可領獎金；死亡只損失本區 POT，不代表整局零派彩。</p></div></div>
       <div class="table-wrap"><table class="wide-table"><thead><tr><th>波次</th><th>清場檢查點</th><th>帳面 RTP</th><th>帳面獲利</th><th>帳面 2x+</th><th>帳面 5x+</th><th>獲利後繼續</th><th>2x 後繼續</th><th>續追後死亡</th><th>2x 續追後死亡</th><th>該波最高</th></tr></thead><tbody id="chaseWaveBody"></tbody></table></div>
     </section>
 
@@ -171,9 +171,9 @@
     </section>
 
     <p id="toast" class="toast" role="status" aria-live="polite"></p>
-  <iframe id="engineFrame" class="engine-frame" src="index.html?headless=1&amp;v=encounter-persistent-balance284" title="模擬戰鬥引擎"></iframe>
+  <iframe id="engineFrame" class="engine-frame" src="index.html?headless=1&amp;v=encounter-milestone285" title="模擬戰鬥引擎"></iframe>
   </main>
-  <script src="simulator-core.js?v=encounter-persistent-balance284"></script>
-  <script src="simulator.js?v=simulator-report284"></script>
+  <script src="simulator-core.js?v=encounter-milestone285"></script>
+  <script src="simulator.js?v=simulator-report285"></script>
 </body>
 </html>

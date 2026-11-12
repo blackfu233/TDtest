@@ -1,10 +1,32 @@
 # Encounter Combat and Rewards Playtest
 
-Current build: `encounter-persistent-balance284`.
+Current build: `encounter-milestone285`.
 
 Regular enemies now remain at the base and continue attacking until their HP reaches zero; reaching the base no longer removes them or suppresses their kill reward.
-Economy identity: `encounter-rtp-candidate-284`.
-This RTP candidate is validated for the human-balanced proxy, not an all-strategy approved release.
+Economy identity: `encounter-milestone-unbalanced-285`.
+This is a settlement prototype. RTP has not been calibrated or formally validated.
+
+## Milestone Settlement Prototype 285
+
+- Each wave still costs its displayed BET. Mid-zone Collect remains available.
+- Clearing the complete BOSS wave pays that zone's POT times its BOSS multiplier
+  directly to the wallet, exactly once. Killing the BOSS before its escorts die
+  does not settle the zone; the multiplier presentation must also finish.
+- The next zone starts with zero POT and a fresh multiplier. Hero, towers and
+  upgrades persist. A later defeat cannot revoke previously paid rewards.
+- The HUD separates current-zone POT, already-paid rewards and total run stakes.
+  The zone receipt shows gross payout, zone stakes and net profit/loss.
+- Every zone has a positive jackpot-tier probability. Later zones shift weight
+  away from the middle tier toward the lowest and highest tiers. This changes
+  volatility; it does not establish a higher expected return or a target RTP.
+- The simulator counts paid zones even when the run ends in defeat. The tuner
+  uses the same zone-specific multiplier weights and reward basis as the demo.
+- V284 remains playable at `v284.html` using its unchanged `game-v284.js`.
+  V285 uses separate tuning storage and broadcasts, leaving V284 settings intact.
+  Git branch `archive/v284-formal-baseline` preserves its complete source baseline;
+  the prototype lives on `prototype/milestone-settlement285`.
+- V283/V284 statistics below describe those historical rules only. They are not
+  evidence for V285, and no historical report is changed by this prototype.
 
 ## Formal Baseline and Candidate Revision 284
 

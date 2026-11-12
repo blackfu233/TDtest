@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防卡牌玩法測試</title>
   <link rel="stylesheet" href="styles.css?v=encounter-integrated-card238">
-  <link rel="stylesheet" href="encounter-integrated.css?v=encounter-persistent-balance284">
+  <link rel="stylesheet" href="encounter-integrated.css?v=encounter-milestone285">
 </head>
-<body>
+<body class="milestone-demo">
   <main class="phone">
     <section class="top-hud">
       <div class="hud-chip">
@@ -18,12 +18,12 @@
         <strong id="walletText">10000</strong>
       </div>
       <div class="pot-chip">
-        <span>POT</span>
+        <span>本區 POT</span>
         <div class="pot-row">
           <strong id="potText">0</strong>
           <b id="bossMultText" class="empty"></b>
         </div>
-        <div class="payout-row"><span>總得分</span><strong id="payoutText">0</strong></div>
+        <div class="payout-row"><span>本區可領</span><strong id="payoutText">0</strong></div>
       </div>
       <div class="hud-icons">
         <button id="resetBtn" type="button" aria-label="重新開始本局">↻</button>
@@ -41,6 +41,8 @@
         <strong class="wave-value"><b id="waveText">0</b><canvas id="waveAttrIcon" width="22" height="22" hidden></canvas></strong>
       </div>
     </section>
+
+    <div class="milestone-ledger"><span>已入帳 <b id="bankedText">0</b></span><span>本局投注 <b id="stakeText">0</b></span></div>
 
     <section class="battlefield">
       <div id="biomeHud" class="biome-hud" aria-label="目前戰區與 BOSS 進度">
@@ -72,7 +74,7 @@
 
     <section id="entryOverlay" class="entry-overlay">
       <div class="entry-panel">
-        <span class="entry-kicker">玩法測試 · RTP 候選驗證中</span>
+        <span class="entry-kicker">里程碑測試 · RTP 未校準</span>
         <h2>突破五大戰區</h2>
         <div class="entry-wallet"><span>錢包</span><strong id="entryWalletText">10000</strong></div>
         <div class="entry-stepper">
@@ -93,7 +95,7 @@
           <span id="decisionWave">第 1 波完成</span>
           <i id="decisionDanger" class="decision-danger hidden" aria-label="危險程度上升">!</i>
         </div>
-        <div class="decision-score"><span>目前總得分</span><strong id="decisionPayout">0</strong></div>
+        <div class="decision-score"><span id="decisionPayoutLabel">本區可領</span><strong id="decisionPayout">0</strong></div>
         <div class="decision-wave-summary">
           <strong id="decisionReward">+0 POT</strong>
           <span id="decisionDamage">基地 -0 HP</span>
@@ -149,6 +151,6 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=encounter-persistent-balance284" charset="utf-8"></script>
+  <script src="game.js?v=encounter-milestone285" charset="utf-8"></script>
 </body>
 </html>

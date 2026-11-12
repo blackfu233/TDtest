@@ -190,7 +190,7 @@ test("284 preserves broad prize tails and profit chances after the persistent-en
   assert.ok(preview.chests[0].profitChance>.09);
 });
 
-test("post-BOSS rewards use the published partial entry price without double counting the full multiplier", () => {
+test("milestone rewards do not discount new POT by a previous boss multiplier", () => {
   const run=fixture();
   const result=run(`(()=>{
     setup();state.rewardRoundingCarry=0;__tdHeadless.setSeed(1024);
@@ -199,11 +199,10 @@ test("post-BOSS rewards use the published partial entry price without double cou
     const postBoss=rollEncounterWaveReward({reward:2,boss:false},1000).budget;
     return {base,postBoss,multiplier:1+state.bossAdd};
   })()`);
-  assert.ok(result.postBoss<result.base,result);
-  assert.ok(Math.abs((result.postBoss*result.multiplier)/result.base-1)<.04,JSON.stringify(result));
+  assert.equal(result.postBoss,result.base);
   const current=run("__tdHeadless.params()"),preview=tuningView.calculate(current,{bet:100,multiplier:3});
   const basePreview=tuningView.calculate(current,{bet:100,multiplier:1});
-  assert.ok(Math.abs(preview.chests[1].meanPot-basePreview.chests[1].meanPot/3)<.01);
+  assert.equal(preview.chests[1].meanPot,basePreview.chests[1].meanPot);
 });
 
 test("chest upgrades change only money, never kill EXP or clear EXP", () => {
@@ -237,7 +236,7 @@ test("BOSS chest awards multiplier only; escort money settles once at wave clear
     const afterEscorts=state.pot;kill(boss);
     const afterBoss={pot:state.pot,exp:state.exp,add:state.bossAdd};
     kill(boss);state.monsters=[];checkWaveClear();
-    const afterClear={pot:state.pot,exp:state.exp,add:state.bossAdd};
+    const afterClear={pot:state.pot,exp:state.exp,add:state.bossAdd,paid:state.bankedPayout};
     checkWaveClear();
     return {afterEscorts,afterBoss,afterClear,finalPot:state.pot,reward:state.waveReward};
   })()`);
@@ -247,9 +246,10 @@ test("BOSS chest awards multiplier only; escort money settles once at wave clear
   assert.equal(result.reward.claimedBonus,0);
   assert.equal(result.afterBoss.pot,result.afterEscorts);
   assert.ok(result.afterBoss.add>0);
-  assert.equal(result.afterClear.pot,result.reward.budget);
+  assert.equal(result.afterClear.pot,0);
+  assert.equal(result.afterClear.paid,Math.round(result.reward.budget*(1+result.afterBoss.add)));
   assert.equal(result.afterClear.exp,result.afterBoss.exp);
-  assert.equal(result.afterClear.add,result.afterBoss.add);
+  assert.equal(result.afterClear.add,0);
   assert.equal(result.finalPot,result.afterClear.pot);
 });
 
@@ -504,7 +504,7 @@ test("prototype has a distinct economic identity; legacy math remains available 
   const run = fixture();
   assert.equal(run("certifiedMathEnabled()"), false);
   assert.equal(run("__tdHeadless.params().mathModelEnabled"), 0);
-  assert.equal(run("__tdHeadless.snapshot().economyMode"), "encounter-rtp-candidate-284");
+  assert.equal(run("__tdHeadless.snapshot().economyMode"), "encounter-milestone-unbalanced-285");
   assert.deepEqual(run("[params.encounterRtpTargetMin, params.encounterRtpTargetMax]"), [.96, 1]);
   const legacy = fixture(true);
   assert.equal(legacy("certifiedMathEnabled()"), true);
@@ -609,7 +609,7 @@ test("card decision info shows full-wave POT ranges and BOSS multiplier ranges w
   assert.match(result.regularPreview.text,/^\+\d+～\d+ POT$/);
   assert.equal(result.bossPreview.unit,"multiplier");
   assert.ok(result.bossPreview.low >= .1 && result.bossPreview.high > result.bossPreview.low);
-  assert.match(result.bossPreview.text,/^\+\d+\.\d～\d+\.\dx$/);
+  assert.match(result.bossPreview.text,/^×\d+\.\d～\d+\.\d$/);
 });
 
 test("card decision colors separate BOSS clear chance, regular damage risk and reward rarity", () => {
@@ -916,7 +916,8 @@ test("clear XP and wave receipt settle once; BOSS repair is bounded and never ch
     return {first, second:{hp:state.hp,pot:state.pot,exp:state.exp}, budget, exp};
   })()`);
   assert.equal(data.first.hp, 490);
-  assert.equal(data.first.pot, 100 + data.budget);
+  assert.equal(data.first.pot, 0);
+  assert.equal(data.first.summary.milestone.amount,100+data.budget);
   assert.equal(data.first.exp, data.exp);
   assert.equal(data.first.summary.damage, 620);
   assert.equal(data.first.summary.repair, 350);

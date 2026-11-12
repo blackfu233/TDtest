@@ -1,11 +1,11 @@
-const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v3";
-const PARAM_CHANNEL = "tower-defense-param-sync";
+const PARAM_STORAGE_KEY = "towerDefenseTuningParams.milestone285";
+const PARAM_CHANNEL = "tower-defense-param-sync.milestone285";
 const CONFIG_STORAGE_KEY = "towerDefenseRtpSimulatorConfig.v1";
 const PROFILE_STORAGE_KEY = "towerDefenseRtpSimulatorProfiles.v1";
 const SNAPSHOT_STORAGE_KEY = "towerDefenseRtpParamSnapshots.v1";
 const RESULT_STORAGE_KEY = "towerDefenseRtpResults.v3";
-const SIMULATOR_BUILD_VERSION = "encounter-persistent-balance284";
-const SIMULATOR_REPORT_VERSION = "simulator-report284";
+const SIMULATOR_BUILD_VERSION = "encounter-milestone285";
+const SIMULATOR_REPORT_VERSION = "simulator-report285";
 const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
 const MAX_SAMPLES = 500000;
 const TRUSTED_SAMPLES_PER_STRATEGY = 100000;
@@ -420,7 +420,7 @@ function buildChaseAnalysis(rows, maxWave=30) {
       const item = waves[record.wave-1];
       if (!item) return;
       const continued = Number(row.wave) > record.wave;
-      const laterDeath = continued && Number(row.payout) === 0;
+      const laterDeath = continued && row.reason === "defeat";
       item.clears += 1;
       item.checkpointPayout += Math.max(0,Number(record.payout)||0);
       item.checkpointBet += Math.max(0,Number(record.cumulativeBet)||0);
@@ -498,7 +498,7 @@ function buildChaseAnalysis(rows, maxWave=30) {
         wave6StartProfit += startPayout-startBet;
         if (recordMap.has(7)) wave6Continued += 1;
         const finalRatio = Number(row.bets) > 0 ? Math.max(0,Number(row.payout)||0)/Number(row.bets) : 0;
-        wave6FinalDeaths += Number(row.payout) === 0 ? 1 : 0;
+        wave6FinalDeaths += row.reason === "defeat" ? 1 : 0;
         wave6Final2x += finalRatio >= 2 ? 1 : 0;
         wave6FinalProfit += Math.max(0,Number(row.payout)||0)-Math.max(0,Number(row.bets)||0);
       }
@@ -513,11 +513,11 @@ function buildChaseAnalysis(rows, maxWave=30) {
     deepPeak5x += runDeep5x ? 1 : 0;
     deepFinal2x += row.wave >= 6 && finalReturn >= 2 ? 1 : 0;
     deepFinal5x += row.wave >= 6 && finalReturn >= 5 ? 1 : 0;
-    const lost = Number(row.payout) === 0;
+    const lost = row.reason === "defeat";
     diedAfterProfit += lost && runHadProfit ? 1 : 0;
     diedAfter2x += lost && runHad2x ? 1 : 0;
     diedAfter5x += lost && runHad5x ? 1 : 0;
-    if (lost) lostPeakPayout += peakPayout;
+    if (lost) lostPeakPayout += Math.max(0,peakPayout - row.payout);
     peakReturnSum += peakReturn;
     peakReturnMax = Math.max(peakReturnMax,peakReturn);
     peakWaveSum += peakWave;
@@ -1712,7 +1712,7 @@ function reportSections(report) {
       ["深追終局實領 2x+",sheetPercent(chase.deepFinal2xConditionalRate || 0,2),`以第 6 波後終局者為分母｜占全部樣本 ${sheetPercent(chase.deepFinal2xRate || 0,2)}`],
       ["深追終局實領 5x+",sheetPercent(chase.deepFinal5xConditionalRate || 0,2),`以第 6 波後終局者為分母｜占全部樣本 ${sheetPercent(chase.deepFinal5xRate || 0,2)}`],
       ["2x 深追下一波",`${chase.twoXTransitionCount || 0} 次`, `通過 ${sheetPercent(chase.twoXNextClearRate || 0,1)}｜死亡 ${sheetPercent(chase.twoXNextDeathRate || 0,1)}`],
-      ["2x 後總回收比走向",`同區間 ${sheetPercent(chase.twoXFlatRate || 0,1)}`,`Cashout ÷ 累積總BET：上升>15% ${sheetPercent(chase.twoXUpRate || 0,1)}｜下降>15% ${sheetPercent(chase.twoXDownRate || 0,1)}｜仍≥2x ${sheetPercent(chase.twoXRetainRate || 0,1)}；BOSS 顯示倍率另行累加`],
+      ["2x 後總回收比走向",`同區間 ${sheetPercent(chase.twoXFlatRate || 0,1)}`,`（已入帳＋本區可領）÷ 累積總BET：上升>15% ${sheetPercent(chase.twoXUpRate || 0,1)}｜下降>15% ${sheetPercent(chase.twoXDownRate || 0,1)}｜仍≥2x ${sheetPercent(chase.twoXRetainRate || 0,1)}；各區倍率獨立結算`],
       ["2x 深追實際淨利",`增加 ${sheetPercent(chase.twoXProfitUpRate || 0,1)}`,`持平 ${sheetPercent(chase.twoXProfitFlatRate || 0,1)}｜減少 ${sheetPercent(chase.twoXProfitDownRate || 0,1)}`],
       ["2x 深追平均狀態",`${sheetNumber(chase.twoXAvgStartRatio || 0,2)}x → ${sheetNumber(chase.twoXAvgNextRatio || 0,2)}x`,`平均淨利 ${sheetNumber(chase.twoXAvgStartProfit || 0,0)} → ${sheetNumber(chase.twoXAvgNextProfit || 0,0)}`],
       ["第6波已2x的最終結果",`${chase.wave6TwoXCount || 0} 局`,`繼續 ${sheetPercent(chase.wave6ContinueRate || 0,1)}｜最終死亡 ${sheetPercent(chase.wave6FinalDeathRate || 0,1)}｜最終仍≥2x ${sheetPercent(chase.wave6Final2xRate || 0,1)}`],

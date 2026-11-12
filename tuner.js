@@ -1,5 +1,5 @@
-const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v3";
-const PARAM_CHANNEL = "tower-defense-param-sync";
+const PARAM_STORAGE_KEY = "towerDefenseTuningParams.milestone285";
+const PARAM_CHANNEL = "tower-defense-param-sync.milestone285";
 const TUNER_CURRENT = document.body?.dataset?.tunerMode === "current";
 const TUNER_LEGACY = document.body?.dataset?.tunerMode === "legacy";
 

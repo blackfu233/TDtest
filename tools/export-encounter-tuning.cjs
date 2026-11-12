@@ -52,7 +52,8 @@ function readRules() {
       unbalancedBands:ENCOUNTER_REWARD_BANDS,
       bands:BANDS.map((band,index)=>({id:index+1,from:band.from,to:band.to,count:band.count})),
       boss:{min:PROTOTYPE_BOSS_MIN_ENCOUNTER,max:PROTOTYPE_BOSS_MAX_ENCOUNTER,total:PROTOTYPE_BOSS_TOTAL,
-        archetypes:BOSS_COMBAT_ARCHETYPES,repair:PROTOTYPE_BOSS_REPAIR,hpByOrdinal:PROTOTYPE_BOSS_HP},
+        archetypes:BOSS_COMBAT_ARCHETYPES,repair:PROTOTYPE_BOSS_REPAIR,hpByOrdinal:PROTOTYPE_BOSS_HP,
+        milestoneSettlement:true,weightFactors:ENCOUNTER_BOSS_WEIGHT_FACTORS},
       clearShare:.40};
   })()`)));
   rules.engineSha256 = crypto.createHash("sha256").update(source).digest("hex");

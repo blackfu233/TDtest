@@ -168,8 +168,8 @@
     record.damaged = record.damageTaken > 0;
     record.died = !cleared && record.hp <= 0;
     record.pot = state.pot;
-    record.payout = cleared ? state.payout : 0;
-    record.basePayout = cleared ? Math.min(state.payout,state.pot) : 0;
+    record.payout = (Number(state.bankedPayout) || 0) + (cleared ? state.payout : 0);
+    record.basePayout = (Number(state.bankedPot) || 0) + (cleared ? Math.min(state.payout,state.pot) : 0);
     record.bossPayout = Math.max(0,record.payout-record.basePayout);
     record.marginalPayout = record.payout - (Number(record.beforePayout) || 0);
     record.bossSeen = state.bossSeen;
@@ -230,18 +230,22 @@
       if (payload.mathPoolAtDecision && engine.restoreMathPool) {
         engine.restoreMathPool(payload.mathPoolAtDecision,payload.alreadySettled ? 0 : requestedPayout);
       }
-      const paid = payload.alreadySettled
+      const unpaid = payload.alreadySettled
         ? requestedPayout
         : engine.settleSimulatedPayout
         ? Math.max(0,Number(engine.settleSimulatedPayout(requestedPayout, payload.bets))||0)
         : requestedPayout;
-      const basePayout = Math.min(paid,Math.max(0,Number(payload.pot)||0));
       const finalState = liteSnapshot();
+      const bankedPayout = Math.max(0,Number(payload.bankedPayout ?? finalState.bankedPayout)||0);
+      const bankedPot = Math.max(0,Number(payload.bankedPot ?? finalState.bankedPot)||0);
+      const paid = bankedPayout + unpaid;
+      const basePayout = Math.min(paid,bankedPot + Math.max(0,Number(payload.pot)||0));
       const { mathPoolAtDecision, alreadySettled, ...publicPayload } = payload;
       return {
-        ...publicPayload,payout:paid,displayedPayout:requestedPayout,
-        payoutMismatch:paid-requestedPayout,
-        endingWallet:Math.max(0,(Number(payload.endingWallet)||0)-requestedPayout+paid),
+        ...publicPayload,payout:paid,displayedPayout:bankedPayout+requestedPayout,
+        bankedPayout,milestones:copy(payload.milestones ?? finalState.milestones ?? []),
+        payoutMismatch:unpaid-requestedPayout,
+        endingWallet:Math.max(0,(Number(payload.endingWallet)||0)-requestedPayout+unpaid),
         basePayout,bossPayout:Math.max(0,paid-basePayout),strategy:config.strategy,
         mathPoolContribution:Math.max(0,Number(payload.mathPoolContribution ?? finalState.mathPoolContribution)||0),
         mathPoolCapHits:Math.max(0,Number(payload.mathPoolCapHits)||0),
@@ -271,6 +275,8 @@
         wave:state.wave,
         hp:state.hp,
         pot:state.pot,
+        bankedPayout:Number(state.bankedPayout)||0,bankedPot:Number(state.bankedPot)||0,
+        milestones:copy(fullState.milestones || []),
         endingWallet:Math.max(0,Number(state.wallet) || 0) + payout,
         collected:true,
         completed:!!isCompleted,
@@ -298,8 +304,8 @@
       const state = liteSnapshot();
       const bet = state.currentBet;
       if (state.wallet < bet) return false;
-      const beforePayout = Math.max(0,Number(state.payout) || 0);
-      const beforeBasePayout = Math.min(beforePayout,Math.max(0,Number(state.pot) || 0));
+      const beforePayout = (Number(state.bankedPayout)||0) + Math.max(0,Number(state.payout) || 0);
+      const beforeBasePayout = (Number(state.bankedPot)||0) + Math.min(state.payout,Math.max(0,Number(state.pot) || 0));
       pendingWaveBet = {bet,beforePayout,beforeBasePayout,beforeBossPayout:Math.max(0,beforePayout-beforeBasePayout)};
       totalBet += bet;
       engine.startBet();
@@ -413,7 +419,7 @@
       }
       if (pendingBossKill && !state.bossRolling) {
         const event = bossEvents.find(item => item.order === pendingBossKill.order);
-        if (event) { event.killed = true; event.add = Math.max(0, state.bossAdd - pendingBossKill.beforeAdd); }
+        if (event) { event.killed = true; event.add = Number(state.lastBossAdd) || Math.max(0, state.bossAdd - pendingBossKill.beforeAdd); }
         previousBossAdd = state.bossAdd;
         pendingBossKill = null;
       }
@@ -470,7 +476,7 @@
         const canCollect = engine.canCollect();
         const noNextBet = state.wallet < state.currentBet;
         if (!decisionOutcome && canCollect && (noNextBet || shouldCollect(
-          config,state,totalBet,config.baseHp || 1000,rng,{bossJustKilled:lastBossKillWave === state.wave}
+          config,{...state,payout:(Number(state.bankedPayout)||0)+state.payout},totalBet,config.baseHp || 1000,rng,{bossJustKilled:lastBossKillWave === state.wave}
         ))) {
           captureDecision(state,isRunCompleted(state));
           collected = true;

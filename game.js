@@ -1,8 +1,11 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-persistent-balance284";
+const BUILD_VERSION = "encounter-milestone285";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
+const ENCOUNTER_BOSS_WEIGHT_FACTORS = [
+  [1,1,1,1], [1.05,.8,1.15,1.5], [1.1,.6,1.3,2], [1.15,.4,1.45,2.5], [1.2,.2,1.6,3],
+];
 const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
 const DEBUG_BIOME = (() => {
   const biome = new URLSearchParams(window.location.search).get("debugBiome") || "";
@@ -80,6 +83,8 @@ const ui = {
   wallet: document.getElementById("walletText"),
   pot: document.getElementById("potText"),
   payout: document.getElementById("payoutText"),
+  banked: document.getElementById("bankedText"),
+  stake: document.getElementById("stakeText"),
   potChip: document.querySelector(".pot-chip"),
   wave: document.getElementById("waveText"),
   waveChip: document.getElementById("waveText").closest(".hud-chip"),
@@ -918,8 +923,8 @@ const BOSS_COMBAT_ARCHETYPES = [
 const ALL_MINION_VARIANTS = Object.values(MINION_VARIANTS).flat();
 const ALL_ELITE_VARIANTS = Object.values(ELITE_VARIANTS).flat();
 const ALL_BOSS_VARIANTS = Object.values(BOSS_VARIANTS);
-const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v3";
-const PARAM_CHANNEL = "tower-defense-param-sync";
+const PARAM_STORAGE_KEY = "towerDefenseTuningParams.milestone285";
+const PARAM_CHANNEL = "tower-defense-param-sync.milestone285";
 const INITIAL_WALLET = 10000;
 const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
 const TOWER_BASE_PARAMS = {
@@ -3357,6 +3362,7 @@ function reset() {
   mathRunSeed = ((gameplayRandom() * 4294967296) >>> 0) || 1;
   state = {
     wallet, baseBetIndex: ENCOUNTER_DRAFT_PROTOTYPE ? 2 : 3, started: false, over: false, wave: 0, hp: params.baseHp, hpWarningStage:0, pot: 0, exp: 0, level: 1,
+    totalStake:0, zoneStake:0, bankedPayout:0, bankedPot:0, milestones:[], lastMilestone:null, lastBossAdd:0,
     hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, choiceKind:"", choiceRerollUsed:false, rerollSpent:0, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
     spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, bossDanger: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", currentEncounter:null, pendingEncounter:null, encounterChoices:[], simBossSpawned:0,
     biomeOrder, biomeIndex:0, biomeWave:0, biomeBossAt:FORCE_FIRST_BOSS ? 1 : rollPrototypeBossEncounter(), biomeTransitionToken:0,
@@ -3495,7 +3501,7 @@ function encounterEconomyEnabled() {
 }
 function economyMode() {
   return ENCOUNTER_DRAFT_PROTOTYPE
-    ? encounterEconomyEnabled() ? "encounter-rtp-candidate-284" : "encounter-playtest-unbalanced-284"
+    ? "encounter-milestone-unbalanced-285"
     : "legacy-math";
 }
 function mathPoolEnabled() {
@@ -3565,9 +3571,12 @@ function restoreMathPool(snapshot, reservation=0) {
   return mathPoolLedger;
 }
 function registerMathStake(amount, source="wave") {
-  if (!certifiedMathEnabled() || !state) return;
+  if (!state) return;
   const stake = Math.max(0, Number(amount) || 0);
   if (!stake) return;
+  state.totalStake += stake;
+  state.zoneStake += stake;
+  if (!certifiedMathEnabled()) return;
   state.mathTotalStake += stake;
   const targetRtp = paramNumber("mathTargetRtp", .95);
   const generalShare = mathPoolEnabled() ? paramNumber("mathGeneralRtpShare", .65) : targetRtp;
@@ -4077,15 +4086,9 @@ function expectedBossAdd(rewardMul) {
 }
 
 function expectedEncounterBossAdd(ordinal) {
-  const tiers = ["Small", "Medium", "Large", "Jackpot"];
-  const weights = tiers.map(tier => Math.max(0, Number(params[`encounterBoss${tier}Weight`]) || 0));
-  const total = weights.reduce((sum, weight) => sum + weight, 0) || 1;
-  const growth = Math.min(params.encounterBossDepthGrowthCap, 1 + (ordinal - 1) * params.encounterBossDepthGrowth);
-  return weights.reduce((sum, weight, index) => {
-    const tier = tiers[index];
-    const midpoint = (params[`encounterBoss${tier}Min`] + params[`encounterBoss${tier}Max`]) / 2;
-    return sum + weight * Math.max(.1, midpoint * growth);
-  }, 0) / total;
+  const tiers = encounterBossTiers(ordinal);
+  return tiers.reduce((sum,tier) => sum + tier.weight * (tier.low + tier.high) / 2, 0)
+    / Math.max(1, tiers.reduce((sum,tier) => sum + tier.weight, 0));
 }
 
 function createMathTicket(wave, bet, boss=false, difficulty=null) {
@@ -4997,19 +5000,14 @@ function estimateRegularEncounterFatalRisk(damageRisk, threat, matchup, formatio
 
 function encounterRewardPreview(choice) {
   if (choice.boss) {
-    const ordinal = state.bossSeen + 1;
-    const growth = Math.min(params.encounterBossDepthGrowthCap, 1 + (ordinal - 1) * params.encounterBossDepthGrowth);
-    const tiers = ["Small", "Medium", "Large", "Jackpot"].filter(tier => params[`encounterBoss${tier}Weight`] > 0);
-    const values = tiers.flatMap(tier => [params[`encounterBoss${tier}Min`], params[`encounterBoss${tier}Max`]]);
-    const low = Math.max(.1, Math.round(Math.min(...values) * growth * 10) / 10);
-    const high = Math.max(low, Math.round(Math.max(...values) * growth * 10) / 10);
-    return { label:"擊殺可得", text:`+${low.toFixed(1)}～${high.toFixed(1)}x`, low, high, unit:"multiplier" };
+    const tiers = encounterBossTiers(state.bossSeen + 1).filter(tier => tier.weight > 0);
+    const low = 1 + Math.max(.1, Math.round(Math.min(...tiers.map(tier => tier.low)) * 10) / 10);
+    const high = 1 + Math.max(.1, Math.round(Math.max(...tiers.map(tier => tier.high)) * 10) / 10);
+    return { label:"本區結算倍率", text:`×${low.toFixed(1)}～${high.toFixed(1)}`, low, high, unit:"multiplier" };
   }
   const tier = clamp(Number(choice.reward) || 1, 1, 4);
   const bet = betForWave(Number(choice.wave) || state.wave + 1);
-  const entryMultiplier = Math.max(1, 1 + state.bossAdd);
-  const entryPrice = Math.pow(entryMultiplier, encounterEconomyEnabled() ? params.encounterPotEntryPower : 0);
-  const scale = bet * params.moneyMul * (encounterEconomyEnabled() ? params.encounterRewardScale : 1) / entryPrice;
+  const scale = bet * params.moneyMul * (encounterEconomyEnabled() ? params.encounterRewardScale : 1);
   const prefix = `encounterChest${tier}`;
   const band = encounterEconomyEnabled()
     ? [params[`${prefix}Min`], params[`${prefix}Max`]]
@@ -5721,9 +5719,7 @@ function rollEncounterWaveReward(encounter, bet) {
   const rewardUniform = gameplayRandom();
   const shape = encounter.boss || !encounterEconomyEnabled() ? 1 : params[`encounterChest${tier}Shape`];
   const multiplier = low + Math.pow(rewardUniform, shape) * (high - low);
-  const entryMultiplier = encounterEconomyEnabled() ? Math.max(1, 1 + state.bossAdd) : 1;
-  const entryPrice = Math.pow(entryMultiplier, encounterEconomyEnabled() ? params.encounterPotEntryPower : 0);
-  const budget = balancedRewardRound(bet * multiplier * params.moneyMul * (encounterEconomyEnabled() ? params.encounterRewardScale : 1) / entryPrice);
+  const budget = balancedRewardRound(bet * multiplier * params.moneyMul * (encounterEconomyEnabled() ? params.encounterRewardScale : 1));
   const clearBonus = encounter.boss ? 0 : Math.round(budget * .40);
   return { id:encounter.boss ? "boss-escorts" : `chest-${tier}`, tier, multiplier, budget, remaining:budget - clearBonus,
     clearBonus, claimedBonus:0, weightRemaining:0,
@@ -7138,7 +7134,9 @@ function defeatRun() {
   failMathTicket();
   stopChannelAudio();
   playSfx("fail");
-  showResult("防線突破", "基地 HP 歸零，本局失敗，POT 歸零。");
+  showResult("防線突破", ENCOUNTER_DRAFT_PROTOTYPE
+    ? `本區 POT 歸零；先前已入帳 ${state.bankedPayout} 不受影響。本局投入 ${state.totalStake}，已領 ${state.bankedPayout}。`
+    : "基地 HP 歸零，本局失敗，POT 歸零。");
 }
 
 function kill(m) {
@@ -7158,6 +7156,7 @@ function kill(m) {
       add = Math.round(Math.max(1, rawAdd * rewardMul) * 10) / 10;
     }
     state.bossSeen += 1;
+    state.lastBossAdd = add;
     const nextBet = betForWave(nextWave, state.bossSeen);
     state.exp += (m.exp || 120) * params.expMul * Math.max(.5, Number(state.currentEncounter?.expMul) || 1);
     showBossReward(add, previousBet, nextBet);
@@ -7353,20 +7352,44 @@ function bossMultiplier() {
   const v = lo + gameplayRandom() * (hi - lo);
   return Math.round(clamp(v, 0, 20) * 10) / 10;
 }
+function encounterBossTiers(ordinal) {
+  const factors = ENCOUNTER_BOSS_WEIGHT_FACTORS[clamp(ordinal - 1, 0, 4)];
+  const growth = Math.min(params.encounterBossDepthGrowthCap, 1 + (ordinal - 1) * params.encounterBossDepthGrowth);
+  return ["Small", "Medium", "Large", "Jackpot"].map((part,index) => ({
+    part, weight:Math.max(0, params[`encounterBoss${part}Weight`]) * factors[index],
+    low:params[`encounterBoss${part}Min`] * growth, high:params[`encounterBoss${part}Max`] * growth,
+  }));
+}
 function rollEncounterBossAdd(ordinal) {
-  const tiers = ["Small", "Medium", "Large", "Jackpot"];
-  const weights = tiers.map(tier => Math.max(0, params[`encounterBoss${tier}Weight`]));
-  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const tiers = encounterBossTiers(ordinal);
+  const total = tiers.reduce((sum,tier) => sum + tier.weight, 0);
   if (total <= 0) throw new Error("BOSS increment weights must have a positive total");
   let roll = gameplayRandom() * total;
   let tier = tiers[tiers.length - 1];
   for (let index=0; index<tiers.length; index++) {
-    roll -= weights[index];
+    roll -= tiers[index].weight;
     if (roll < 0) { tier = tiers[index]; break; }
   }
-  const low = params[`encounterBoss${tier}Min`], high = params[`encounterBoss${tier}Max`];
-  const growth = Math.min(params.encounterBossDepthGrowthCap, 1 + (ordinal - 1) * params.encounterBossDepthGrowth);
-  return Math.max(.1, Math.round((low + gameplayRandom() * (high - low)) * growth * 10) / 10);
+  return Math.max(.1, Math.round((tier.low + gameplayRandom() * (tier.high - tier.low)) * 10) / 10);
+}
+
+function settleEncounterMilestone() {
+  if (!ENCOUNTER_DRAFT_PROTOTYPE || state.over || state.hp <= 0 || state.waveActive
+      || state.spawn || state.monsters.length || state.bossRoll || !state.currentEncounter?.boss
+      || !state.bossSeen || state.lastMilestone?.order === state.bossSeen) return null;
+  const receipt = {order:state.bossSeen, name:currentBiomeConfig().name, wave:state.wave,
+    pot:state.pot, multiplier:1 + state.bossAdd, stake:state.zoneStake, amount:payout()};
+  receipt.net = receipt.amount - receipt.stake;
+  state.wallet += receipt.amount;
+  state.bankedPayout += receipt.amount;
+  state.bankedPot += Math.min(receipt.amount, receipt.pot);
+  state.lastMilestone = receipt;
+  state.milestones.push(receipt);
+  state.pot = 0;
+  state.bossAdd = 0;
+  state.zoneStake = 0;
+  state.waveSummary.milestone = receipt;
+  return receipt;
 }
 
 function checkWaveClear() {
@@ -7406,11 +7429,12 @@ function checkWaveClear() {
       text:clearedEncounter?.boss && wavePotAward > 0 ? `護衛戰利品 +${wavePotAward} POT` : "波次完成", life:.9
     });
     if (ENCOUNTER_DRAFT_PROTOTYPE && clearedEncounter?.boss) {
+      settleEncounterMilestone();
       applyBiomePresentation(false);
       if (prototypeRunComplete()) completeRun();
       else {
         advancePrototypeBiome();
-        state.message = `${currentBiomeConfig().name}開啟，可以 Collect 或繼續 BET。`;
+        state.message = `${currentBiomeConfig().name}開啟，前區獎金已入帳。`;
       }
     } else {
       prepareNextBossPreview();
@@ -8104,7 +8128,9 @@ function collect() {
   const win = payout();
   payMathReservation();
   state.wallet += win;
-  showResult("Collect", `帶走 ${win}。錢包餘額 ${state.wallet}。`);
+  showResult("收手結算", ENCOUNTER_DRAFT_PROTOTYPE
+    ? `本區領取 ${win}；本局總派彩 ${state.bankedPayout + win}，投入 ${state.totalStake}，淨損益 ${state.bankedPayout + win - state.totalStake}。錢包 ${state.wallet}。`
+    : `帶走 ${win}。錢包餘額 ${state.wallet}。`);
 }
 
 function completeRun() {
@@ -8113,9 +8139,11 @@ function completeRun() {
   payMathReservation();
   state.wallet += win;
   playSfx("collect");
-  showResult(ENCOUNTER_DRAFT_PROTOTYPE ? "五戰區制霸" : "30 波通關", `通關結算 ${win}。錢包餘額 ${state.wallet}。`);
+  showResult(ENCOUNTER_DRAFT_PROTOTYPE ? "五戰區制霸" : "30 波通關", ENCOUNTER_DRAFT_PROTOTYPE
+    ? `五區獎金已入帳；總派彩 ${state.bankedPayout + win}，投入 ${state.totalStake}，淨損益 ${state.bankedPayout + win - state.totalStake}。錢包 ${state.wallet}。`
+    : `通關結算 ${win}。錢包餘額 ${state.wallet}。`);
 }
-function canCollect() { return state.started && !state.over && !state.waveActive && !state.monsters.length && !state.spawn && !state.choicesOpen && state.pot > 0; }
+function canCollect() { return state.started && !state.over && !state.waveActive && !state.monsters.length && !state.spawn && !state.bossRoll && !state.choicesOpen && (state.pot > 0 || ENCOUNTER_DRAFT_PROTOTYPE && state.bankedPayout > 0); }
 
 function effect(type, from, to, opts={}) {
   if (HEADLESS_SIM) return;
@@ -9793,6 +9821,8 @@ function updateUi() {
   ui.entryWallet.textContent = Math.floor(state.wallet);
   ui.pot.textContent = scoreDisplay.potText;
   ui.payout.textContent = scoreDisplay.total;
+  if (ui.banked) ui.banked.textContent = state.bankedPayout;
+  if (ui.stake) ui.stake.textContent = state.totalStake;
   ui.wave.textContent = state.wave;
   ui.hp.textContent = `HP ${Math.ceil(state.hp)} / ${maxHp}`;
   ui.hpFill.style.width = `${Math.round(hpPct * 100)}%`;
@@ -9823,14 +9853,15 @@ function updateUi() {
   const rollingMult = state.bossRoll ? scoreDisplay.multiplier : null;
   ui.bossMult.textContent = rollingMult
     ? `x${rollingMult.toFixed(1)}`
-    : state.bossSeen
+    : state.bossAdd > 0
       ? `x${(1 + state.bossAdd).toFixed(1)}`
       : "";
-  ui.bossMult.classList.toggle("empty", !state.bossSeen && !state.bossRoll);
+  ui.bossMult.classList.toggle("empty", state.bossAdd <= 0 && !state.bossRoll);
   ui.bossMult.classList.toggle("rolling", !!state.bossRoll);
   ui.bossMult.classList.toggle("rolling-high", state.bossRoll?.tier === "high");
   ui.bossMult.classList.toggle("rolling-jackpot", state.bossRoll?.tier === "jackpot");
-  ui.collectText.textContent = scoreDisplay.total;
+  ui.collectText.textContent = scoreDisplay.total || (state.bankedPayout > 0 ? "獎金已入帳" : 0);
+  ui.collect.querySelector("span").textContent = state.pot > 0 ? "收手" : "離場";
   const presentingReward = !HEADLESS_SIM && (state.betRaise ||
     !ui.biomeTransition.classList.contains("hidden") ||
     state.effects.some(effect => effect.type === "encounterChest" || effect.type === "bossReward"));
@@ -9848,10 +9879,16 @@ function updateUi() {
   ui.waveDecision.classList.toggle("hidden", !waveCleared);
   ui.waveDecision.classList.toggle("boss-risk", waveCleared && bossDanger > 0);
   [1,2,3].forEach(level => ui.waveDecision.classList.toggle(`danger-${level}`, waveCleared && bossDanger === level));
-  ui.decisionWave.textContent = `第 ${state.wave} 波完成`;
-  ui.decisionPayout.textContent = scoreDisplay.total;
-  if (ui.decisionReward) ui.decisionReward.textContent = `+${Math.round(state.waveSummary?.pot || 0)} POT`;
-  if (ui.decisionDamage) ui.decisionDamage.textContent = `基地 -${Math.round(state.waveSummary?.damage || 0)} HP`;
+  const milestone = state.waveSummary?.milestone;
+  ui.waveDecision.classList.toggle("milestone-paid", !!milestone);
+  ui.decisionWave.textContent = milestone ? `${milestone.name}結算・已入帳` : `第 ${state.wave} 波完成`;
+  ui.decisionPayout.textContent = milestone ? milestone.amount : scoreDisplay.total;
+  document.getElementById("decisionPayoutLabel").textContent = milestone ? "本區派彩" : "本區可領";
+  ui.continue.querySelector("span").textContent = milestone ? "挑戰下一區" : "繼續";
+  if (ui.decisionReward) ui.decisionReward.textContent = milestone
+    ? `${milestone.pot} POT × ${milestone.multiplier.toFixed(1)}` : `+${Math.round(state.waveSummary?.pot || 0)} POT`;
+  if (ui.decisionDamage) ui.decisionDamage.textContent = milestone
+    ? `投注 ${milestone.stake}・淨損益 ${milestone.net > 0 ? "+" : ""}${milestone.net}` : `基地 -${Math.round(state.waveSummary?.damage || 0)} HP`;
   if (ui.decisionRepair) {
     const repair = state.waveSummary?.repair || 0;
     const exp = state.waveSummary?.clearExp || 0;
@@ -10100,6 +10137,8 @@ if (HEADLESS_SIM) {
     const value = {
       build:BUILD_VERSION, economyMode:economyMode(),
       wallet:state.wallet, started:state.started, over:state.over, wave:state.wave, hp:state.hp, pot:state.pot,
+      bankedPayout:state.bankedPayout, bankedPot:state.bankedPot, totalStake:state.totalStake,
+      lastMilestone:state.lastMilestone, lastBossAdd:state.lastBossAdd, milestones:state.milestones,
       exp:state.exp, level:state.level, choicesOpen:state.choicesOpen, waveActive:state.waveActive,
       choiceRerollUsed:state.choiceRerollUsed, rerollSpent:state.rerollSpent,
       spawning:!!state.spawn, spawnBoss:!!state.spawn?.boss, monsters:state.monsters.length,

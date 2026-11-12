@@ -206,6 +206,18 @@
 @keyframes matchupWarning { 0%, 100% { opacity: 1; } 50% { opacity: .30; } }
 @keyframes lethalRiskWarning { 0%, 100% { box-shadow: inset 0 0 8px #ff343444; } 50% { box-shadow: inset 0 0 20px #ff343499; } }
 @media (prefers-reduced-motion: reduce) { .encounter-clear.lethal-risk { animation: none; } }
+.milestone-demo .battlefield #game { top: 140px; height: calc(100% - 140px); }
+.milestone-demo .battlefield::after { top: 140px; }
+.milestone-demo .tower-slots { top: 146px; }
+.milestone-demo .next-attr-hint { top: 142px; }
+.milestone-ledger { position: absolute; z-index: 9; top: 116px; left: 10px; right: 10px; display: flex; justify-content: space-between; gap: 8px; font-size: 11px; line-height: 18px; color: #b6c3c8; pointer-events: none; }
+.milestone-ledger b { color: #8ff0b9; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.milestone-paid .decision-panel { border-color: #77cba1; }
+.milestone-paid .decision-score strong { color: #8ff0b9; }
+.milestone-paid .decision-wave-summary { grid-template-columns: 1fr; text-align: center; }
+.milestone-paid .decision-wave-summary strong,
+.milestone-paid .decision-wave-summary > span { font-size: 13px; overflow-wrap: anywhere; }
+.milestone-demo .boss-draft .encounter-reward { flex-wrap: wrap; gap: 3px; }
 @media (max-width: 350px) {
   .encounter-metric { gap: 3px; }
   .encounter-metric small { font-size: 9px; }

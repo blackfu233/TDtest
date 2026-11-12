@@ -1,0 +1,10228 @@
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
+const BUILD_VERSION = "encounter-persistent-balance284";
+const ENCOUNTER_DRAFT_PROTOTYPE = true;
+const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
+const DEBUG_BIOME = (() => {
+  const biome = new URLSearchParams(window.location.search).get("debugBiome") || "";
+  return ["neutral", "fire", "ice", "electric", "poison"].includes(biome) ? biome : "";
+})();
+const BEHAVIOR_PREVIEW_PAGE = Math.max(0, Number(new URLSearchParams(window.location.search).get("behaviorPreview")) || 0);
+const BEHAVIOR_PREVIEW = BEHAVIOR_PREVIEW_PAGE > 0;
+const CARD_ART_PREVIEW = new URLSearchParams(window.location.search).get("cardArtPreview") === "1";
+const BEHAVIOR_PREVIEW_ATTR = (() => {
+  const attr = new URLSearchParams(window.location.search).get("previewAttr") || "neutral";
+  return ["neutral", "fire", "ice", "electric", "poison"].includes(attr) ? attr : "neutral";
+})();
+const MAX_EFFECTS = 240;
+const UI_FRAME_MS = 1000 / 30;
+const DEBUG_FRAME_MS = 250;
+const MAX_TOWER_SLOTS = 3;
+const NEW_TOWER_GUARANTEE_LIMIT = 3;
+const HERO_SKILL_LEVELS = [5, 10, 15];
+const artImageCache = new Map();
+let gameplayRandom = () => Math.random();
+let fxRandomState = ((Date.now() ^ Math.floor(performance.now() * 1000)) >>> 0) || 1;
+let headlessEncounterPolicy = "adaptive";
+
+function fxRandom() {
+  fxRandomState = (fxRandomState + 0x6d2b79f5) >>> 0;
+  let mixed = fxRandomState;
+  mixed = Math.imul(mixed ^ mixed >>> 15, mixed | 1);
+  mixed ^= mixed + Math.imul(mixed ^ mixed >>> 7, mixed | 61);
+  return ((mixed ^ mixed >>> 14) >>> 0) / 4294967296;
+}
+
+function artImage(src) {
+  if (HEADLESS_SIM || typeof Image === "undefined") return null;
+  if (!artImageCache.has(src)) {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = src;
+    artImageCache.set(src, image);
+  }
+  return artImageCache.get(src);
+}
+
+function heroVisualStage(hero) {
+  if (!hero) return 1;
+  if (hero.level >= HERO_SKILL_LEVELS[2] || hero.buffs?.ultimateSync) return 3;
+  if (hero.level >= HERO_SKILL_LEVELS[0] || hero.buffs?.resonance) return 2;
+  return 1;
+}
+
+function towerVisualStage(tower) {
+  if (!tower?.upgrades?.length) return 1;
+  if (tower.upgrades.some(name => SYNERGY_UPGRADE_NAMES?.has(name))) return 3;
+  if (tower.upgrades.some(name => ADVANCED_UPGRADE_NAMES?.has(name))) return 2;
+  return 1;
+}
+
+function heroSpritePath(hero, stage=heroVisualStage(hero)) {
+  const id = hero?.heroId || hero?.id || "neutral";
+  return `assets/heroes/${id}-stage-${clamp(Math.round(stage), 1, 3)}.webp`;
+}
+
+function towerSpritePath(tower, stage=towerVisualStage(tower)) {
+  return tower ? `assets/towers-v2/${tower.id}-stage-${clamp(Math.round(stage), 1, 3)}.webp` : "";
+}
+
+function enemySpritePath(enemy) {
+  if (enemy.sprite) return `assets/enemies-v3/${enemy.sprite}`;
+  if (enemy.boss) return `assets/enemies/${String(enemy.tuneId || "boss_1").replace("_", "-")}.webp`;
+  if (enemy.elite) return `assets/enemies/${String(enemy.tuneId || "elite_1").replace("_", "-")}.webp`;
+  return `assets/enemies/${["normal","fast","tank","ranged","special"].includes(enemy.kind) ? enemy.kind : "normal"}.webp`;
+}
+
+const ui = {
+  phone: document.querySelector(".phone"),
+  wallet: document.getElementById("walletText"),
+  pot: document.getElementById("potText"),
+  payout: document.getElementById("payoutText"),
+  potChip: document.querySelector(".pot-chip"),
+  wave: document.getElementById("waveText"),
+  waveChip: document.getElementById("waveText").closest(".hud-chip"),
+  hp: document.getElementById("hpText"),
+  hpFill: document.getElementById("hpFill"),
+  level: document.getElementById("levelText"),
+  exp: document.getElementById("expText"),
+  expFill: document.getElementById("expFill"),
+  bossMult: document.getElementById("bossMultText"),
+  message: document.getElementById("messageText"),
+  slots: document.getElementById("towerSlots"),
+  entryOverlay: document.getElementById("entryOverlay"),
+  entryWallet: document.getElementById("entryWalletText"),
+  entryBet: document.getElementById("entryBetText"),
+  betOptions: document.getElementById("betOptions"),
+  betMinus: document.getElementById("betMinusBtn"),
+  betPlus: document.getElementById("betPlusBtn"),
+  betText: document.getElementById("betText"),
+  waveBet: document.getElementById("waveBetText"),
+  betRaise: document.getElementById("betRaiseFx"),
+  betRaiseFrom: document.getElementById("betRaiseFrom"),
+  betRaiseTo: document.getElementById("betRaiseTo"),
+  bet: document.getElementById("betBtn"),
+  waveDecision: document.getElementById("waveDecision"),
+  decisionWave: document.getElementById("decisionWave"),
+  decisionDanger: document.getElementById("decisionDanger"),
+  decisionPayout: document.getElementById("decisionPayout"),
+  decisionReward: document.getElementById("decisionReward"),
+  decisionDamage: document.getElementById("decisionDamage"),
+  decisionRepair: document.getElementById("decisionRepair"),
+  continue: document.getElementById("continueBtn"),
+  nextAttrHint: document.getElementById("nextAttrHint"),
+  nextAttrCanvas: document.getElementById("nextAttrIcon"),
+  waveAttrCanvas: document.getElementById("waveAttrIcon"),
+  collect: document.getElementById("collectBtn"),
+  collectText: document.getElementById("collectText"),
+  reset: document.getElementById("resetBtn"),
+  sound: document.getElementById("soundBtn"),
+  speed: document.getElementById("speedBtn"),
+  choiceOverlay: document.getElementById("choiceOverlay"),
+  choiceTitle: document.getElementById("choiceTitle"),
+  choiceHint: document.getElementById("choiceHint"),
+  choiceList: document.getElementById("choiceList"),
+  reroll: document.getElementById("rerollBtn"),
+  rerollCost: document.getElementById("rerollCostText"),
+  encounterOverlay: document.getElementById("encounterOverlay"),
+  encounterPanel: document.getElementById("encounterPanel"),
+  encounterWave: document.getElementById("encounterWave"),
+  encounterTitle: document.getElementById("encounterTitle"),
+  encounterList: document.getElementById("encounterList"),
+  biomeHud: document.getElementById("biomeHud"),
+  biomeName: document.getElementById("biomeName"),
+  biomeAttrCanvas: document.getElementById("biomeAttrIcon"),
+  biomeRoute: document.getElementById("biomeRoute"),
+  biomeTransition: document.getElementById("biomeTransition"),
+  biomeTransitionName: document.getElementById("biomeTransitionName"),
+  biomeTransitionCanvas: document.getElementById("biomeTransitionIcon"),
+  resultOverlay: document.getElementById("resultOverlay"),
+  resultTitle: document.getElementById("resultTitle"),
+  resultBody: document.getElementById("resultBody"),
+  newRun: document.getElementById("newRunBtn"),
+};
+
+const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
+const SPEED_STEPS = [1, 2, 3];
+const SOUND_STORAGE_KEY = "towerDefenseSoundMuted.v1";
+const FIELD = { w: 350, h: 760, pathX: 175, spawnY: -18, baseY: 720, attackLineY: 596 };
+const TOWER_SLOTS = [{ x: 44, y: 700 }, { x: 131, y: 682 }, { x: 219, y: 682 }, { x: 306, y: 700 }];
+const EXP_TABLE = [95,125,155,190,225,290,330,370,415,460,510,565,625,690,760,835,915,1000,1090,1185,1285,1390,1500,1615,1735,1860,1990,2125,2265,2410,2560,2715,2875,3040,3210,3385,3565,3750,3940];
+
+const audioState = {
+  ctx: null,
+  master: null,
+  sfxBus: null,
+  bgmBus: null,
+  bgmTimer: null,
+  bgmStep: 0,
+  bgmSources: new Set(),
+  resumePromise: null,
+  muted: false,
+  last: new Map(),
+  noiseBuffer: null,
+  channels: new Set(),
+};
+try { audioState.muted = localStorage.getItem(SOUND_STORAGE_KEY) === "1"; } catch {}
+
+function ensureAudio() {
+  if (audioState.muted) return null;
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return null;
+  if (!audioState.ctx) {
+    audioState.ctx = new AudioCtor({ latencyHint:"interactive" });
+    audioState.master = audioState.ctx.createGain();
+    audioState.sfxBus = audioState.ctx.createGain();
+    audioState.bgmBus = audioState.ctx.createGain();
+    audioState.master.gain.value = .68;
+    audioState.sfxBus.gain.value = 1;
+    audioState.bgmBus.gain.value = .52;
+    audioState.sfxBus.connect(audioState.master);
+    audioState.bgmBus.connect(audioState.master);
+    audioState.master.connect(audioState.ctx.destination);
+  }
+  if (audioState.ctx.state === "running") startBgm(audioState.ctx);
+  else if (!audioState.resumePromise) {
+    const audio = audioState.ctx;
+    audioState.resumePromise = audio.resume()
+      .then(() => { if (audio.state === "running") startBgm(audio); })
+      .catch(() => {})
+      .finally(() => { audioState.resumePromise = null; });
+  }
+  return audioState.ctx;
+}
+
+const BGM_MELODY = [440,0,523.25,392, 440,587.33,523.25,0, 392,0,493.88,349.23, 392,523.25,493.88,0];
+const BGM_BASS = [110,130.81,98,116.54];
+const BGM_CHORDS = [
+  [220,261.63,329.63],
+  [261.63,329.63,392],
+  [196,246.94,293.66],
+  [233.08,293.66,349.23],
+];
+
+function scheduleBgmVoice(audio, frequency, duration, type, gain, start) {
+  const oscillator = audio.createOscillator();
+  const volume = audio.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  volume.gain.setValueAtTime(.0001, start);
+  volume.gain.exponentialRampToValueAtTime(gain, start + .045);
+  volume.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  oscillator.connect(volume);
+  volume.connect(audioState.bgmBus || audioState.master);
+  oscillator.onended = () => audioState.bgmSources.delete(oscillator);
+  audioState.bgmSources.add(oscillator);
+  oscillator.start(start);
+  oscillator.stop(start + duration + .03);
+}
+
+function scheduleBgmStep(audio) {
+  if (audioState.muted || audio !== audioState.ctx) {
+    audioState.bgmTimer = null;
+    return;
+  }
+  const step = audioState.bgmStep++;
+  const start = audio.currentTime + .025;
+  const melody = BGM_MELODY[step % BGM_MELODY.length];
+  if (melody) scheduleBgmVoice(audio, melody, .38, "triangle", .082, start);
+  if (step % 4 === 0) {
+    const chordIndex = Math.floor(step / 4) % BGM_BASS.length;
+    const bass = BGM_BASS[chordIndex];
+    scheduleBgmVoice(audio, bass, 1.25, "triangle", .085, start);
+    BGM_CHORDS[chordIndex].forEach(frequency => {
+      scheduleBgmVoice(audio, frequency, 1.65, "sine", .028, start);
+    });
+  }
+  audioState.bgmTimer = window.setTimeout(() => scheduleBgmStep(audio), 460);
+}
+
+function startBgm(audio=audioState.ctx) {
+  if (audioState.muted || !audio || audio.state !== "running" || audioState.bgmTimer !== null) return;
+  scheduleBgmStep(audio);
+}
+
+function stopBgm() {
+  if (audioState.bgmTimer !== null) window.clearTimeout(audioState.bgmTimer);
+  audioState.bgmTimer = null;
+  audioState.bgmSources.forEach(source => { try { source.stop(); } catch {} });
+  audioState.bgmSources.clear();
+}
+
+function unlockAudioFromGesture() {
+  if (audioState.muted) return;
+  const audio = ensureAudio();
+  if (!audio || audio.state === "running") return;
+  audio.resume().then(() => startBgm(audio)).catch(() => {});
+}
+
+document.addEventListener("pointerdown", unlockAudioFromGesture, { capture:true, passive:true });
+document.addEventListener("touchend", unlockAudioFromGesture, { capture:true, passive:true });
+document.addEventListener("keydown", unlockAudioFromGesture, { capture:true });
+
+function soundTone(key, frequency, duration=.08, type="sine", gain=.05, endFrequency=frequency, delay=0, minGap=0) {
+  const audio = ensureAudio();
+  if (!audio) return;
+  const previous = audioState.last.get(key) ?? -Infinity;
+  if (audio.currentTime - previous < minGap) return;
+  audioState.last.set(key, audio.currentTime);
+  const start = audio.currentTime + delay;
+  const end = start + duration;
+  const oscillator = audio.createOscillator();
+  const volume = audio.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(Math.max(20, frequency), start);
+  oscillator.frequency.exponentialRampToValueAtTime(Math.max(20, endFrequency), end);
+  volume.gain.setValueAtTime(.0001, start);
+  volume.gain.exponentialRampToValueAtTime(Math.max(.0002, gain), start + Math.min(.018, duration * .25));
+  volume.gain.exponentialRampToValueAtTime(.0001, end);
+  oscillator.connect(volume);
+  volume.connect(audioState.sfxBus || audioState.master);
+  oscillator.start(start);
+  oscillator.stop(end + .02);
+}
+
+function soundNoise(key, duration=.1, gain=.035, filterFrequency=900, delay=0, minGap=0) {
+  const audio = ensureAudio();
+  if (!audio) return;
+  const previous = audioState.last.get(key) ?? -Infinity;
+  if (audio.currentTime - previous < minGap) return;
+  audioState.last.set(key, audio.currentTime);
+  if (!audioState.noiseBuffer) {
+    const length = Math.ceil(audio.sampleRate * .6);
+    audioState.noiseBuffer = audio.createBuffer(1, length, audio.sampleRate);
+    const data = audioState.noiseBuffer.getChannelData(0);
+    for (let i=0;i<length;i+=1) data[i] = fxRandom() * 2 - 1;
+  }
+  const start = audio.currentTime + delay;
+  const source = audio.createBufferSource();
+  const filter = audio.createBiquadFilter();
+  const volume = audio.createGain();
+  source.buffer = audioState.noiseBuffer;
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(filterFrequency, start);
+  volume.gain.setValueAtTime(Math.max(.0002, gain), start);
+  volume.gain.exponentialRampToValueAtTime(.0001, start + duration);
+  source.connect(filter);
+  filter.connect(volume);
+  volume.connect(audioState.sfxBus || audioState.master);
+  source.start(start);
+  source.stop(start + duration + .02);
+}
+
+function playSfx(name) {
+  if (HEADLESS_SIM) return;
+  if (name === "bet") {
+    soundTone("bet-low", 150, .09, "square", .045, 205);
+    soundTone("bet-high", 260, .1, "triangle", .04, 360, .07);
+  } else if (name === "ui") soundTone("ui", 360, .045, "square", .025, 440, 0, .035);
+  else if (name === "upgrade") {
+    soundTone("upgrade-a", 410, .11, "triangle", .045, 610);
+    soundTone("upgrade-b", 610, .13, "triangle", .04, 880, .09);
+  } else if (name === "coin") soundTone("coin", 760, .07, "sine", .032, 1120, 0, .055);
+  else if (name === "elite") {
+    soundNoise("elite-noise", .2, .05, 1500);
+    soundTone("elite-a", 180, .18, "sawtooth", .055, 420);
+    soundTone("elite-b", 480, .22, "triangle", .055, 820, .1);
+  } else if (name === "boss") {
+    soundNoise("boss-noise", .32, .06, 1000);
+    [180,270,405,610].forEach((frequency, index) => soundTone(`boss-${index}`, frequency, .18, "sawtooth", .055, frequency * 1.18, index * .11));
+  } else if (name === "bossBreak") {
+    soundNoise("boss-break-noise", .22, .065, 1850, 0, .2);
+    [220,440,880].forEach((frequency, index) => soundTone(`boss-break-${index}`, frequency, .16, "square", .05, frequency * 1.35, index * .045));
+  } else if (name === "betUp") {
+    [330,440,590,790].forEach((frequency, index) => soundTone(`bet-up-${index}`, frequency, .16, "triangle", .05, frequency * 1.16, index * .09));
+  } else if (name === "waveClear") {
+    [420,560,740].forEach((frequency, index) => soundTone(`clear-${index}`, frequency, .14, "triangle", .04, frequency * 1.08, index * .08));
+  } else if (name === "collect") {
+    [520,680,920].forEach((frequency, index) => soundTone(`collect-${index}`, frequency, .16, "sine", .05, frequency * 1.18, index * .09));
+  } else if (name === "baseHit") {
+    soundNoise("base-hit-noise", .09, .045, 420, 0, .14);
+    soundTone("base-hit", 92, .12, "square", .04, 54, 0, .14);
+  } else if (name === "fail") {
+    soundNoise("fail-noise", .38, .055, 520);
+    soundTone("fail-a", 220, .48, "sawtooth", .055, 72);
+  }
+}
+
+function playBossRollTick(phase, tier="normal") {
+  const lift = tier === "jackpot" ? 150 : tier === "high" ? 80 : 0;
+  const frequency = 250 + phase * 430 + lift;
+  soundTone("boss-roll-tick", frequency, .055, "square", .035, frequency * 1.12, 0, .045);
+}
+
+function playBossRollResult(tier="normal") {
+  if (tier === "normal") {
+    [420, 630, 880].forEach((frequency, index) => soundTone(`boss-lock-${index}`, frequency, .22, "triangle", .06, frequency * 1.12, index * .08));
+    return;
+  }
+  const jackpot = tier === "jackpot";
+  soundNoise("boss-result-noise", jackpot ? .62 : .46, jackpot ? .105 : .08, jackpot ? 1900 : 1450);
+  const notes = jackpot ? [220, 440, 660, 880, 1320] : [260, 520, 780, 1040];
+  notes.forEach((frequency, index) => soundTone(`boss-result-${tier}-${index}`, frequency, jackpot ? .42 : .32, index % 2 ? "sawtooth" : "triangle", jackpot ? .085 : .07, frequency * 1.18, index * .085));
+}
+
+function playTowerSfx(mode) {
+  if (mode === "grenade") {
+    soundNoise("tower-grenade", .12, .035, 620, 0, .18);
+    soundTone("tower-grenade-tone", 125, .14, "square", .035, 74, 0, .18);
+  } else if (mode === "cryo") soundTone("tower-cryo", 980, .1, "sine", .04, 1480, 0, .16);
+  else if (mode === "frostbomb") {
+    soundTone("tower-frost", 620, .14, "triangle", .038, 380, 0, .18);
+    soundTone("tower-frost-hi", 1240, .09, "sine", .025, 820, .03, .18);
+  } else if (mode === "chain") {
+    soundNoise("tower-chain-noise", .08, .025, 2400, 0, .12);
+    soundTone("tower-chain", 520, .09, "sawtooth", .035, 1180, 0, .12);
+  } else if (mode === "gas") soundNoise("tower-gas", .2, .035, 760, 0, .22);
+  else if (mode === "needle") soundTone("tower-needle", 520, .065, "square", .03, 260, 0, .11);
+  else if (mode === "blade") {
+    soundNoise("tower-blade-noise", .08, .022, 1800, 0, .11);
+    soundTone("tower-blade", 260, .1, "sawtooth", .028, 520, 0, .11);
+  } else if (mode === "trap") soundTone("tower-trap", 150, .12, "triangle", .032, 98, 0, .18);
+  else if (mode === "flame") soundNoise("tower-flame-start", .16, .045, 1300, 0, .2);
+  else if (mode === "laser") soundTone("tower-laser-start", 110, .16, "sawtooth", .04, 190, 0, .2);
+}
+
+function startChannelAudio(mode) {
+  const audio = ensureAudio();
+  if (!audio || (mode !== "laser" && mode !== "flame")) return null;
+  const start = audio.currentTime;
+  const volume = audio.createGain();
+  volume.gain.setValueAtTime(.0001, start);
+  volume.gain.exponentialRampToValueAtTime(mode === "laser" ? .025 : .032, start + .06);
+  volume.connect(audioState.sfxBus || audioState.master);
+  let source;
+  let extra = null;
+  if (mode === "laser") {
+    source = audio.createOscillator();
+    source.type = "sawtooth";
+    source.frequency.setValueAtTime(118, start);
+    source.frequency.linearRampToValueAtTime(132, start + 1.2);
+    extra = audio.createOscillator();
+    extra.type = "sine";
+    extra.frequency.setValueAtTime(236, start);
+    extra.connect(volume);
+    extra.start(start);
+  } else {
+    if (!audioState.noiseBuffer) {
+      const length = Math.ceil(audio.sampleRate * .6);
+      audioState.noiseBuffer = audio.createBuffer(1, length, audio.sampleRate);
+      const data = audioState.noiseBuffer.getChannelData(0);
+      for (let i=0;i<length;i+=1) data[i] = fxRandom() * 2 - 1;
+    }
+    source = audio.createBufferSource();
+    source.buffer = audioState.noiseBuffer;
+    source.loop = true;
+    const filter = audio.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 720;
+    filter.Q.value = .7;
+    source.connect(filter);
+    filter.connect(volume);
+  }
+  source.connect(volume);
+  source.start(start);
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    const now = audio.currentTime;
+    volume.gain.cancelScheduledValues(now);
+    volume.gain.setValueAtTime(Math.max(.0001, volume.gain.value), now);
+    volume.gain.exponentialRampToValueAtTime(.0001, now + .055);
+    try { source.stop(now + .06); } catch {}
+    try { extra?.stop(now + .06); } catch {}
+    audioState.channels.delete(stop);
+  };
+  audioState.channels.add(stop);
+  return stop;
+}
+
+function stopChannelAudio() {
+  [...audioState.channels].forEach(stop => stop());
+  audioState.channels.clear();
+}
+
+function resumeChannelAudio() {
+  if (audioState.muted || !state || state.choicesOpen || state.over) return;
+  state.towers.forEach(tower => {
+    if (!tower.channel || (tower.mode !== "laser" && tower.mode !== "flame")) return;
+    tower.channel.audioStop?.();
+    tower.channel.audioStop = startChannelAudio(tower.mode);
+  });
+}
+
+function updateSoundButton() {
+  if (!ui.sound) return;
+  ui.sound.classList.toggle("muted", audioState.muted);
+  ui.sound.setAttribute?.("aria-label", audioState.muted ? "開啟音效" : "關閉音效");
+}
+
+function toggleSound() {
+  audioState.muted = !audioState.muted;
+  try { localStorage.setItem(SOUND_STORAGE_KEY, audioState.muted ? "1" : "0"); } catch {}
+  if (audioState.muted) {
+    stopChannelAudio();
+    stopBgm();
+  }
+  else {
+    ensureAudio();
+    resumeChannelAudio();
+    playSfx("ui");
+  }
+  updateSoundButton();
+}
+
+const TOWERS = [
+  { id:"flame", name:"噴火槍", attr:"火", damage:80, range:460, rate:4.00, mode:"flame", color:"#ff5c2d", desc:"1.5秒持續噴灑，擅長壓制小怪群。" },
+  { id:"grenade", name:"榴彈", attr:"火", damage:275, range:700, rate:0.55, mode:"grenade", color:"#ff9b35", splash:52, desc:"拋物線爆炸，穩定清理密集小怪。" },
+  { id:"cryo", name:"急凍狙擊", attr:"冰", damage:345, range:900, rate:0.45, mode:"cryo", color:"#67c5ff", pierce:2, desc:"高傷穿透單發，專門點殺菁英與 BOSS。" },
+  { id:"frostbomb", name:"冰晶炸彈", attr:"冰", damage:245, range:720, rate:0.45, mode:"frostbomb", color:"#9fe7ff", splash:56, freeze:0.32, desc:"指定地點爆炸並減速，重點是群體減壓。" },
+  { id:"laser", name:"雷射光線", attr:"電", damage:98, range:860, rate:3.40, mode:"laser", color:"#ffe066", lockTime:3.0, desc:"持續鎖定高血量目標，對菁英與 BOSS 強。" },
+  { id:"chain", name:"閃電鎖鏈", attr:"電", damage:118, range:760, rate:0.80, mode:"chain", color:"#b67cff", chains:4, desc:"瞬間連鎖多目標，清群穩定但打王較弱。" },
+  { id:"gas", name:"毒氣彈", attr:"毒", damage:118, range:740, rate:0.42, mode:"gas", color:"#55d65a", splash:46, zoneTime:2.7, desc:"定點毒霧，以持續範圍傷害封鎖路線。" },
+  { id:"needle", name:"毒針彈", attr:"毒", damage:300, range:700, rate:0.75, mode:"needle", color:"#41d08a", splash:34, desc:"中高單體傷害兼小範圍爆裂，偏菁英戰。" },
+  { id:"blade", name:"旋刃", attr:"無", damage:245, range:680, rate:0.78, mode:"blade", color:"#d5dde8", splash:26, desc:"高頻泛用輸出，不依賴屬性相剋。" },
+  { id:"trap", name:"陷阱", attr:"無", damage:145, range:700, rate:0.50, mode:"trap", color:"#9aa3b6", splash:54, desc:"定點控場與聚怪，輸出不是主要價值。" },
+];
+
+const POISON_SOURCE_UPGRADES = ["神經毒素", "腐蝕毒霧", "毒爆榴彈", "毒刃穿刺", "毒化陷阱"];
+
+const LEGACY_UPGRADE_REQUIREMENTS = {
+  "燃燒強化": "燃料附著",
+  "延時燃燒": "燃料附著",
+  "燃燒加劇": "凝固汽油彈",
+  "延燒區域": "凝固汽油彈",
+  "冷卻延長": "寒氣附著",
+  "極凍禁制": "寒氣附著",
+  "冰痕延長": "冰痕",
+  "冰痕強化": "冰痕",
+  "聚焦強化": "過載聚焦",
+  "持續灼穿": "過載聚焦",
+  "麻痺擴散": "電磁殘留",
+  "路徑強化": "傳導增幅",
+  "腐蝕加深": "腐蝕毒霧",
+  "毒傷強化": "神經毒素",
+  "延效毒素": "神經毒素",
+  "迴旋增幅": "迴旋飛刃",
+  "追加飛刃": "迴旋飛刃",
+  "封鎖延長": "戰術封鎖",
+  "氣爆燃燒": "凝固汽油彈",
+  "牽引爆震": "戰術封鎖",
+  "冰痕狙擊": "冰痕",
+  "折射聚焦": { all:["折射光束", "過載聚焦"] },
+  "麻痺導流": "過載聚焦",
+  "劇毒烈焰": "燃料附著",
+  "麻痺毒針": { all:["電磁殘留"], any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
+  "電刃麻痺": "電磁殘留",
+  "燃燒陷阱": "燃料附著",
+  "電熱灼斷": { all:["電磁殘留", "燃料附著"] },
+  "電磁榴彈": "電磁殘留",
+  "冷毒穿甲": "神經毒素",
+  "高壓爆點": "強力裝藥",
+  "電毒傳播": { any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
+  "寒毒封鎖": "冰痕",
+  "燃毒彈頭": { all:["燃料附著"], any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
+  "燃刃切割": "燃料附著",
+  "電磁陷阱": "電磁殘留",
+  "毒焰": "腐蝕毒霧",
+  "毒爆榴彈": { all:["腐蝕毒霧", "凝固汽油彈"] },
+  "碎晶穿透": "碎晶爆裂",
+  "導電標記": "傳導增幅",
+  "電毒擴散": { any:POISON_SOURCE_UPGRADES, anyLabel:"任一中毒來源" },
+  "碎毒穿刺": "極凍禁制",
+  "毒刃穿刺": "腐蝕毒霧",
+  "毒化陷阱": "腐蝕毒霧",
+};
+
+const LEGACY_UPGRADE_ROWS = [
+  [["燃壓提升","傷害+","傷害+35%"],["強力裝藥","傷害+","傷害+35%"],["冰核強化","傷害+","傷害+35%"],["冰晶加壓","傷害+","傷害+30%"],["聚焦增幅","傷害+","每段傷害+30%"],["高壓電芯","傷害+","傷害+35%"],["腐蝕升級","傷害+","每段傷害+35%"],["毒針強化","傷害+","傷害+30%"],["鋒刃加固","傷害+","傷害+40%"],["戰術強化","傷害+","傷害+30%"]],
+  [["高效供油","時間+","持續時間+50%"],["巨型彈體","範圍+","範圍+25%"],["精準校正","攻速+","攻速+25%"],["擴散凍爆","範圍+","範圍+25%"],["超頻發射","攻速+","Tick速度+25%"],["額外鏈接","額外攻擊","額外閃電鏈+1"],["擴散氣囊","範圍+","範圍+25%"],["疾速連射","攻速+","攻速+25%"],["高速驅動","攻速+","攻速+25%"],["觸發增幅","範圍+","範圍+25%"]],
+  [["擴散噴口","範圍+","範圍+25%"],["快速裝填","額外爆炸","爆點+1"],["多重槍管","子彈+1","額外子彈+1"],["急速投擲","攻速+","攻速+20%"],["延伸透鏡","持續時間+","持續時間+50%"],["彈跳目標","彈跳目標+","彈掉目標+3"],["快速裝填","攻速+","攻速+20%"],["擴散爆裂","範圍+","爆炸範圍+25%"],["巨大鋒刃","範圍+","攻擊範圍+25%"],["快速部署","攻速+","布置速度+20%"]],
+  [["雙重火流","額外火焰","額外火焰+1"],["雙重裝彈","攻速+","攻速+20%"],["貫穿彈芯","穿透+","穿透敵人+1"],["多重冰爆","額外炸彈+","額外炸彈+1"],["折射光束","額外光束","在主目標折射一個光束對另一目標造成傷害"],["傳導增幅","路徑傷害","對聯鎖路徑上敵人造成50傷害"],["雙重罐體","額外毒霧","額外毒氣彈+1"],["追加毒針","額外毒針","額外毒針+1"],["光速連斬","額外斬擊","額外斬擊+1"],["追加模組","額外陷阱","額外陷阱+1"]],
+  [["燃料附著","解鎖燃燒","命中後每秒造成燃燒傷害，持續2S"],["凝固汽油彈","爆炸後留下燃燒區域","燃燒區域持續2秒，每秒造成30傷害"],["寒氣附著","解鎖緩速","命中後緩速25%，持續2S"],["冰痕","爆炸後留下冰痕","爆炸後留下冰痕區域，敵人移速-15%，持續2S"],["過載聚焦","持續增傷","持續照射同一目標1S後，後續傷害+20%"],["電磁殘留","麻痺攻擊目標","被擊中的敵人麻痺0.3S"],["腐蝕毒霧","毒霧中的敵人受到額外傷害","毒霧中的敵人受到傷害+15%"],["神經毒素","命中後造成中毒","命中後造成中毒，每0.5S25傷害，持續2S"],["迴旋飛刃","命中後有機率發射額外迴旋刃","命中後機率向隨機方向發射一道回旋刃，造成50%傷害"],["戰術封鎖","陷阱造成定身","陷阱觸發後造成定身0.5S"]],
+  [["燃燒強化","燃燒傷害+","燃燒傷害+100%"],["燃燒加劇","燃燒傷害+","燃燒傷害+100%"],["冷卻延長","緩速時間+","緩速時間+50%"],["冰痕延長","冰痕持續時間+","冰痕持續時間+50%"],["聚焦強化","聚焦效果+","加成效果提升50%"],["麻痺擴散","麻痺時間+","麻痺時間+50%"],["腐蝕加深","易傷效果+","增傷效果+50%"],["毒傷強化","中毒傷害+","中毒傷害+100%"],["迴旋增幅","迴旋飛刃傷害+","飛刃傷害+100%"],["封鎖延長","定身時間+","定身時間+50%"]],
+  [["延時燃燒","燃燒時間+","燃燒持續時間+50%"],["延燒區域","燃燒時間+","燃燒持續時間+50%"],["極凍禁制","對第一個目標凍結","對第一個目標造成凍結效果，持續1S"],["冰痕強化","冰痕緩速+","冰痕緩速效果+15%"],["持續灼穿","聚焦時間-","持續照射需要時間-50%"],["路徑強化","路徑傷害+","路徑上造成的傷害+100%"],["延時滯留","毒霧持續時間+","毒霧持續時間+50%"],["延效毒素","中毒時間+","中毒持續時間+50%"],["追加飛刃","迴旋刃+1","額外迴旋刃+1"],["牽引模組","牽引強度+","陷阱觸發後將目標拉向中心"]],
+  [["氣爆燃燒","對燃燒敵人造成爆炸","命中燃燒中的敵人時，在目標位置造成小範圍爆炸"],["牽引爆震","爆炸牽引敵人","爆炸命中敵人時造成短距離牽引"],["冰痕狙擊","子彈軌跡留下冰痕","子彈軌跡留下冰痕造成緩速25%，持續1S"],["冰封延長","凍結時間+","凍結持續時間+50%"],["折射聚焦","折射光束有聚焦","折射出的光束同樣享有聚焦效果"],["麻痺導流","攻擊聚焦敵人","被聚焦標記敵人也會被連鎖"],["劇毒烈焰","毒霧中燃燒敵人傷害+","毒霧中的燃燒敵人受到傷害+100%"],["麻痺毒針","中毒目標被毒針命中麻痺","中毒目標被毒針爆裂命中時，麻痺0.2S"],["電刃麻痺","造成命中麻痺","被迴旋刃命中的敵人造成麻痺0.2S"],["燃燒陷阱","陷阱觸發後留下燃燒區域","陷阱觸發後留下燃燒區域造成火焰傷害，持續2S"]],
+  [["電熱灼斷","對燃燒敵人造成麻痺","命中燃燒中的敵人時，麻痺0.2S"],["電磁榴彈","爆炸後留下電磁區","爆炸後留下電磁區2S，接觸的敵人停頓0.3S"],["冷毒穿甲","中毒目標受到額外傷害","中毒目標受到狙擊傷害+20%"],["碎晶爆裂","冰爆後碎晶散射","爆炸後散出3枚冰晶，各造成30%傷害"],["高壓爆點","命中範圍爆炸","持續照射命中1S後，在目標位置產生小範圍爆炸"],["電毒傳播","中毒的敵人爆炸","中毒的敵人被閃電命中時，造成小範圍爆炸，造成50%傷害"],["寒毒封鎖","毒霧內緩速","毒霧內敵人降低10%移速"],["燃毒彈頭","中毒目標附加燃燒","中毒目標被毒針爆裂命中時，附加燃燒"],["燃刃切割","造成命中燃燒","被迴旋刃命中的敵人造成燃燒，持續1S"],["電磁陷阱","陷阱觸發後留下感電區域","陷阱觸發後留下感電區域，對接觸敵人造成麻痺0.3S，持續2S"]],
+  [["毒焰","對中毒敵人造成額外傷害","若敵人中毒，噴火傷害+20%"],["毒爆榴彈","燃燒區域中的敵人中毒","燃燒區域中的敵人附加中毒效果，持續2S"],["碎晶穿透","擊中目標後分裂冰晶碎片","擊中第一個目標後分裂2枚冰晶碎片，造成40%傷害"],["寒爆壓制","凍結結束後減速","敵人凍結結束後，額外緩速20%，持續1S"],["導電標記","雷射命中增傷","被雷射命中的敵人受到閃電傷害+20%，持續2S"],["電毒擴散","中毒的敵人被擊中額外電流","中毒的敵人被電擊時，放出一條電流造成50%傷害"],null,["碎毒穿刺","凍結敵人命中增傷","凍結中的敵人被毒針命中時，爆裂傷害+30%"],["毒刃穿刺","造成命中中毒","被迴旋刃命中的敵人造成中毒，持續1S"],["毒化陷阱","陷阱觸發後留下毒霧區域","陷阱觸發後留下毒霧區域造成毒傷，持續2S"]],
+];
+
+const UPGRADE_REQUIREMENTS = {
+  "霜火噴流":"寒霜領域",
+  "毒爆榴彈":"腐蝕毒霧",
+  "導電冰彈":"麻痺磁場",
+  "碎冰狙爆":"極寒標記",
+  "電磁折射":"麻痺磁場",
+  "聚焦導流":"聚焦鎖定",
+  "劇毒燃爆":"灼燒地帶",
+  "寒毒爆發":"寒霜領域",
+  "淬毒旋刃":"神經毒素",
+  "電磁陷阱":"麻痺磁場",
+};
+
+// Every tower exposes the same five readable dimensions while preserving its role.
+// [0] damage, [1] speed, [2] quantity, [3] core, [4] cross-tower synergy.
+const UPGRADE_ROWS = [
+  [
+    ["高壓燃料","傷害","傷害+25%","damage"],
+    ["高爆裝藥","傷害","傷害+25%","damage"],
+    ["精準校正","傷害","傷害+25%","damage"],
+    ["冰晶加壓","傷害","傷害+25%","damage"],
+    ["聚焦增幅","傷害","每段傷害+25%","damage"],
+    ["高壓電芯","傷害","傷害+25%","damage"],
+    ["腐蝕配方","傷害","每段傷害+25%","damage"],
+    ["毒針強化","傷害","傷害+25%","damage"],
+    ["鋒刃加固","傷害","傷害+25%","damage"],
+    ["戰術彈頭","傷害","傷害+25%","damage"],
+  ],
+  [
+    ["快速增壓","攻速","攻速+15%","speed"],
+    ["自動裝填","攻速","攻速+15%","speed"],
+    ["快速拉栓","攻速","攻速+15%","speed"],
+    ["急速投擲","攻速","攻速+15%","speed"],
+    ["超頻發射","攻速","攻速+15%","speed"],
+    ["快速充能","攻速","攻速+15%","speed"],
+    ["快速裝填","攻速","攻速+15%","speed"],
+    ["疾速連射","攻速","攻速+15%","speed"],
+    ["高速驅動","攻速","攻速+15%","speed"],
+    ["快速部署","攻速","攻速+15%","speed"],
+  ],
+  [
+    ["雙焰噴口","數量","額外火焰+1","quantity"],
+    ["雙發榴彈","數量","爆點+1","quantity"],
+    ["多重槍管","數量","額外子彈+1","quantity"],
+    ["多重冰爆","數量","額外冰晶彈+1","quantity"],
+    ["折射透鏡","數量","額外目標+1","quantity"],
+    ["額外電鏈","數量","額外閃電鏈+1","quantity"],
+    ["多重毒霧","數量","額外毒氣彈+1","quantity"],
+    ["追加毒針","數量","額外毒針+1","quantity"],
+    ["追加飛刃","數量","額外斬擊+1","quantity"],
+    ["追加模組","數量","額外陷阱+1","quantity"],
+  ],
+  [
+    ["灼燒地帶","核心","噴流命中留下燃燒區域","core"],
+    ["焦土彈","核心","爆炸留下燃燒區域","core"],
+    ["極寒標記","核心","命中緩速並凍結首要目標","core"],
+    ["寒霜領域","核心","冰爆留下緩速冰痕","core"],
+    ["聚焦鎖定","核心","持續鎖定提高傷害","core"],
+    ["麻痺磁場","核心","電鏈麻痺並傷害路徑敵人","core"],
+    ["腐蝕毒霧","核心","毒霧造成中毒與易傷","core"],
+    ["神經毒素","核心","命中疊加持續毒傷","core"],
+    ["迴旋飛刃","核心","命中後彈射額外飛刃","core"],
+    ["牽引核心","核心","陷阱定身並牽引敵人","core"],
+  ],
+  [
+    ["霜火噴流","連動","對凍結目標增傷","synergy"],
+    ["毒爆榴彈","連動","焦土區附加毒霧","synergy"],
+    ["導電冰彈","連動","冰彈附加導電標記","synergy"],
+    ["碎冰狙爆","連動","凍結目標碎裂冰晶","synergy"],
+    ["電磁折射","連動","雷射標記提高電屬傷害","synergy"],
+    ["聚焦導流","連動","電鏈追擊聚焦目標","synergy"],
+    ["劇毒燃爆","連動","對燃燒目標大幅增傷","synergy"],
+    ["寒毒爆發","連動","對凍結目標提高毒傷","synergy"],
+    ["淬毒旋刃","連動","飛刃命中附加中毒","synergy"],
+    ["電磁陷阱","連動","陷阱留下麻痺區域","synergy"],
+  ],
+];
+
+const CORE_UPGRADE_NAMES = new Set(UPGRADE_ROWS[3].map(upgrade => upgrade[0]));
+const ADVANCED_UPGRADE_NAMES = new Set(CORE_UPGRADE_NAMES);
+const SYNERGY_UPGRADE_NAMES = new Set(UPGRADE_ROWS[4].map(upgrade => upgrade[0]));
+
+const MONSTERS = {
+  normal: { name:"普通怪", hp:300, speed:60, range:0, atk:20, interval:1.5, exp:10, money:[1,3], color:"#6d7a91", size:14, shape:"square" },
+  fast: { name:"快速怪", hp:180, speed:95, range:0, atk:15, interval:1.2, exp:8, money:[1,2], color:"#2f91d1", size:12, shape:"diamond" },
+  tank: { name:"厚血怪", hp:650, speed:45, range:0, atk:35, interval:1.8, exp:18, money:[4,8], color:"#9a7038", size:21, shape:"square" },
+  ranged: { name:"遠程怪", hp:260, speed:55, range:100, atk:20, interval:1.8, exp:12, money:[1,3], color:"#8b66d9", size:16, shape:"triangle" },
+  special: { name:"特殊行為怪", hp:260, speed:75, range:0, atk:18, interval:1.4, exp:12, money:[1,3], color:"#d05d85", size:17, shape:"diamond", special:true },
+};
+
+const ELITES = [
+  { name:"巨型菁英", hp:1800, speed:40, range:0, atk:60, interval:2.0, exp:50, money:[15,25], color:"#c78940", size:28, shape:"square" },
+  { name:"狂奔菁英", hp:1200, speed:95, range:0, atk:40, interval:1.2, exp:45, money:[12,22], color:"#33a9e3", size:24, shape:"diamond" },
+  { name:"遠程菁英", hp:1500, speed:50, range:150, atk:45, interval:2.0, exp:55, money:[14,24], color:"#9f78ff", size:26, shape:"triangle" },
+];
+
+const BOSSES = [
+  { name:"標準 Boss", hp:9000, speed:30, range:0, atk:140, interval:2.2, color:"#d6453d" },
+  { name:"衝鋒 Boss", hp:7500, speed:38, range:0, atk:155, interval:1.8, color:"#e86832" },
+  { name:"遠程 Boss", hp:8200, speed:26, range:180, atk:90, interval:1.6, color:"#cc63d9" },
+  { name:"干擾 Boss", hp:8500, speed:28, range:0, atk:120, interval:2.5, color:"#6981ff" },
+  { name:"坦克 Boss", hp:13000, speed:24, range:0, atk:130, interval:2.4, color:"#b58b4b" },
+];
+
+const WAVE_REWARD_TIERS = [
+  { id:"dry", label:"低潮", weightKey:"waveRewardDryWeight", mulKey:"waveRewardDryMul" },
+  { id:"low", label:"小獎", weightKey:"waveRewardLowWeight", mulKey:"waveRewardLowMul" },
+  { id:"normal", label:"普通", weightKey:"waveRewardNormalWeight", mulKey:"waveRewardNormalMul" },
+  { id:"profit", label:"獲利", weightKey:"waveRewardProfitWeight", mulKey:"waveRewardProfitMul" },
+  { id:"hot", label:"熱波", weightKey:"waveRewardHotWeight", mulKey:"waveRewardHotMul" },
+];
+
+const BOSS_DIFFICULTY_TIERS = [
+  { id:"easy", label:"容易", weightKey:"bossDiffEasyWeight", hpKey:"bossDiffEasyHpMul", atkKey:"bossDiffEasyAtkMul", speedKey:"bossDiffEasySpeedMul", marks:1 },
+  { id:"normal", label:"標準", weightKey:"bossDiffNormalWeight", hpKey:"bossDiffNormalHpMul", atkKey:"bossDiffNormalAtkMul", speedKey:"bossDiffNormalSpeedMul", marks:2 },
+  { id:"hard", label:"困難", weightKey:"bossDiffHardWeight", hpKey:"bossDiffHardHpMul", atkKey:"bossDiffHardAtkMul", speedKey:"bossDiffHardSpeedMul", marks:3 },
+  { id:"brutal", label:"極難", weightKey:"bossDiffBrutalWeight", hpKey:"bossDiffBrutalHpMul", atkKey:"bossDiffBrutalAtkMul", speedKey:"bossDiffBrutalSpeedMul", marks:4 },
+];
+
+const WAVE = [
+  [1,.45,0,0,0,0,2,2.7,0],[2,.68,0,0,0,0,2,2.7,0],[3,1.08,2,1,0,0,2,2.7,0],[4,1.26,4,1,0,0,2,2.7,0],[5,1.45,6,1,0,0,2,2.7,0],
+  [6,1.62,8,.9,.1,0,2,2.7,0],[7,1.84,10,.85,.15,0,2,2.7,0],[8,2.08,11,.8,.2,0,2,2.7,0],[9,2.33,12,.75,.25,0,2,2.7,0],[10,2.60,13,.7,.3,0,2,2.7,0],
+  [11,2.82,14,.65,.3,.05,2,2.7,0],[12,3.04,15,.65,.3,.05,2,2.7,0],[13,3.26,16,.6,.35,.05,2,2.7,0],[14,3.48,17,.6,.35,.05,2,2.7,0],[15,3.70,18,.55,.4,.05,2,2.7,0],
+  [16,3.91,19,.5,.4,.1,2,2.7,0],[17,4.12,20,.5,.4,.1,2,2.7,0],[18,4.33,21,.45,.45,.1,2,2.7,0],[19,4.54,22,.45,.45,.1,2,2.7,0],[20,4.75,24,.45,.45,.1,2,2.7,0],
+  [21,4.92,25,.4,.45,.15,2,2.7,0],[22,5.09,26,.4,.44,.16,2,2.7,0],[23,5.26,27,.4,.43,.17,2,2.7,0],[24,5.43,28,.4,.42,.18,2,2.7,0],[25,5.60,29,.4,.41,.19,2,2.7,0],
+  [26,5.77,30,.3,.45,.25,2,2.7,0],[27,5.94,31,.3,.44,.26,2,2.7,0],[28,6.11,32,.3,.43,.27,2,2.7,0],[29,6.28,33,.3,.42,.28,2,2.7,0],[30,6.45,35,.3,.41,.29,2,2.7,0],
+].map(r => ({ wave:r[0], hpMul:r[1], eliteWeight:r[2], e1:r[3], e2:r[4], e3:r[5], bossBase:r[6], bossInc:r[7], bossCd:r[8] }));
+
+const MATH_WAVE_CLEAR_DEFAULTS = [
+  .985,.975,.955,.955,.955,.925,.925,.925,.925,.925,
+  .890,.890,.890,.890,.890,.860,.860,.860,.860,.860,
+  .840,.840,.840,.840,.840,.820,.820,.820,.820,.820,
+];
+
+const MATH_WAVE_PAYOUT_DEFAULTS = [
+  .70,.56,1.04,.94,1.46,1.52,.83,.98,1.13,1.52,
+  1.47,.96,1.10,1.15,1.25,1.25,.95,1.00,1.00,1.00,
+  .85,.70,.70,.68,.66,.64,.62,.58,.55,.52,
+];
+
+const BANDS = [
+  { from:1, to:2, count:[16,24], drop:{normal:.63,fast:.36,tank:.9,ranged:.45,special:.45}, templates:{standard:700,fast:300} },
+  { from:3, to:5, count:[20,30], drop:{normal:.585,fast:.315,tank:.9,ranged:.405,special:.405}, templates:{standard:400,tank:250,ranged:200,disrupt:150} },
+  { from:6, to:10, count:[28,40], drop:{normal:.44,fast:.24,tank:.8,ranged:.32,special:.32}, templates:{standard:250,fast:200,tank:200,ranged:150,disrupt:200} },
+  { from:11, to:20, count:[34,50], drop:{normal:.50,fast:.24,tank:1,ranged:.34,special:.34}, templates:{standard:200,fast:150,tank:200,ranged:150,disrupt:150,mixed:150} },
+  { from:21, to:30, count:[42,62], drop:{normal:.46,fast:.19,tank:1,ranged:.30,special:.30}, templates:{standard:100,fast:150,tank:200,ranged:150,disrupt:150,mixed:250} },
+];
+
+const TEMPLATE = {
+  standard:{normal:450,fast:200,tank:150,ranged:100,special:100},
+  fast:{normal:250,fast:450,tank:100,ranged:100,special:100},
+  tank:{normal:250,fast:150,tank:400,ranged:100,special:100},
+  ranged:{normal:200,fast:150,tank:150,ranged:300,special:200},
+  disrupt:{normal:200,fast:200,tank:100,ranged:150,special:350},
+  mixed:{normal:180,fast:240,tank:200,ranged:180,special:200},
+};
+
+const TOWER_ATTR = {
+  flame:"fire", grenade:"fire",
+  cryo:"ice", frostbomb:"ice",
+  laser:"electric", chain:"electric",
+  gas:"poison", needle:"poison",
+  blade:"neutral", trap:"neutral",
+};
+const TOWER_ROLE = {
+  flame:"area", grenade:"area", cryo:"single", frostbomb:"control", laser:"single",
+  chain:"area", gas:"area", needle:"single", blade:"general", trap:"control",
+};
+const MATH_TOWER_POWER = {
+  flame:{ minion:1.68, boss:.68 }, grenade:{ minion:1.74, boss:.64 },
+  cryo:{ minion:.25, boss:1.88 }, frostbomb:{ minion:1.55, boss:.58 },
+  laser:{ minion:.28, boss:2.05 }, chain:{ minion:1.72, boss:.48 },
+  gas:{ minion:1.65, boss:.64 }, needle:{ minion:.42, boss:2.08 },
+  blade:{ minion:1.00, boss:.88 }, trap:{ minion:1.18, boss:.42 },
+};
+const ATTRIBUTE_KEYS = ["fire", "ice", "electric", "poison", "neutral"];
+const ATTRIBUTE_DISPLAY = {
+  fire:{ label:"火", color:"#ff6b3d" },
+  ice:{ label:"冰", color:"#72d4ff" },
+  electric:{ label:"電", color:"#d89cff" },
+  poison:{ label:"毒", color:"#66d86f" },
+  neutral:{ label:"無", color:"#d5dde8" },
+};
+const HEROES = [
+  { id:"fire", name:"烈焰戰士", attr:"火", attrKey:"fire", attackMode:"blast", damage:126, rate:.72, range:780, color:"#ff6b3d", status:26, statusTime:2.0, splash:58, secondaryMul:.58, targets:1, projectileSpeed:680, zoneDuration:0, attackTrait:"爆燃火球", desc:"重擊爆破｜範圍燃燒" },
+  { id:"ice", name:"寒霜獵手", attr:"冰", attrKey:"ice", attackMode:"pierce", damage:172, rate:.70, range:980, color:"#72d4ff", status:.24, statusTime:1.35, splash:0, secondaryMul:.75, targets:3, projectileSpeed:1250, zoneDuration:0, attackTrait:"貫穿冰槍", desc:"直線貫穿｜強力緩速" },
+  { id:"electric", name:"雷霆特工", attr:"電", attrKey:"electric", attackMode:"chain", damage:84, rate:1.35, range:900, color:"#d89cff", status:.12, statusTime:1.0, splash:0, secondaryMul:.62, targets:3, projectileSpeed:0, zoneDuration:0, attackTrait:"連鎖電弧", desc:"瞬發連鎖｜多目標" },
+  { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", attackMode:"cloud", damage:107, rate:.76, range:820, color:"#66d86f", status:25, statusTime:2.6, splash:58, secondaryMul:.50, targets:1, projectileSpeed:520, zoneDuration:2.0, attackTrait:"腐蝕毒囊", desc:"拋射毒囊｜持續毒區" },
+  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", attackMode:"burst", damage:115, rate:.92, range:940, color:"#d5dde8", status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0, attackTrait:"三連實彈", desc:"高速三連｜純傷害" },
+];
+const UPGRADE_DIMENSIONS = {
+  damage:{ label:"傷害", mark:"DMG" },
+  speed:{ label:"攻速", mark:"SPD" },
+  quantity:{ label:"數量", mark:"+1" },
+  core:{ label:"核心", mark:"CORE" },
+  synergy:{ label:"連動", mark:"LINK" },
+  hero:{ label:"角色", mark:"HERO" },
+  buff:{ label:"角色 BUFF", mark:"BUFF" },
+  newTower:{ label:"新砲台", mark:"NEW" },
+};
+const WAVE_ATTRIBUTE_CYCLE = ["fire", "ice", "electric", "poison", "neutral"];
+const ENEMY_ATTRIBUTE_DEFAULTS = {
+  normal:  { fire:1,    ice:1,    electric:1,    poison:1,    neutral:1.25 },
+  fast:    { fire:1,    ice:1.35, electric:1,    poison:.80,  neutral:1 },
+  tank:    { fire:1.35, ice:1,    electric:.80,  poison:1,    neutral:1 },
+  ranged:  { fire:.80,  ice:1,    electric:1.35, poison:1,    neutral:1 },
+  special: { fire:1,    ice:.80,  electric:1,    poison:1.35, neutral:1 },
+  elite_1: { fire:1.35, ice:.80,  electric:1,    poison:1,    neutral:1 },
+  elite_2: { fire:1,    ice:1.35, electric:1,    poison:.80,  neutral:1 },
+  elite_3: { fire:.80,  ice:1,    electric:1.35, poison:1,    neutral:1 },
+  boss_1:  { fire:1,    ice:1,    electric:1,    poison:1,    neutral:1.25 },
+  boss_2:  { fire:1,    ice:1.35, electric:1,    poison:.80,  neutral:1 },
+  boss_3:  { fire:.80,  ice:1,    electric:1.35, poison:1,    neutral:1 },
+  boss_4:  { fire:1,    ice:1,    electric:.80,  poison:1.35, neutral:1 },
+  boss_5:  { fire:1.35, ice:.80,  electric:1,    poison:1,    neutral:1 },
+};
+
+const ATTRIBUTE_COUNTER = {
+  fire:"ice",
+  ice:"electric",
+  electric:"poison",
+  poison:"fire",
+};
+const ATTRIBUTE_SAME_MUL = .70;
+const ATTRIBUTE_COUNTER_MUL = 1.50;
+
+function enemyAttributeProfile(enemyAttr) {
+  const result = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [attr, 1]));
+  if (!enemyAttr || enemyAttr === "neutral") return result;
+  result[enemyAttr] = ATTRIBUTE_SAME_MUL;
+  result[ATTRIBUTE_COUNTER[enemyAttr]] = ATTRIBUTE_COUNTER_MUL;
+  return result;
+}
+
+const MINION_VARIANTS = {
+  neutral: [
+    { id:"neutral_scout", name:"偵察蛛機", sprite:"neutral-scout.webp", enemyAttr:"neutral", hp:315, speed:34.2, range:0, atk:4.1, interval:1.5, exp:10, money:[1,3], color:"#d5dde8", size:15 },
+    { id:"neutral_gunner", name:"浮游砲機", sprite:"neutral-gunner.webp", enemyAttr:"neutral", hp:273, speed:31.5, range:110, atk:4.1, interval:1.7, exp:12, money:[1,3], color:"#d5dde8", size:16, special:true },
+    { id:"neutral_guard", name:"重盾履帶", sprite:"neutral-guard.webp", enemyAttr:"neutral", hp:682.5, speed:26.1, range:0, atk:7.38, interval:1.8, exp:18, money:[4,8], color:"#d5dde8", size:22 },
+  ],
+  fire: [
+    { id:"fire_charger", name:"燼火輪獸", sprite:"fire-charger.webp", enemyAttr:"fire", hp:241.5, speed:40.5, range:0, atk:9.02, interval:1.15, exp:10, money:[1,3], color:"#ff6b3d", size:15 },
+    { id:"fire_ray", name:"熔火飛魟", sprite:"fire-ray.webp", enemyAttr:"fire", hp:262.5, speed:35.1, range:115, atk:8.2, interval:1.25, exp:12, money:[1,3], color:"#ff6b3d", size:17, special:true },
+    { id:"fire_tortoise", name:"岩漿甲龜", sprite:"fire-tortoise.webp", enemyAttr:"fire", hp:525, speed:27.9, range:0, atk:12.3, interval:1.55, exp:18, money:[4,8], color:"#ff6b3d", size:22 },
+  ],
+  ice: [
+    { id:"ice_crab", name:"冰盾蟹", sprite:"ice-crab.webp", enemyAttr:"ice", hp:451.5, speed:27.9, range:0, atk:4.1, interval:1.6, exp:10, money:[1,3], color:"#72d4ff", size:16 },
+    { id:"ice_jelly", name:"冰晶水母", sprite:"ice-jelly.webp", enemyAttr:"ice", hp:378, speed:27, range:125, atk:4.1, interval:1.8, exp:12, money:[1,3], color:"#72d4ff", size:17, special:true },
+    { id:"ice_rhino", name:"冰河巨犀", sprite:"ice-rhino.webp", enemyAttr:"ice", hp:861, speed:23.4, range:0, atk:7.38, interval:1.9, exp:20, money:[4,8], color:"#72d4ff", size:24 },
+  ],
+  electric: [
+    { id:"electric_runner", name:"電弧疾蜥", sprite:"electric-runner.webp", enemyAttr:"electric", hp:178.5, speed:51.3, range:0, atk:5.74, interval:.95, exp:8, money:[1,2], color:"#d89cff", size:13 },
+    { id:"electric_pulse", name:"脈衝飛梭", sprite:"electric-pulse.webp", enemyAttr:"electric", hp:199.5, speed:46.8, range:105, atk:4.92, interval:.9, exp:10, money:[1,3], color:"#d89cff", size:14, special:true },
+    { id:"electric_beetle", name:"電容甲蟲", sprite:"electric-beetle.webp", enemyAttr:"electric", hp:346.5, speed:40.5, range:0, atk:7.38, interval:1.0, exp:14, money:[2,5], color:"#d89cff", size:18 },
+  ],
+  poison: [
+    { id:"poison_slug", name:"孢囊菌蛞", sprite:"poison-slug.webp", enemyAttr:"poison", hp:336, speed:27.9, range:75, atk:4.92, interval:1.05, exp:10, money:[1,3], color:"#66d86f", size:16 },
+    { id:"poison_squid", name:"毒針浮魷", sprite:"poison-squid.webp", enemyAttr:"poison", hp:294, speed:31.5, range:135, atk:5.74, interval:1.0, exp:12, money:[1,3], color:"#66d86f", size:17, special:true },
+    { id:"poison_snail", name:"腐蝕罐蝸", sprite:"poison-snail.webp", enemyAttr:"poison", hp:640.5, speed:24.3, range:90, atk:7.38, interval:1.15, exp:18, money:[4,8], color:"#66d86f", size:22 },
+  ],
+};
+
+const ELITE_VARIANTS = {
+  neutral: [
+    { id:"neutral_elite_shield", name:"戰術盾衛", sprite:"neutral-elite-shield.webp", enemyAttr:"neutral", hp:1942.5, speed:27, range:0, atk:44.1, interval:1.8, exp:50, money:[15,25], color:"#d5dde8", size:29 },
+    { id:"neutral_elite_siege", name:"六足攻城砲", sprite:"neutral-elite-siege.webp", enemyAttr:"neutral", hp:1627.5, speed:23, range:150, atk:39.9, interval:1.9, exp:55, money:[14,24], color:"#d5dde8", size:29 },
+  ],
+  fire: [
+    { id:"fire_elite_blade", name:"炎刃統領", sprite:"fire-elite-blade.webp", enemyAttr:"fire", hp:1522.5, speed:36, range:0, atk:59.85, interval:1.25, exp:48, money:[14,24], color:"#ff6b3d", size:28 },
+    { id:"fire_elite_furnace", name:"熔爐巨兵", sprite:"fire-elite-furnace.webp", enemyAttr:"fire", hp:2310, speed:22, range:0, atk:71.4, interval:1.75, exp:58, money:[16,27], color:"#ff6b3d", size:31 },
+  ],
+  ice: [
+    { id:"ice_elite_executioner", name:"凍原處刑者", sprite:"ice-elite-executioner.webp", enemyAttr:"ice", hp:2782.5, speed:20, range:0, atk:50.4, interval:1.8, exp:58, money:[16,27], color:"#72d4ff", size:31 },
+    { id:"ice_elite_wall", name:"行進冰壁", sprite:"ice-elite-wall.webp", enemyAttr:"ice", hp:3517.5, speed:16, range:0, atk:44.1, interval:2.0, exp:62, money:[18,30], color:"#72d4ff", size:33 },
+  ],
+  electric: [
+    { id:"electric_elite_panther", name:"雷襲獵豹", sprite:"electric-elite-panther.webp", enemyAttr:"electric", hp:1260, speed:48, range:0, atk:45.15, interval:.9, exp:46, money:[13,23], color:"#d89cff", size:27 },
+    { id:"electric_elite_overload", name:"過載球體", sprite:"electric-elite-overload.webp", enemyAttr:"electric", hp:1785, speed:35, range:115, atk:39.9, interval:1.0, exp:52, money:[14,25], color:"#d89cff", size:29 },
+  ],
+  poison: [
+    { id:"poison_elite_witch", name:"瘴氣巫株", sprite:"poison-elite-witch.webp", enemyAttr:"poison", hp:1732.5, speed:25, range:155, atk:37.8, interval:1.05, exp:52, money:[14,25], color:"#66d86f", size:29 },
+    { id:"poison_elite_centipede", name:"毒甲蜈蚣", sprite:"poison-elite-centipede.webp", enemyAttr:"poison", hp:2362.5, speed:28, range:85, atk:44.1, interval:1.0, exp:58, money:[16,27], color:"#66d86f", size:31 },
+  ],
+};
+
+const BOSS_VARIANTS = {
+  neutral:{ id:"neutral_boss_fortress", name:"鋼鐵堡壘", sprite:"neutral-boss-fortress.webp", enemyAttr:"neutral", hp:22325, speed:19, range:0, atk:130, interval:2.1, exp:120, color:"#d5dde8", size:46 },
+  fire:{ id:"fire_boss_tyrant", name:"煉獄暴君", sprite:"fire-boss-tyrant.webp", enemyAttr:"fire", hp:19270, speed:24, range:0, atk:170, interval:1.65, exp:120, color:"#ff6b3d", size:46 },
+  ice:{ id:"ice_boss_frostbeast", name:"永凍巨獸", sprite:"ice-boss-frostbeast.webp", enemyAttr:"ice", hp:32900, speed:15, range:0, atk:120, interval:2.25, exp:120, color:"#72d4ff", size:48 },
+  electric:{ id:"electric_boss_stormcore", name:"風暴核心", sprite:"electric-boss-stormcore.webp", enemyAttr:"electric", hp:16920, speed:30, range:80, atk:145, interval:1.35, exp:120, color:"#d89cff", size:45 },
+  poison:{ id:"poison_boss_plaguemother", name:"疫病母體", sprite:"poison-boss-plaguemother.webp", enemyAttr:"poison", hp:24910, speed:17, range:165, atk:92, interval:1.15, exp:120, color:"#66d86f", size:48 },
+};
+
+const ENCOUNTER_FORMATIONS = [
+  { id:"swarm", label:"群體", template:"standard", role:"area", threat:1, countMul:1.90, hpMul:.72, atkMul:.60, speedMul:1.00, eliteCount:0, batchSize:5, spawnGapMul:2.2, range:0, artIndex:0, marks:3 },
+  { id:"rush", label:"高速", template:"fast", role:"control", threat:2, countMul:1.05, hpMul:.92, atkMul:.72, speedMul:1.30, eliteCount:0, batchSize:2, spawnGapMul:2.6, range:0, artIndex:0, marks:2 },
+  { id:"armor", label:"坦克", template:"tank", role:"single", threat:2, countMul:.48, hpMul:1.70, atkMul:.85, speedMul:.64, eliteCount:0, batchSize:1, spawnGapMul:5.5, range:0, artIndex:2, marks:2 },
+  { id:"siege", label:"遠程", template:"ranged", role:"control", threat:2, countMul:.70, hpMul:1.20, atkMul:.90, speedMul:.85, eliteCount:0, batchSize:2, spawnGapMul:4.0, range:230, artIndex:1, marks:2 },
+  { id:"elite", label:"菁英", template:"mixed", role:"single", threat:3, countMul:.30, hpMul:1.65, atkMul:.85, speedMul:.95, eliteCount:1, batchSize:2, spawnGapMul:3.2, range:0, artIndex:0, marks:1 },
+];
+
+const ENCOUNTER_REWARD_FACTORS = { 1:.70, 2:1.15, 3:1.85, 4:2.85 };
+const ENCOUNTER_EXP_FACTORS = { 1:.80, 2:1.05, 3:1.42, 4:1.90 };
+const ENCOUNTER_CLEAR_EXP = { 1:0, 2:0, 3:0, 4:0 };
+const PROTOTYPE_BOSS_HP = [1.10, 2.20, 3.60, 5.50, 8.00];
+const PROTOTYPE_BOSS_REPAIR = .35;
+// Prototype-only POT per paid BET; disjoint chest bands, not calibrated RTP.
+const ENCOUNTER_REWARD_BANDS = { 1:[.45,.65], 2:[1.00,1.35], 3:[2.40,3.10], 4:[4.80,6.00] };
+const ENCOUNTER_PARAM_DEFAULTS = {
+  encounterRewardRevision:284,
+  encounterEconomyEnabled:1,
+  encounterRtpTargetMin:.96, encounterRtpTargetMax:1,
+  encounterRewardScale:.54,
+  encounterPotEntryPower:1,
+  encounterChestUpgradeChance:.10,
+  encounterHpDepthGrowth:.09, encounterHpDepthCap:2,
+  encounterGrade1HpMul:1.75, encounterGrade2HpMul:1.15, encounterGrade3HpMul:.90,
+  encounterGrade1AtkMul:1, encounterGrade2AtkMul:1, encounterGrade3AtkMul:1,
+  encounterBaseHitCap:14,
+  encounterChest1Min:.05, encounterChest1Max:3.00, encounterChest1Shape:2.933,
+  encounterChest2Min:.35, encounterChest2Max:4.00, encounterChest2Shape:2.527,
+  encounterChest3Min:.80, encounterChest3Max:4.50, encounterChest3Shape:1.467,
+  encounterChest4Min:1.60, encounterChest4Max:7.00, encounterChest4Shape:1.455,
+  encounterBossChestMin:.19, encounterBossChestMax:.31,
+  encounterBossSmallWeight:61, encounterBossMediumWeight:29, encounterBossLargeWeight:8, encounterBossJackpotWeight:2,
+  encounterBossSmallMin:.10, encounterBossSmallMax:.35,
+  encounterBossMediumMin:1.00, encounterBossMediumMax:3.20,
+  encounterBossLargeMin:3.50, encounterBossLargeMax:5.40,
+  encounterBossJackpotMin:7.00, encounterBossJackpotMax:19.50,
+  encounterBossDepthGrowth:.08, encounterBossDepthGrowthCap:1.25,
+  encounterRushSpeedCap:78,
+  encounterTankSingleDamageMul:1.35, encounterTankAreaDamageMul:.60,
+  encounterTrapSlowPct:.38, encounterTrapSlowTime:.8,
+  encounterFrostSlowPct:.35, encounterFrostSlowTime:1,
+};
+const ENCOUNTER_ATTR_MARKS = { fire:"火", ice:"冰", electric:"電", poison:"毒", neutral:"無" };
+const ENCOUNTER_FORMATION_HINTS = {
+  swarm:"大量普通怪",
+  rush:"高速怪物",
+  armor:"厚甲坦克",
+  siege:"遠程砲擊",
+  elite:"菁英帶領少量護衛",
+  boss:"強敵來襲",
+};
+
+const PROTOTYPE_BIOMES = [
+  { id:"fire", attr:"fire", name:"熔火戰區", short:"熔火", rgb:"255,84,42", accent:"#ff6b3d" },
+  { id:"ice", attr:"ice", name:"永凍戰區", short:"永凍", rgb:"79,191,255", accent:"#72d4ff" },
+  { id:"electric", attr:"electric", name:"雷暴戰區", short:"雷暴", rgb:"193,121,255", accent:"#d89cff" },
+  { id:"poison", attr:"poison", name:"瘴毒戰區", short:"瘴毒", rgb:"86,214,111", accent:"#66d86f" },
+  { id:"neutral", attr:"neutral", name:"鋼鐵戰區", short:"鋼鐵", rgb:"189,204,224", accent:"#d5dde8" },
+];
+const PROTOTYPE_BOSS_MIN_ENCOUNTER = 7;
+const PROTOTYPE_BOSS_MAX_ENCOUNTER = 14;
+const PROTOTYPE_BOSS_TOTAL = PROTOTYPE_BIOMES.length;
+const ENCOUNTER_LANES = [
+  { id:"steady", label:"穩健", threat:1, reward:1, countMul:.78, hpMul:.80, atkMul:.85, speedMul:.90, spawnGapMul:1.25, formations:["swarm","rush","siege"] },
+  { id:"tactical", label:"戰術", threat:2, reward:2, countMul:1.00, hpMul:1.50, atkMul:1.60, speedMul:1.00, spawnGapMul:1.00, formations:["rush","armor","siege","swarm"] },
+  { id:"greedy", label:"高風險", threat:3, reward:3, countMul:1.08, hpMul:2.00, atkMul:2.00, speedMul:1.06, spawnGapMul:.90, formations:["elite","armor","rush","siege"] },
+];
+const BOSS_COMBAT_ARCHETYPES = [
+  { id:"armored", label:"重甲型", hpMul:1.38, atkMul:.92, speedMul:.82, preludeMul:.72, eliteCount:0, clearShift:-7, reward:4 },
+  { id:"summoner", label:"召集型", hpMul:.96, atkMul:1.00, speedMul:1.00, preludeMul:1.48, eliteCount:1, clearShift:-5, reward:3 },
+  { id:"berserker", label:"狂襲型", hpMul:.88, atkMul:1.34, speedMul:1.20, preludeMul:.88, eliteCount:0, clearShift:-9, reward:4 },
+];
+
+const ALL_MINION_VARIANTS = Object.values(MINION_VARIANTS).flat();
+const ALL_ELITE_VARIANTS = Object.values(ELITE_VARIANTS).flat();
+const ALL_BOSS_VARIANTS = Object.values(BOSS_VARIANTS);
+const PARAM_STORAGE_KEY = "towerDefenseTuningParams.v3";
+const PARAM_CHANNEL = "tower-defense-param-sync";
+const INITIAL_WALLET = 10000;
+const TOWER_PARAM_IDS = ["flame","grenade","cryo","frostbomb","laser","chain","gas","needle","blade","trap"];
+const TOWER_BASE_PARAMS = {
+  flame: { damage:104, rate:4.00, range:460, splash:0, duration:1.5, cooldown:2.4, tick:0.5, minionMul:1.78, eliteMul:.95, bossMul:.78 },
+  grenade: { damage:250, rate:.55, range:700, splash:50, duration:0, cooldown:0, tick:.5, minionMul:1.76, eliteMul:.92, bossMul:.64 },
+  cryo: { damage:371, rate:.45, range:900, splash:0, duration:0, cooldown:0, tick:.5, minionMul:.25, eliteMul:1.50, bossMul:2.02 },
+  frostbomb: { damage:236, rate:.45, range:720, splash:52, duration:0, cooldown:0, tick:.5, minionMul:1.62, eliteMul:.92, bossMul:.58 },
+  laser: { damage:114, rate:3.40, range:860, splash:0, duration:3.0, cooldown:3.0, tick:.5, minionMul:.28, eliteMul:1.55, bossMul:2.12 },
+  chain: { damage:139, rate:.80, range:760, splash:0, duration:0, cooldown:0, tick:.5, minionMul:1.76, eliteMul:.92, bossMul:.54 },
+  gas: { damage:104, rate:.42, range:740, splash:43, duration:2.6, cooldown:0, tick:.5, minionMul:1.68, eliteMul:.96, bossMul:.62 },
+  needle: { damage:256, rate:.75, range:700, splash:30, duration:0, cooldown:0, tick:.5, minionMul:.42, eliteMul:1.42, bossMul:1.92 },
+  blade: { damage:295, rate:.84, range:680, splash:26, duration:0, cooldown:0, tick:.5, minionMul:1.02, eliteMul:1.10, bossMul:.88 },
+  trap: { damage:140, rate:.48, range:700, splash:50, duration:1.4, cooldown:0, tick:.5, minionMul:1.22, eliteMul:.88, bossMul:.44 },
+};
+
+function towerDefaultParams() {
+  const result = {};
+  TOWER_PARAM_IDS.forEach(id => {
+    const base = TOWER_BASE_PARAMS[id];
+    result[`tower_${id}_damage`] = base.damage;
+    result[`tower_${id}_rate`] = base.rate;
+    result[`tower_${id}_range`] = base.range;
+    result[`tower_${id}_splash`] = base.splash;
+    result[`tower_${id}_duration`] = base.duration;
+    result[`tower_${id}_cooldown`] = base.cooldown;
+    result[`tower_${id}_tick`] = base.tick;
+    result[`tower_${id}_minionMul`] = base.minionMul;
+    result[`tower_${id}_eliteMul`] = base.eliteMul;
+    result[`tower_${id}_bossMul`] = base.bossMul;
+  });
+  return result;
+}
+
+function heroDefaultParams() {
+  const result = {};
+  HEROES.forEach(hero => {
+    result[`hero_${hero.id}_damage`] = hero.damage;
+    result[`hero_${hero.id}_rate`] = hero.rate;
+    result[`hero_${hero.id}_range`] = hero.range;
+    result[`hero_${hero.id}_status`] = hero.status;
+    result[`hero_${hero.id}_statusTime`] = hero.statusTime;
+    result[`hero_${hero.id}_splash`] = hero.splash;
+    result[`hero_${hero.id}_secondaryMul`] = hero.secondaryMul;
+    result[`hero_${hero.id}_targets`] = hero.targets;
+    result[`hero_${hero.id}_projectileSpeed`] = hero.projectileSpeed;
+    result[`hero_${hero.id}_zoneDuration`] = hero.zoneDuration;
+  });
+  return result;
+}
+
+function monsterDefaultParams() {
+  const result = {};
+  const add = (id, base) => {
+    result[`monster_${id}_hp`] = base.hp;
+    result[`monster_${id}_speed`] = base.speed;
+    result[`monster_${id}_range`] = base.range;
+    result[`monster_${id}_atk`] = base.atk;
+    result[`monster_${id}_interval`] = base.interval;
+    result[`monster_${id}_exp`] = base.exp || 120;
+    const attributes = base.enemyAttr ? enemyAttributeProfile(base.enemyAttr) : ENEMY_ATTRIBUTE_DEFAULTS[id] || {};
+    ATTRIBUTE_KEYS.forEach(attr => result[`monster_${id}_${attr}Mul`] = attributes[attr] ?? 1);
+    if (base.money) {
+      result[`monster_${id}_moneyMin`] = base.money[0];
+      result[`monster_${id}_moneyMax`] = base.money[1];
+    }
+  };
+  ALL_MINION_VARIANTS.forEach(base => add(base.id, base));
+  ALL_ELITE_VARIANTS.forEach(base => add(base.id, base));
+  ALL_BOSS_VARIANTS.forEach(base => add(base.id, base));
+  return result;
+}
+
+function templateDefaultParams() {
+  const result = {};
+  Object.entries(TEMPLATE).forEach(([templateId, weights]) => {
+    Object.entries(weights).forEach(([monsterId, value]) => {
+      result[`template_${templateId}_${monsterId}`] = value;
+    });
+  });
+  BANDS.forEach((band, index) => {
+    const bandId = index + 1;
+    result[`band_${bandId}_countMin`] = band.count[0];
+    result[`band_${bandId}_countMax`] = band.count[1];
+    Object.entries(band.drop).forEach(([monsterId, value]) => result[`band_${bandId}_drop_${monsterId}`] = value);
+    Object.keys(TEMPLATE).forEach(templateId => result[`band_${bandId}_template_${templateId}`] = band.templates[templateId] || 0);
+  });
+  return result;
+}
+
+function waveDefaultParams() {
+  const result = {};
+  WAVE.forEach(row => {
+    result[`wave_${row.wave}_hpMul`] = row.hpMul;
+    result[`wave_${row.wave}_eliteWeight`] = row.eliteWeight;
+    result[`wave_${row.wave}_e1`] = row.e1;
+    result[`wave_${row.wave}_e2`] = row.e2;
+    result[`wave_${row.wave}_e3`] = row.e3;
+    result[`wave_${row.wave}_bossBase`] = row.bossBase;
+    result[`wave_${row.wave}_bossInc`] = row.bossInc;
+    result[`wave_${row.wave}_bossCd`] = row.bossCd;
+    result[`wave_${row.wave}_mathClear`] = MATH_WAVE_CLEAR_DEFAULTS[row.wave - 1];
+    result[`wave_${row.wave}_mathPayout`] = MATH_WAVE_PAYOUT_DEFAULTS[row.wave - 1];
+    result[`wave_${row.wave}_mathBossCorrection`] = 0;
+  });
+  return result;
+}
+
+function expDefaultParams() {
+  const result = {};
+  EXP_TABLE.forEach((value, index) => result[`exp_${index + 1}`] = value);
+  return result;
+}
+
+function upgradeDefaultParams() {
+  return {
+    upgradeDamage40: 1.4,
+    upgradeDamage35: 1.35,
+    upgradeDamage30: 1.3,
+    upgradeRate25: 1.25,
+    upgradeRate20: 1.2,
+    upgradeRange25: 1.25,
+    upgradeDuration50: 1.5,
+    upgradeDotDamage100: 2,
+    upgradeExtraChain: 3,
+    upgradePathDamage: 50,
+    upgradeVulnerable15: .15,
+    upgradeSlow25: .25,
+  };
+}
+
+const LEGACY_UPGRADE_VALUE_DEFS = {
+  flame: [
+    [{ key:"damagePct", value:35 }],
+    [{ key:"durationPct", value:50 }],
+    [{ key:"rangePct", value:25 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"burnDps", value:18 }, { key:"burnTime", value:2 }],
+    [{ key:"dotDamagePct", value:100 }],
+    [{ key:"burnDurationPct", value:50 }],
+    [{ key:"conditionalExplosionPct", value:50 }, { key:"conditionalExplosionRadius", value:46 }],
+    [{ key:"conditionalStunTime", value:.2 }],
+    [{ key:"poisonTargetDamagePct", value:20 }],
+  ],
+  grenade: [
+    [{ key:"damagePct", value:35 }],
+    [{ key:"rangePct", value:25 }],
+    [{ key:"extraAreas", value:1 }],
+    [{ key:"ratePct", value:20 }],
+    [{ key:"burnAreaDps", value:30 }, { key:"burnAreaTime", value:2 }],
+    [{ key:"dotDamagePct", value:100 }],
+    [{ key:"burnDurationPct", value:50 }],
+    [{ key:"pullStrengthPct", value:35 }],
+    [{ key:"zoneStunTime", value:.3 }, { key:"zoneTime", value:2 }],
+    [{ key:"zonePoisonDps", value:25 }, { key:"zonePoisonTime", value:2 }],
+  ],
+  cryo: [
+    [{ key:"damagePct", value:35 }],
+    [{ key:"ratePct", value:25 }],
+    [{ key:"extraProjectiles", value:1 }],
+    [{ key:"extraPierce", value:1 }],
+    [{ key:"slowPct", value:25 }, { key:"slowTime", value:2 }],
+    [{ key:"slowDurationPct", value:50 }],
+    [{ key:"freezeTime", value:1 }],
+    [{ key:"trailSlowPct", value:25 }, { key:"trailTime", value:1 }],
+    [{ key:"poisonTargetDamagePct", value:20 }],
+    [{ key:"shardCount", value:2 }, { key:"shardDamagePct", value:40 }],
+  ],
+  frostbomb: [
+    [{ key:"damagePct", value:30 }],
+    [{ key:"rangePct", value:25 }],
+    [{ key:"ratePct", value:20 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"iceTrailSlowPct", value:15 }, { key:"iceTrailTime", value:2 }],
+    [{ key:"iceTrailDurationPct", value:50 }],
+    [{ key:"iceTrailSlowBonusPct", value:15 }],
+    [{ key:"freezeDurationPct", value:50 }],
+    [{ key:"shardCount", value:3 }, { key:"shardDamagePct", value:30 }],
+    [{ key:"postFreezeSlowPct", value:20 }, { key:"postFreezeSlowTime", value:1 }],
+  ],
+  laser: [
+    [{ key:"damagePct", value:30 }],
+    [{ key:"ratePct", value:25 }],
+    [{ key:"durationPct", value:50 }],
+    [{ key:"refractDamagePct", value:55 }],
+    [{ key:"focusDelay", value:1 }, { key:"focusDamagePct", value:20 }],
+    [{ key:"focusDamageBonusPct", value:50 }],
+    [{ key:"focusDelayReducePct", value:50 }],
+    [{ key:"refractFocusPct", value:100 }],
+    [{ key:"focusedBurstDamagePct", value:50 }, { key:"focusedBurstRadius", value:42 }],
+    [{ key:"electricVulnerablePct", value:20 }, { key:"electricVulnerableTime", value:2 }],
+  ],
+  chain: [
+    [{ key:"damagePct", value:35 }],
+    [{ key:"extraChainCasts", value:1 }],
+    [{ key:"extraChains", value:3 }],
+    [{ key:"pathDamage", value:50 }],
+    [{ key:"stunTime", value:.3 }],
+    [{ key:"stunDurationPct", value:50 }],
+    [{ key:"pathDamagePct", value:100 }],
+    [{ key:"focusConduit", value:1 }],
+    [{ key:"poisonBurstDamagePct", value:50 }, { key:"poisonBurstRadius", value:40 }],
+    [{ key:"poisonChainDamagePct", value:50 }],
+  ],
+  gas: [
+    [{ key:"damagePct", value:35 }],
+    [{ key:"rangePct", value:25 }],
+    [{ key:"ratePct", value:20 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"vulnerablePct", value:15 }],
+    [{ key:"vulnerableBonusPct", value:50 }],
+    [{ key:"zoneDurationPct", value:50 }],
+    [{ key:"burningTargetDamagePct", value:100 }],
+    [{ key:"zoneSlowPct", value:10 }],
+    [],
+  ],
+  needle: [
+    [{ key:"damagePct", value:30 }],
+    [{ key:"ratePct", value:25 }],
+    [{ key:"rangePct", value:25 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"poisonTick", value:.5 }, { key:"poisonDps", value:25 }, { key:"poisonTime", value:2 }],
+    [{ key:"dotDamagePct", value:100 }],
+    [{ key:"poisonDurationPct", value:50 }],
+    [{ key:"conditionalStunTime", value:.2 }],
+    [{ key:"burnDps", value:18 }, { key:"burnTime", value:2 }],
+    [{ key:"frozenTargetDamagePct", value:30 }],
+  ],
+  blade: [
+    [{ key:"damagePct", value:40 }],
+    [{ key:"ratePct", value:25 }],
+    [{ key:"rangePct", value:25 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"ricochetChancePct", value:45 }, { key:"ricochetDamagePct", value:50 }],
+    [{ key:"ricochetDamageBonusPct", value:100 }],
+    [{ key:"ricochetExtra", value:1 }],
+    [{ key:"conditionalStunTime", value:.2 }],
+    [{ key:"burnDps", value:18 }, { key:"burnTime", value:1 }],
+    [{ key:"poisonDps", value:25 }, { key:"poisonTime", value:1 }],
+  ],
+  trap: [
+    [{ key:"damagePct", value:30 }],
+    [{ key:"rangePct", value:25 }],
+    [{ key:"ratePct", value:20 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"rootTime", value:.5 }],
+    [{ key:"rootDurationPct", value:50 }],
+    [{ key:"pullStrengthPct", value:75 }],
+    [{ key:"burnAreaDps", value:30 }, { key:"burnAreaTime", value:2 }],
+    [{ key:"zoneStunTime", value:.3 }, { key:"zoneTime", value:2 }],
+    [{ key:"zonePoisonDps", value:25 }, { key:"zonePoisonTime", value:2 }],
+  ],
+};
+
+const UPGRADE_VALUE_DEFS = {
+  flame: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"burnDps", value:18 }, { key:"burnTime", value:2 }, { key:"burnAreaDps", value:24 }, { key:"burnAreaTime", value:2 }],
+    [{ key:"frozenTargetDamagePct", value:45 }],
+  ],
+  grenade: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraAreas", value:1 }],
+    [{ key:"burnAreaDps", value:30 }, { key:"burnAreaTime", value:2 }],
+    [{ key:"zonePoisonDps", value:25 }, { key:"zonePoisonTime", value:2 }],
+  ],
+  cryo: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraProjectiles", value:1 }],
+    [{ key:"slowPct", value:25 }, { key:"slowTime", value:2 }, { key:"freezeTime", value:.65 }],
+    [{ key:"electricVulnerablePct", value:18 }, { key:"electricVulnerableTime", value:2 }],
+  ],
+  frostbomb: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"iceTrailSlowPct", value:18 }, { key:"iceTrailTime", value:2 }],
+    [{ key:"shardCount", value:3 }, { key:"shardDamagePct", value:30 }],
+  ],
+  laser: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraLaserTargets", value:1 }],
+    [{ key:"focusDelay", value:1 }, { key:"focusDamagePct", value:25 }],
+    [{ key:"electricVulnerablePct", value:20 }, { key:"electricVulnerableTime", value:2 }],
+  ],
+  chain: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraChainCasts", value:1 }],
+    [{ key:"stunTime", value:.22 }, { key:"pathDamage", value:42 }],
+    [{ key:"focusConduit", value:1 }],
+  ],
+  gas: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"poisonTick", value:.5 }, { key:"poisonDps", value:22 }, { key:"poisonTime", value:2 }, { key:"vulnerablePct", value:12 }],
+    [{ key:"burningTargetDamagePct", value:60 }],
+  ],
+  needle: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"poisonTick", value:.5 }, { key:"poisonDps", value:25 }, { key:"poisonTime", value:2 }],
+    [{ key:"frozenTargetDamagePct", value:40 }],
+  ],
+  blade: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"ricochetChancePct", value:48 }, { key:"ricochetDamagePct", value:55 }],
+    [{ key:"poisonTick", value:.5 }, { key:"poisonDps", value:22 }, { key:"poisonTime", value:1.5 }],
+  ],
+  trap: [
+    [{ key:"damagePct", value:25 }],
+    [{ key:"ratePct", value:15 }],
+    [{ key:"extraShots", value:1 }],
+    [{ key:"rootTime", value:.35 }, { key:"pullStrengthPct", value:65 }],
+    [{ key:"zoneStunTime", value:.22 }, { key:"zoneTime", value:2 }],
+  ],
+};
+
+function upgradeValueDefaultParams() {
+  const result = {};
+  TOWER_PARAM_IDS.forEach(towerId => {
+    (UPGRADE_VALUE_DEFS[towerId] || []).forEach((row, rowIndex) => {
+      row.forEach(spec => result[upgradeValueParamKey(towerId, rowIndex, spec.key)] = spec.value);
+    });
+  });
+  return result;
+}
+
+function upgradeValueParamKey(towerId, rowIndex, key) {
+  return `upgradeVal_${towerId}_${(rowIndex % UPGRADE_ROWS.length) + 1}_${key}`;
+}
+
+function upgradeOptionParamKey(towerId, rowIndex) {
+  return `upgradeLegacy_${towerId}_${(rowIndex % UPGRADE_ROWS.length) + 1}`;
+}
+
+function upgradeEffectSpecs(towerId, rowIndex) {
+  return UPGRADE_VALUE_DEFS[towerId]?.[rowIndex % UPGRADE_ROWS.length] || [];
+}
+
+function upgradeEffectValue(towerId, rowIndex, key, fallback=0) {
+  const value = Number(params[upgradeValueParamKey(towerId, rowIndex, key)]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+const DEFAULT_PARAMS = {
+  ...ENCOUNTER_PARAM_DEFAULTS,
+  balanceRevision: 212,
+  mathModelEnabled: 1,
+  mathTargetRtp: .95,
+  mathPoolEnabled: 1,
+  mathGeneralRtpShare: .52,
+  mathBossRtpShare: .43,
+  mathPostBossIncrementBossShare: .90,
+  mathPoolEntryTier1Mul: .2,
+  mathPoolEntryTier1Weight: 10,
+  mathPoolEntryTier2Mul: .5,
+  mathPoolEntryTier2Weight: 20,
+  mathPoolEntryTier3Mul: .8,
+  mathPoolEntryTier3Weight: 30,
+  mathPoolEntryTier4Mul: 1.00,
+  mathPoolEntryTier4Weight: 25,
+  mathPoolEntryTier5Mul: 2.1,
+  mathPoolEntryTier5Weight: 14,
+  mathPoolEntryTier6Mul: 5,
+  mathPoolEntryTier6Weight: 1,
+  mathPoolSeedBetUnits: 0,
+  mathPoolMaxPayoutMul: 500,
+  mathPoolTemporaryDeficitEnabled: 1,
+  mathCarryShapeEnabled: 1,
+  mathCarryAnchorChance: .72,
+  mathCarryMinReturn: 1,
+  mathPoolBaseOutcomeCapMul: 1.2,
+  mathPoolDeepOutcomeCapMul: 500,
+  mathPoolOutcomeCapRampWaves: 29,
+  mathPoolOutcomeCapCurve: 2.4,
+  mathPoolFirstBossOutcomeCapMul: 20,
+  mathPoolBossCarryRecycleRate: 0,
+  mathPoolBossAddCapScale: 0,
+  mathPoolReleaseRate: .08,
+  mathPoolDeepReleaseRate: .15,
+  mathPoolDepthRampWaves: 8,
+  mathPoolBossReleaseRate: 1,
+  mathPoolFirstBossReleaseRate: .38,
+  mathPoolLaterBossReleaseRate: 1,
+  mathPoolReleaseCapMul: 500,
+  mathPoolMeaningfulWinTriggerMul: .75,
+  mathPoolMeaningfulWinFloorMul: 1.5,
+  mathPoolStrongWinChance: .55,
+  mathPoolStrongWinDeepChance: .95,
+  mathPoolStrongWinEarlyFloorMul: 1.5,
+  mathPoolStrongWinFloorMul: 7,
+  mathPoolWeakBossCapMul: .95,
+  mathPoolWeakBossReleaseRate: .20,
+  mathPoolHotWaveEarlyFloorMul: 1.02,
+  mathPoolHotWaveFloorMul: 6,
+  mathPoolHotWaveDeepWeight: 14,
+  mathPoolHotWaveEarlyReleaseRate: .30,
+  mathPoolHotWaveReleaseRate: 1,
+  mathCheckpointRepriceEnabled: 1,
+  mathCheckpointMinChance: .05,
+  mathRerollEntryEnabled: 1,
+  mathTolerancePct: 1.0,
+  mathBuildInfluence: .80,
+  mathBossBuildInfluence: .08,
+  mathBossLaterBuildInfluence: .08,
+  mathMinionBuildInfluence: .32,
+  mathAttributeMinionInfluence: .32,
+  mathAttributeBossInfluence: .42,
+  mathAreaBossRiskDiscount: .08,
+  mathSingleTowerChanceShift: .07,
+  mathAreaTowerChanceShift: -.03,
+  mathControlTowerChanceShift: -.035,
+  mathSingleTowerPayoutShift: 0,
+  mathAreaTowerPayoutShift: 0,
+  mathControlTowerPayoutShift: 0,
+  mathSingleSharePayoutSlope: 0,
+  mathAreaSharePayoutSlope: 0,
+  mathControlSharePayoutSlope: 0,
+  mathHpInfluence: 1.50,
+  mathMinionHpInfluence: .22,
+  mathBossHpInfluence: 1.10,
+  mathBossLaterHpInfluence: .18,
+  mathBossOrdinalPenalty: .08,
+  mathBossFirstBaseChance: .97,
+  mathBossLaterBaseChance: .75,
+  mathFirstBossDelayPenalty: .012,
+  mathFirstBossGuaranteePenalty: 0,
+  mathHpReference: .91,
+  mathHeroPower_fire: 1.06,
+  mathHeroPower_ice: .98,
+  mathHeroPower_electric: 1.05,
+  mathHeroPower_poison: 1,
+  mathHeroPower_neutral: .98,
+  mathCoreRiskBonus: .050,
+  mathTowerBossPower_flame: .68,
+  mathTowerBossPower_grenade: .64,
+  mathTowerBossPower_cryo: 1.88,
+  mathTowerBossPower_frostbomb: .58,
+  mathTowerBossPower_laser: 2.05,
+  mathTowerBossPower_chain: .48,
+  mathTowerBossPower_gas: .64,
+  mathTowerBossPower_needle: 2.08,
+  mathTowerBossPower_blade: .88,
+  mathTowerBossPower_trap: .42,
+  mathBossPenalty: .35,
+  mathPayoutCalibration: 1,
+  mathMinionPayoutChanceScale: 1.00,
+  mathBossPayoutChanceScale: .97,
+  mathBossPayoutChanceMidScale: .95,
+  mathBossPayoutChanceDeepScale: .59,
+  mathBossPayoutChanceUltraScale: 1.15,
+  mathBossPayoutChanceTailScale: 2.70,
+  mathPayoutBand1: 1,
+  mathPayoutBand2: 1,
+  mathPayoutBand3: 1,
+  mathPayoutBand4: 1,
+  mathPayoutBand5: 1,
+  mathLossHpMul: 5.00,
+  mathLossAtkMul: 5.00,
+  mathLossSpeedMul: 1.12,
+  mathMinClearChance: .15,
+  mathBossFirstMinClearChance: .15,
+  mathBossLaterMinClearChance: .14,
+  mathMaxClearChance: .999,
+  mathFirstWaveClearChance: .985,
+  mathClearBand1: .975,
+  mathClearBand2: .955,
+  mathClearBand3: .925,
+  mathClearBand4: .875,
+  mathClearBand5: .835,
+  bossLowWeight: 55,
+  bossMidWeight: 35,
+  bossHighWeight: 10,
+  bossLowMin: 1.0,
+  bossLowMax: 1.6,
+  bossMidMin: 2.0,
+  bossMidMax: 4.0,
+  bossHighMin: 6.0,
+  bossHighMax: 14.0,
+  bossFirstMinWave: 1,
+  bossFirstChance: 8,
+  bossFirstChanceInc: 12,
+  bossFirstChanceCap: 68,
+  bossFirstGuaranteeWave: 30,
+  bossFirstRewardMul: .35,
+  bossLaterRewardMul: .80,
+  bossChanceMul: 1.0,
+  bossChanceCap: 55,
+  minionHpMul: 1.44,
+  minionAtkMul: 1.50,
+  minionSpeedMul: 1.06,
+  wave1MinionAtkMul: .42,
+  eliteHpMul: 1.0,
+  eliteAtkMul: 1.0,
+  bossFirstHpMul: 1.23,
+  bossHpMul: 1.32,
+  bossHpPerOrdinalMul: 1.06,
+  bossAtkMul: .95,
+  bossSpeedMul: 1.0,
+  moneyMul: 1.0,
+  deepMoneyBase: 1.35,
+  deepMoneyRamp: .04,
+  deepMoneyCap: 1.80,
+  waveRewardDryWeight: 32,
+  waveRewardDryMul: .16,
+  waveRewardLowWeight: 30,
+  waveRewardLowMul: .34,
+  waveRewardNormalWeight: 18,
+  waveRewardNormalMul: .58,
+  waveRewardProfitWeight: 2,
+  waveRewardProfitMul: 1,
+  waveRewardHotWeight: 18,
+  waveRewardHotMul: 20,
+  bossDiffEasyWeight: 50,
+  bossDiffEasyHpMul: .86,
+  bossDiffEasyAtkMul: .90,
+  bossDiffEasySpeedMul: .97,
+  bossDiffNormalWeight: 40,
+  bossDiffNormalHpMul: 1.06,
+  bossDiffNormalAtkMul: 1.05,
+  bossDiffNormalSpeedMul: 1.0,
+  bossDiffHardWeight: 8,
+  bossDiffHardHpMul: 1.30,
+  bossDiffHardAtkMul: 1.25,
+  bossDiffHardSpeedMul: 1.04,
+  bossDiffBrutalWeight: 2,
+  bossDiffBrutalHpMul: 1.58,
+  bossDiffBrutalAtkMul: 1.45,
+  bossDiffBrutalSpeedMul: 1.08,
+  bossFirstDiffEasyWeight: 50,
+  bossFirstDiffNormalWeight: 38,
+  bossFirstDiffHardWeight: 10,
+  bossFirstDiffBrutalWeight: 2,
+  bossFirstDifficultyCompression: .65,
+  spawnInterval: .26,
+  waveAttrBiasEarly: 0.90,
+  waveAttrBias: 0.90,
+  eliteMoneyMul: 1.0,
+  dropChanceMul: 1.0,
+  expMul: 1.0,
+  towerDamageMul: 1.0,
+  heroDamageMul: 1.0,
+  heroSameAttrBonusPct: 15,
+  heroResonanceBonusPct: 10,
+  heroAllTowerBonusPct: 8,
+  heroDamageUpgradePct: 12,
+  heroRateUpgradePct: 8,
+  heroFirstUpgradeQuantity: 1,
+  heroQuantityUpgrade: 1,
+  heroQuantityEveryLevels: 3,
+  bossRollDuration: 4.8,
+  bossRollHighThreshold: 2.5,
+  bossRollJackpotThreshold: 3.8,
+  bossShieldHpPct: 8,
+  bossShieldDamageMul: .68,
+  bossBreakDamageMul: 1.58,
+  bossBreakDuration: 2.4,
+  bossBreakAttackPause: 1.35,
+  bossAttackWindup: 1.0,
+  bossAttackIntervalJitterPct: 18,
+  bossPreludeCountMul: .60,
+  bossFirstAtkMul: .75,
+  bossEnrageHpPct: 32,
+  bossEnrageAttackSpeedMul: 1.22,
+  bossBetStepMul: 1.50,
+  preBossRewardMul: 1.15,
+  postBossRewardFunding: .45,
+  betMidMul: 1.50,
+  betDeepMul: 2.50,
+  baseHp: 1000,
+  ...heroDefaultParams(),
+  ...towerDefaultParams(),
+  ...monsterDefaultParams(),
+  ...templateDefaultParams(),
+  ...waveDefaultParams(),
+  ...expDefaultParams(),
+  ...upgradeDefaultParams(),
+  ...upgradeValueDefaultParams()
+};
+
+function cleanParams(input={}) {
+  const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+  const next = { ...DEFAULT_PARAMS };
+  Object.keys(DEFAULT_PARAMS).forEach(key => {
+    const value = Number(input[key]);
+    if (Number.isFinite(value)) next[key] = value;
+  });
+  next.encounterEconomyEnabled = next.encounterEconomyEnabled >= .5 ? 1 : 0;
+  next.encounterRtpTargetMin = clamp(next.encounterRtpTargetMin, 0, 1);
+  next.encounterRtpTargetMax = clamp(next.encounterRtpTargetMax, next.encounterRtpTargetMin, 1);
+  next.encounterRewardScale = clamp(next.encounterRewardScale, .01, 5);
+  next.encounterPotEntryPower = clamp(next.encounterPotEntryPower, 0, 1);
+  next.encounterChestUpgradeChance = clamp(next.encounterChestUpgradeChance, 0, 1);
+  next.encounterHpDepthGrowth = clamp(next.encounterHpDepthGrowth, 0, .5);
+  next.encounterHpDepthCap = clamp(next.encounterHpDepthCap, 1, 5);
+  next.encounterBaseHitCap = clamp(next.encounterBaseHitCap, 1, 1000);
+  for (const grade of [1,2,3]) {
+    next[`encounterGrade${grade}HpMul`] = clamp(next[`encounterGrade${grade}HpMul`], .5, 3);
+    next[`encounterGrade${grade}AtkMul`] = clamp(next[`encounterGrade${grade}AtkMul`], 1, 20);
+  }
+  for (const prefix of ["encounterChest1", "encounterChest2", "encounterChest3", "encounterChest4", "encounterBossChest", "encounterBossSmall", "encounterBossMedium", "encounterBossLarge", "encounterBossJackpot"]) {
+    const ceiling = prefix === "encounterBossJackpot" ? 50 : 20;
+    next[`${prefix}Min`] = clamp(next[`${prefix}Min`], .01, ceiling);
+    next[`${prefix}Max`] = clamp(next[`${prefix}Max`], next[`${prefix}Min`], ceiling);
+  }
+  for (const tier of [1,2,3,4]) next[`encounterChest${tier}Shape`] = clamp(next[`encounterChest${tier}Shape`], .25, 10);
+  for (const tier of ["Small", "Medium", "Large", "Jackpot"]) next[`encounterBoss${tier}Weight`] = Math.max(0, next[`encounterBoss${tier}Weight`]);
+  next.encounterBossDepthGrowth = clamp(next.encounterBossDepthGrowth, 0, 1);
+  next.encounterBossDepthGrowthCap = clamp(next.encounterBossDepthGrowthCap, 1, 5);
+  next.encounterRushSpeedCap = clamp(next.encounterRushSpeedCap, 40, 96);
+  next.encounterTankSingleDamageMul = clamp(next.encounterTankSingleDamageMul, .5, 3);
+  next.encounterTankAreaDamageMul = clamp(next.encounterTankAreaDamageMul, .1, 1);
+  for (const kind of ["Trap", "Frost"]) {
+    next[`encounter${kind}SlowPct`] = clamp(next[`encounter${kind}SlowPct`], 0, .70);
+    next[`encounter${kind}SlowTime`] = clamp(next[`encounter${kind}SlowTime`], .1, 3);
+  }
+  next.bossLowWeight = Math.max(0, next.bossLowWeight);
+  next.bossMidWeight = Math.max(0, next.bossMidWeight);
+  next.bossHighWeight = Math.max(0, next.bossHighWeight);
+  next.bossFirstMinWave = Math.max(1, Math.round(next.bossFirstMinWave));
+  next.bossFirstGuaranteeWave = Math.max(next.bossFirstMinWave, Math.round(next.bossFirstGuaranteeWave));
+  next.bossFirstChance = Math.max(0, Math.min(100, next.bossFirstChance));
+  next.bossFirstChanceInc = Math.max(0, Math.min(100, next.bossFirstChanceInc));
+  next.bossFirstChanceCap = Math.max(0, Math.min(100, next.bossFirstChanceCap));
+  next.bossFirstRewardMul = Math.max(0, next.bossFirstRewardMul);
+  next.bossLaterRewardMul = Math.max(0, next.bossLaterRewardMul);
+  next.bossFirstDifficultyCompression = Math.max(0, Math.min(1, next.bossFirstDifficultyCompression));
+  next.bossShieldHpPct = Math.max(0, Math.min(50, next.bossShieldHpPct));
+  next.bossShieldDamageMul = Math.max(0, Math.min(2, next.bossShieldDamageMul));
+  next.bossBreakDamageMul = Math.max(1, Math.min(5, next.bossBreakDamageMul));
+  next.bossBreakDuration = Math.max(.2, Math.min(10, next.bossBreakDuration));
+  next.bossBreakAttackPause = Math.max(0, Math.min(10, next.bossBreakAttackPause));
+  next.bossAttackWindup = Math.max(.1, Math.min(5, next.bossAttackWindup));
+  next.bossAttackIntervalJitterPct = Math.max(0, Math.min(80, next.bossAttackIntervalJitterPct));
+  next.bossPreludeCountMul = Math.max(.1, Math.min(1, next.bossPreludeCountMul));
+  next.bossFirstAtkMul = Math.max(.1, Math.min(2, next.bossFirstAtkMul));
+  next.bossEnrageHpPct = Math.max(0, Math.min(100, next.bossEnrageHpPct));
+  next.bossEnrageAttackSpeedMul = Math.max(1, Math.min(4, next.bossEnrageAttackSpeedMul));
+  ["bossFirstDiffEasyWeight", "bossFirstDiffNormalWeight", "bossFirstDiffHardWeight", "bossFirstDiffBrutalWeight"]
+    .forEach(key => { next[key] = Math.max(0, next[key]); });
+  next.bossChanceCap = Math.max(0, Math.min(100, next.bossChanceCap));
+  next.bossHpMul = Math.round(Math.max(.1, Math.min(3, next.bossHpMul)) * 100) / 100;
+  next.mathModelEnabled = next.mathModelEnabled >= .5 ? 1 : 0;
+  next.mathTargetRtp = Math.max(.5, Math.min(.99, next.mathTargetRtp));
+  next.mathPoolEnabled = next.mathPoolEnabled >= .5 ? 1 : 0;
+  next.mathGeneralRtpShare = Math.max(0, Math.min(next.mathTargetRtp, next.mathGeneralRtpShare));
+  next.mathBossRtpShare = Math.max(0, Math.min(next.mathTargetRtp - next.mathGeneralRtpShare, next.mathBossRtpShare));
+  next.mathPostBossIncrementBossShare = Math.max(0, Math.min(next.mathTargetRtp, next.mathPostBossIncrementBossShare));
+  for (let tier=1; tier<=6; tier+=1) {
+    next[`mathPoolEntryTier${tier}Mul`] = Math.max(0, Math.min(100, next[`mathPoolEntryTier${tier}Mul`]));
+    next[`mathPoolEntryTier${tier}Weight`] = Math.max(0, Math.min(100000, next[`mathPoolEntryTier${tier}Weight`]));
+  }
+  next.mathPoolSeedBetUnits = Math.max(0, Math.min(10000, next.mathPoolSeedBetUnits));
+  next.mathPoolMaxPayoutMul = Math.max(1, Math.min(500, next.mathPoolMaxPayoutMul));
+  next.mathPoolTemporaryDeficitEnabled = next.mathPoolTemporaryDeficitEnabled >= .5 ? 1 : 0;
+  next.mathCarryShapeEnabled = next.mathCarryShapeEnabled >= .5 ? 1 : 0;
+  next.mathCarryAnchorChance = Math.max(.05, Math.min(.95, next.mathCarryAnchorChance));
+  next.mathCarryMinReturn = Math.max(0, Math.min(100, next.mathCarryMinReturn));
+  next.mathPoolBaseOutcomeCapMul = Math.max(0, Math.min(500, next.mathPoolBaseOutcomeCapMul));
+  next.mathPoolDeepOutcomeCapMul = Math.max(next.mathPoolBaseOutcomeCapMul, Math.min(500, next.mathPoolDeepOutcomeCapMul));
+  next.mathPoolOutcomeCapRampWaves = Math.max(1, Math.min(30, next.mathPoolOutcomeCapRampWaves));
+  next.mathPoolOutcomeCapCurve = Math.max(.25, Math.min(8, next.mathPoolOutcomeCapCurve));
+  next.mathPoolFirstBossOutcomeCapMul = Math.max(1, Math.min(500, next.mathPoolFirstBossOutcomeCapMul));
+  next.mathPoolBossCarryRecycleRate = Math.max(0, Math.min(1, next.mathPoolBossCarryRecycleRate));
+  next.mathPoolBossAddCapScale = Math.max(0, Math.min(100, next.mathPoolBossAddCapScale));
+  next.mathPoolReleaseRate = Math.max(0, Math.min(1, next.mathPoolReleaseRate));
+  next.mathPoolDeepReleaseRate = Math.max(next.mathPoolReleaseRate, Math.min(1, next.mathPoolDeepReleaseRate));
+  next.mathPoolDepthRampWaves = Math.max(1, Math.min(30, next.mathPoolDepthRampWaves));
+  next.mathPoolBossReleaseRate = Math.max(0, Math.min(1, next.mathPoolBossReleaseRate));
+  next.mathPoolFirstBossReleaseRate = Math.max(0, Math.min(next.mathPoolBossReleaseRate, next.mathPoolFirstBossReleaseRate));
+  next.mathPoolLaterBossReleaseRate = Math.max(0, Math.min(next.mathPoolBossReleaseRate, next.mathPoolLaterBossReleaseRate));
+  next.mathPoolReleaseCapMul = Math.max(0, Math.min(500, next.mathPoolReleaseCapMul));
+  next.mathPoolMeaningfulWinTriggerMul = Math.max(0, Math.min(500, next.mathPoolMeaningfulWinTriggerMul));
+  next.mathPoolMeaningfulWinFloorMul = Math.max(1, Math.min(500, next.mathPoolMeaningfulWinFloorMul));
+  next.mathPoolStrongWinChance = Math.max(0, Math.min(1, next.mathPoolStrongWinChance));
+  next.mathPoolStrongWinDeepChance = Math.max(0, Math.min(1, next.mathPoolStrongWinDeepChance));
+  next.mathPoolStrongWinEarlyFloorMul = Math.max(1, Math.min(500, next.mathPoolStrongWinEarlyFloorMul));
+  next.mathPoolStrongWinFloorMul = Math.max(next.mathPoolStrongWinEarlyFloorMul, Math.min(500, next.mathPoolStrongWinFloorMul));
+  next.mathPoolWeakBossCapMul = Math.max(0, Math.min(500, next.mathPoolWeakBossCapMul));
+  next.mathPoolWeakBossReleaseRate = Math.max(0, Math.min(1, next.mathPoolWeakBossReleaseRate));
+  next.mathPoolHotWaveEarlyFloorMul = Math.max(1, Math.min(500, next.mathPoolHotWaveEarlyFloorMul));
+  next.mathPoolHotWaveFloorMul = Math.max(next.mathPoolHotWaveEarlyFloorMul, Math.min(500, next.mathPoolHotWaveFloorMul));
+  next.mathPoolHotWaveDeepWeight = Math.max(0, Math.min(100, next.mathPoolHotWaveDeepWeight));
+  next.mathPoolHotWaveEarlyReleaseRate = Math.max(0, Math.min(next.mathPoolHotWaveReleaseRate, next.mathPoolHotWaveEarlyReleaseRate));
+  next.mathPoolHotWaveReleaseRate = Math.max(0, Math.min(1, next.mathPoolHotWaveReleaseRate));
+  next.mathCheckpointRepriceEnabled = next.mathCheckpointRepriceEnabled >= .5 ? 1 : 0;
+  next.mathCheckpointMinChance = Math.max(.01, Math.min(.99, next.mathCheckpointMinChance));
+  next.mathRerollEntryEnabled = next.mathRerollEntryEnabled >= .5 ? 1 : 0;
+  next.mathTolerancePct = Math.max(0, Math.min(20, next.mathTolerancePct));
+  next.mathBuildInfluence = Math.max(0, Math.min(1, next.mathBuildInfluence));
+  next.mathBossBuildInfluence = Math.max(0, Math.min(2, next.mathBossBuildInfluence));
+  next.mathBossLaterBuildInfluence = Math.max(0, Math.min(2, next.mathBossLaterBuildInfluence));
+  next.mathMinionBuildInfluence = Math.max(0, Math.min(2, next.mathMinionBuildInfluence));
+  next.mathAttributeMinionInfluence = Math.max(0, Math.min(2, next.mathAttributeMinionInfluence));
+  next.mathAttributeBossInfluence = Math.max(0, Math.min(2, next.mathAttributeBossInfluence));
+  next.mathAreaBossRiskDiscount = Math.max(0, Math.min(.25, next.mathAreaBossRiskDiscount));
+  ["mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift"]
+    .forEach(key => { next[key] = Math.max(-.25, Math.min(.25, next[key])); });
+  ["mathSingleTowerPayoutShift", "mathAreaTowerPayoutShift", "mathControlTowerPayoutShift"]
+    .forEach(key => { next[key] = Math.max(-.25, Math.min(.25, next[key])); });
+  ["mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope"]
+    .forEach(key => { next[key] = Math.max(-1, Math.min(1, next[key])); });
+  next.mathHpInfluence = Math.max(0, Math.min(2, next.mathHpInfluence));
+  next.mathMinionHpInfluence = Math.max(0, Math.min(2, next.mathMinionHpInfluence));
+  next.mathBossHpInfluence = Math.max(0, Math.min(2, next.mathBossHpInfluence));
+  next.mathBossLaterHpInfluence = Math.max(0, Math.min(2, next.mathBossLaterHpInfluence));
+  next.mathBossOrdinalPenalty = Math.max(0, Math.min(.8, next.mathBossOrdinalPenalty));
+  next.mathBossFirstBaseChance = Math.max(.05, Math.min(.999, next.mathBossFirstBaseChance));
+  next.mathBossLaterBaseChance = Math.max(.05, Math.min(.999, next.mathBossLaterBaseChance));
+  next.mathFirstBossDelayPenalty = Math.max(0, Math.min(.2, next.mathFirstBossDelayPenalty));
+  next.mathFirstBossGuaranteePenalty = Math.max(0, Math.min(.6, next.mathFirstBossGuaranteePenalty));
+  Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathClear$/.test(key))
+    .forEach(key => { next[key] = Math.max(.01, Math.min(.999, next[key])); });
+  Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathPayout$/.test(key))
+    .forEach(key => { next[key] = Math.max(.01, Math.min(2, next[key])); });
+  Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathBossCorrection$/.test(key))
+    .forEach(key => { next[key] = Math.max(-.8, Math.min(.8, next[key])); });
+  next.mathHpReference = Math.max(0, Math.min(1, next.mathHpReference));
+  next.mathCoreRiskBonus = Math.max(0, Math.min(.25, next.mathCoreRiskBonus));
+  Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("mathHeroPower_") || key.startsWith("mathTowerBossPower_"))
+    .forEach(key => { next[key] = Math.max(.25, Math.min(2.5, next[key])); });
+  next.mathBossPenalty = Math.max(0, Math.min(.8, next.mathBossPenalty));
+  next.mathPayoutCalibration = Math.max(.5, Math.min(1.5, next.mathPayoutCalibration));
+  next.mathMinionPayoutChanceScale = Math.max(.5, Math.min(2, next.mathMinionPayoutChanceScale));
+  next.mathBossPayoutChanceScale = Math.max(.5, Math.min(4, next.mathBossPayoutChanceScale));
+  next.mathBossPayoutChanceMidScale = Math.max(.5, Math.min(4, next.mathBossPayoutChanceMidScale));
+  next.mathBossPayoutChanceDeepScale = Math.max(.5, Math.min(4, next.mathBossPayoutChanceDeepScale));
+  next.mathBossPayoutChanceUltraScale = Math.max(.5, Math.min(6, next.mathBossPayoutChanceUltraScale));
+  next.mathBossPayoutChanceTailScale = Math.max(.5, Math.min(6, next.mathBossPayoutChanceTailScale));
+  next.bossHpPerOrdinalMul = Math.max(1, Math.min(2, next.bossHpPerOrdinalMul));
+  ["mathPayoutBand1", "mathPayoutBand2", "mathPayoutBand3", "mathPayoutBand4", "mathPayoutBand5"]
+    .forEach(key => { next[key] = Math.max(.5, Math.min(1.5, next[key])); });
+  next.mathLossHpMul = Math.max(1, Math.min(5, next.mathLossHpMul));
+  next.mathLossAtkMul = Math.max(1, Math.min(5, next.mathLossAtkMul));
+  next.mathLossSpeedMul = Math.max(1, Math.min(1.25, next.mathLossSpeedMul));
+  next.mathMinClearChance = Math.max(.01, Math.min(.99, next.mathMinClearChance));
+  next.mathBossFirstMinClearChance = Math.max(.01, Math.min(.99, next.mathBossFirstMinClearChance));
+  next.mathBossLaterMinClearChance = Math.max(.01, Math.min(.99, next.mathBossLaterMinClearChance));
+  next.mathMaxClearChance = Math.max(next.mathMinClearChance, Math.min(.999, next.mathMaxClearChance));
+  next.mathFirstWaveClearChance = Math.max(.01, Math.min(.999, next.mathFirstWaveClearChance));
+  ["mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+    .forEach(key => { next[key] = Math.max(.01, Math.min(.999, next[key])); });
+  next.heroDamageMul = Math.max(0, next.heroDamageMul);
+  next.heroSameAttrBonusPct = Math.max(0, Math.min(100, next.heroSameAttrBonusPct));
+  next.heroResonanceBonusPct = Math.max(0, Math.min(100, next.heroResonanceBonusPct));
+  next.heroAllTowerBonusPct = Math.max(0, Math.min(100, next.heroAllTowerBonusPct));
+  next.heroDamageUpgradePct = Math.max(0, Math.min(200, next.heroDamageUpgradePct));
+  next.heroRateUpgradePct = Math.max(0, Math.min(200, next.heroRateUpgradePct));
+  next.heroFirstUpgradeQuantity = Math.max(0, Math.round(next.heroFirstUpgradeQuantity));
+  next.heroQuantityUpgrade = Math.max(1, Math.round(next.heroQuantityUpgrade));
+  next.heroQuantityEveryLevels = Math.max(1, Math.round(next.heroQuantityEveryLevels));
+  HEROES.forEach(hero => {
+    const prefix = `hero_${hero.id}_`;
+    next[`${prefix}damage`] = Math.max(0, next[`${prefix}damage`]);
+    next[`${prefix}rate`] = Math.max(.05, next[`${prefix}rate`]);
+    next[`${prefix}range`] = Math.max(100, next[`${prefix}range`]);
+    next[`${prefix}status`] = Math.max(0, next[`${prefix}status`]);
+    next[`${prefix}statusTime`] = Math.max(0, next[`${prefix}statusTime`]);
+    next[`${prefix}splash`] = Math.max(0, next[`${prefix}splash`]);
+    next[`${prefix}secondaryMul`] = Math.max(0, next[`${prefix}secondaryMul`]);
+    next[`${prefix}targets`] = Math.max(1, Math.round(next[`${prefix}targets`]));
+    next[`${prefix}projectileSpeed`] = Math.max(0, next[`${prefix}projectileSpeed`]);
+    next[`${prefix}zoneDuration`] = Math.max(0, next[`${prefix}zoneDuration`]);
+  });
+  next.bossRollDuration = Math.max(2.5, Math.min(8, next.bossRollDuration));
+  next.bossRollHighThreshold = Math.max(1, next.bossRollHighThreshold);
+  next.bossRollJackpotThreshold = Math.max(next.bossRollHighThreshold, next.bossRollJackpotThreshold);
+  next.postBossRewardFunding = Math.max(0, Math.min(1, next.postBossRewardFunding));
+  next.preBossRewardMul = Math.max(0, next.preBossRewardMul);
+  next.deepMoneyBase = Math.max(0, next.deepMoneyBase);
+  next.deepMoneyRamp = Math.max(0, next.deepMoneyRamp);
+  next.deepMoneyCap = Math.max(next.deepMoneyBase, next.deepMoneyCap);
+  WAVE_REWARD_TIERS.forEach(tier => {
+    next[tier.weightKey] = Math.max(0, next[tier.weightKey]);
+    next[tier.mulKey] = Math.round(Math.max(0, next[tier.mulKey]) * 1e6) / 1e6;
+  });
+  BOSS_DIFFICULTY_TIERS.forEach(tier => {
+    next[tier.weightKey] = Math.max(0, next[tier.weightKey]);
+    next[tier.hpKey] = Math.max(.1, next[tier.hpKey]);
+    next[tier.atkKey] = Math.max(.1, next[tier.atkKey]);
+    next[tier.speedKey] = Math.max(.1, next[tier.speedKey]);
+  });
+  next.spawnInterval = Math.max(.08, Math.min(2, next.spawnInterval));
+  next.wave1MinionAtkMul = Math.max(0, Math.min(2, next.wave1MinionAtkMul));
+  next.baseHp = Math.max(1, Math.round(next.baseHp));
+  if (next.tower_gas_duration <= 0) next.tower_gas_duration = DEFAULT_PARAMS.tower_gas_duration;
+  if (next.tower_trap_duration <= 0) next.tower_trap_duration = DEFAULT_PARAMS.tower_trap_duration;
+  if (next.tower_gas_tick <= 0) next.tower_gas_tick = DEFAULT_PARAMS.tower_gas_tick;
+  if (next.tower_trap_tick <= 0) next.tower_trap_tick = DEFAULT_PARAMS.tower_trap_tick;
+  return next;
+}
+
+function loadParams() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PARAM_STORAGE_KEY) || "{}");
+    return cleanParams(migrateBossParams(stored));
+  } catch {
+    return cleanParams();
+  }
+}
+
+function migrateEncounterRewardParams(input) {
+  const revision = Number(input.encounterRewardRevision) || 0;
+  if (revision >= 284) return input;
+  const next = {...input};
+  if (revision >= 283) {
+    for (const [key,value] of Object.entries({encounterRewardScale:.53,hero_neutral_damage:112})) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 284;
+    return next;
+  }
+  if (revision >= 278) {
+    const defaults278 = {
+      encounterRewardScale:.456,
+      encounterGrade1HpMul:1.38, encounterGrade2HpMul:1.00, encounterGrade3HpMul:.82,
+      encounterGrade1AtkMul:4.5, encounterGrade2AtkMul:2.4, encounterGrade3AtkMul:1.6,
+      encounterBaseHitCap:55,
+    };
+    for (const [key,value] of Object.entries(defaults278)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 283;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision >= 274) {
+    const defaults274 = {
+      encounterChest1Min:.05, encounterChest1Max:1.55,
+      encounterChest2Min:.35, encounterChest2Max:2.42,
+      encounterChest3Min:.80, encounterChest3Max:3.80,
+      encounterChest4Min:1.60, encounterChest4Max:6.00,
+    };
+    const unchanged = Object.entries(defaults274).every(([key,value]) => input[key] === undefined || Number(input[key]) === value);
+    const alreadyUpdated = Object.keys(defaults274).every(key => input[key] === undefined || Number(input[key]) === DEFAULT_PARAMS[key]);
+    for (const tier of [1,2,3,4]) {
+      if (unchanged) {
+        next[`encounterChest${tier}Min`] = DEFAULT_PARAMS[`encounterChest${tier}Min`];
+        next[`encounterChest${tier}Max`] = DEFAULT_PARAMS[`encounterChest${tier}Max`];
+      }
+      next[`encounterChest${tier}Shape`] = unchanged || alreadyUpdated ? DEFAULT_PARAMS[`encounterChest${tier}Shape`] : 1;
+    }
+    next.encounterRewardRevision = 278;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 273) {
+    const defaults273 = {
+      encounterRewardScale:.433,
+      encounterBossSmallWeight:63, encounterBossMediumWeight:27,
+      encounterBossLargeMax:6.00, encounterBossJackpotMax:24.00,
+    };
+    for (const [key,value] of Object.entries(defaults273)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 274;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 272) {
+    const defaults272 = {
+      encounterRewardScale:.43, encounterPotEntryPower:.64, encounterChest2Max:2.35,
+      encounterGrade2AtkMul:3.4, encounterGrade3AtkMul:3,
+      encounterBossSmallMax:.45,
+      encounterBossMediumMin:1.20, encounterBossMediumMax:4.50,
+      encounterBossLargeMin:4.00, encounterBossLargeMax:7.00,
+      encounterBossDepthGrowth:.08, encounterBossDepthGrowthCap:1.25,
+    };
+    for (const [key,value] of Object.entries(defaults272)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 273;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 271) {
+    const defaults271 = {
+      encounterBossMediumMax:4.00, encounterBossLargeMax:6.50, encounterBossJackpotMax:22.00,
+    };
+    for (const [key,value] of Object.entries(defaults271)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 272;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 270) {
+    const defaults270 = {
+      encounterBossLargeMax:7.00, encounterBossJackpotMax:28.00,
+      hero_electric_damage:82, hero_neutral_damage:103,
+    };
+    for (const [key,value] of Object.entries(defaults270)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 271;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 269) {
+    const defaults269 = {
+      encounterRewardScale:.48,
+      encounterGrade1HpMul:1.38, encounterGrade2HpMul:1.04, encounterGrade3HpMul:.88,
+      encounterBaseHitCap:65,
+      encounterBossSmallWeight:61, encounterBossMediumWeight:27, encounterBossLargeWeight:9, encounterBossJackpotWeight:3,
+    };
+    for (const [key,value] of Object.entries(defaults269)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 270;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 268) {
+    const defaults268 = {
+      encounterRewardScale:.50,
+      encounterGrade1HpMul:1.35, encounterGrade2HpMul:1.02, encounterGrade3HpMul:.86,
+      encounterGrade1AtkMul:8, encounterGrade2AtkMul:6, encounterGrade3AtkMul:5,
+      encounterBaseHitCap:120,
+      encounterChest1Min:.01, encounterChest1Max:2.02,
+      encounterChest2Min:.20, encounterChest2Max:2.40,
+      encounterChest3Min:.40, encounterChest3Max:3.40,
+      encounterChest4Min:.80, encounterChest4Max:5.60,
+      hero_fire_damage:105, hero_ice_damage:198, hero_electric_damage:88,
+      hero_poison_damage:109, hero_neutral_damage:91,
+    };
+    for (const [key,value] of Object.entries(defaults268)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 269;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 267) {
+    const defaults267 = {
+      encounterRewardScale:.54,
+      encounterBossSmallWeight:59, encounterBossMediumWeight:30, encounterBossLargeWeight:9, encounterBossJackpotWeight:2,
+      encounterBossSmallMin:.10, encounterBossSmallMax:.35,
+      encounterBossMediumMin:1.50, encounterBossMediumMax:3.40,
+      encounterBossLargeMin:4.00, encounterBossLargeMax:6.00,
+      encounterBossJackpotMin:6.00, encounterBossJackpotMax:26.00,
+    };
+    for (const [key,value] of Object.entries(defaults267)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 268;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 266) {
+    if (input.encounterRewardScale === undefined || Number(input.encounterRewardScale) === .50) next.encounterRewardScale = DEFAULT_PARAMS.encounterRewardScale;
+    next.encounterRewardRevision = 267;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 265) {
+    const defaults265 = {
+      encounterRewardScale:.86,
+      encounterChest1Min:.30, encounterChest1Max:1.77,
+      encounterChest2Min:.35, encounterChest2Max:1.80,
+      encounterChest3Min:.66, encounterChest3Max:1.90,
+      encounterChest4Min:.70, encounterChest4Max:2.00,
+      encounterBossSmallWeight:70, encounterBossMediumWeight:22,
+      encounterBossLargeWeight:6.5, encounterBossJackpotWeight:1.5,
+      encounterBossSmallMin:.10, encounterBossSmallMax:.40,
+      encounterBossMediumMin:1.30, encounterBossMediumMax:2.30,
+      encounterBossLargeMin:3.50, encounterBossLargeMax:5.50,
+    };
+    for (const [key,value] of Object.entries(defaults265)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 266;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 264) {
+    const defaults264 = {
+      encounterGrade1HpMul:1.45, encounterGrade2HpMul:.98, encounterGrade3HpMul:.90,
+      encounterGrade1AtkMul:6, encounterGrade2AtkMul:4.5, encounterGrade3AtkMul:3.5,
+      encounterBaseHitCap:100,
+    };
+    for (const [key,value] of Object.entries(defaults264)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 265;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 263) {
+    if (input.encounterRewardScale === undefined || Number(input.encounterRewardScale) === .85) {
+      next.encounterRewardScale = DEFAULT_PARAMS.encounterRewardScale;
+    }
+    next.encounterRewardRevision = 264;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 262) {
+    const defaults262 = {
+      hero_fire_damage:140,
+      hero_ice_damage:220,
+      hero_electric_damage:88,
+      hero_poison_damage:84,
+      hero_neutral_damage:70,
+    };
+    for (const [key,value] of Object.entries(defaults262)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 263;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 261) {
+    const defaults261 = {
+      encounterRewardScale:.86, encounterPotEntryPower:.70,
+      encounterBossSmallWeight:73, encounterBossMediumWeight:19, encounterBossLargeWeight:7.5, encounterBossJackpotWeight:.5,
+      encounterBossSmallMin:.15, encounterBossSmallMax:.45,
+      encounterBossMediumMin:1.30, encounterBossMediumMax:2.30,
+      encounterBossLargeMin:3.50, encounterBossLargeMax:5.50,
+      encounterBossJackpotMin:18.00, encounterBossJackpotMax:42.00,
+      encounterBossDepthGrowth:.08, encounterBossDepthGrowthCap:1.25,
+    };
+    for (const [key,value] of Object.entries(defaults261)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 262;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 260) {
+    const defaults260 = {
+      encounterRewardScale:.81,
+      encounterBossSmallWeight:76, encounterBossMediumWeight:19, encounterBossLargeWeight:5,
+      encounterBossSmallMin:.50, encounterBossSmallMax:.75,
+      encounterBossMediumMin:1.30, encounterBossMediumMax:2.20,
+      encounterBossLargeMin:4.00, encounterBossLargeMax:6.00,
+      encounterBossDepthGrowth:.25,
+    };
+    for (const [key,value] of Object.entries(defaults260)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    for (const key of ["encounterPotEntryPower", "encounterBossJackpotWeight", "encounterBossJackpotMin", "encounterBossJackpotMax", "encounterBossDepthGrowthCap"]) {
+      if (input[key] === undefined) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 261;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 259) {
+    const defaults259 = {
+      encounterRewardScale:.82,
+      encounterBossSmallWeight:85, encounterBossMediumWeight:13, encounterBossLargeWeight:2,
+      encounterBossSmallMin:.75, encounterBossSmallMax:1.05,
+      encounterBossMediumMin:1.30, encounterBossMediumMax:2.00,
+      encounterBossLargeMin:2.00, encounterBossLargeMax:3.00,
+      encounterBossDepthGrowth:.10,
+    };
+    for (const [key,value] of Object.entries(defaults259)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 260;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 258) {
+    const defaults258 = {
+      encounterRewardScale:.94,
+      encounterBossSmallWeight:90, encounterBossMediumWeight:9, encounterBossLargeWeight:1,
+      encounterBossSmallMin:.10, encounterBossSmallMax:.18,
+      encounterBossMediumMin:.30, encounterBossMediumMax:.60,
+      encounterBossLargeMin:1.20, encounterBossLargeMax:2.20,
+      encounterBossDepthGrowth:.08,
+    };
+    for (const [key,value] of Object.entries(defaults258)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 259;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 257) {
+    const defaults257 = {
+      encounterRewardScale:.96,
+      encounterChest1Min:.25, encounterChest1Max:1.75,
+      encounterChest3Min:.60, encounterChest3Max:1.90,
+    };
+    for (const [key,value] of Object.entries(defaults257)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 258;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 256) {
+    const defaults256 = {
+      encounterRewardScale:.93,
+      encounterHpDepthGrowth:.075,
+      encounterHpDepthCap:2,
+      encounterGrade2HpMul:.95,
+      encounterGrade3HpMul:.82,
+      encounterChest1Min:.20, encounterChest1Max:1.70,
+      encounterChest2Min:.40, encounterChest2Max:1.80,
+      encounterChest3Min:.55, encounterChest3Max:1.90,
+      encounterChest4Min:.70, encounterChest4Max:2.10,
+    };
+    for (const [key,value] of Object.entries(defaults256)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 258;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 255) {
+    const defaults255 = {
+      encounterRewardScale:.99,
+      encounterHpDepthGrowth:.13,
+      encounterHpDepthCap:3,
+      encounterGrade2HpMul:1.05,
+      encounterGrade3HpMul:1.00,
+      encounterChest1Min:.20, encounterChest1Max:1.70,
+      encounterChest2Min:.40, encounterChest2Max:1.80,
+      encounterChest3Min:.55, encounterChest3Max:1.90,
+      encounterChest4Min:.70, encounterChest4Max:2.10,
+      encounterBossSmallWeight:70,
+      encounterBossMediumWeight:23,
+      encounterBossLargeWeight:7,
+      encounterBossSmallMin:.25,
+      encounterBossSmallMax:.65,
+      encounterBossMediumMin:1.00,
+      encounterBossMediumMax:1.80,
+      encounterBossLargeMin:2.50,
+      encounterBossLargeMax:5.00,
+      encounterBossDepthGrowth:.40,
+    };
+    for (const [key,value] of Object.entries(defaults255)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 258;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 254) {
+    const defaults254 = {
+      encounterBossSmallWeight:88, encounterBossMediumWeight:11, encounterBossLargeWeight:1,
+      encounterBossSmallMin:.10, encounterBossSmallMax:.40,
+      encounterBossMediumMin:.50, encounterBossMediumMax:1.00,
+      encounterBossLargeMin:1.10, encounterBossLargeMax:1.80,
+      encounterBossDepthGrowth:.10,
+    };
+    for (const [key,value] of Object.entries(defaults254)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 255;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 253) {
+    const defaults253 = {encounterRewardScale:1.04,hero_ice_damage:160,hero_ice_rate:.58,hero_ice_secondaryMul:.68,hero_neutral_damage:60};
+    for (const [key,value] of Object.entries(defaults253)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 254;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 252) {
+    if (input.encounterRewardScale === undefined || Number(input.encounterRewardScale) === 1) next.encounterRewardScale = 1.04;
+    next.encounterRewardRevision = 253;
+    return migrateEncounterRewardParams(next);
+  }
+  if (revision === 251) {
+    const combat251 = {encounterGrade1HpMul:1.45,encounterGrade2HpMul:.85,encounterGrade3HpMul:.72,
+      encounterGrade1AtkMul:10,encounterGrade2AtkMul:14,encounterGrade3AtkMul:11.5,encounterBaseHitCap:300};
+    for (const [key,value] of Object.entries(combat251)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    const rewards251 = {encounterChest1Min:.10,encounterChest1Max:1.20,
+      encounterChest2Min:.20,encounterChest2Max:1.60,encounterChest3Min:.40,encounterChest3Max:2.20,
+      encounterChest4Min:.80,encounterChest4Max:3.20};
+    if (Object.entries(rewards251).every(([key,value]) => input[key] === undefined || Number(input[key]) === value)) {
+      for (const key of Object.keys(rewards251)) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 252;
+    return migrateEncounterRewardParams(next);
+  }
+  const old = {encounterRewardScale:.46, encounterChest1Min:.30, encounterChest1Max:.42,
+    encounterChest2Min:.50, encounterChest2Max:.70, encounterChest3Min:.90, encounterChest3Max:1.20,
+    encounterChest4Min:1.80, encounterChest4Max:2.40};
+  let escortScale = .60;
+  // Migrate an untouched preset as a group; keep custom prize distributions intact.
+  if (Object.entries(old).every(([key,value]) => input[key] === undefined || Number(input[key]) === value)) {
+    for (const key of Object.keys(old)) next[key] = DEFAULT_PARAMS[key];
+    escortScale *= .46;
+  }
+  // The old BOSS wave budget included a 40% cash chest; only its escort share remains.
+  for (const part of ["Min","Max"]) {
+    const key = `encounterBossChest${part}`;
+    const previousDefault = part === "Min" ? .60 : 1;
+    next[key] = input[key] === undefined || (escortScale === .60*.46 && Number(input[key]) === previousDefault)
+      ? DEFAULT_PARAMS[key] : Number(input[key]) * escortScale;
+  }
+  const boss = {encounterBossSmallMin:.10, encounterBossSmallMax:.20,
+    encounterBossMediumMin:.30, encounterBossMediumMax:.50, encounterBossLargeMin:1.80, encounterBossLargeMax:3.20};
+  if (Object.entries(boss).every(([key,value]) => input[key] === undefined || Number(input[key]) === value)) {
+    for (const key of Object.keys(boss)) next[key] = DEFAULT_PARAMS[key];
+  }
+  next.encounterRewardRevision = 251;
+  return migrateEncounterRewardParams(next);
+}
+
+function migrateBossParams(input={}) {
+  const next = { ...input };
+  if (!Object.prototype.hasOwnProperty.call(input, "bossFirstMinWave")) {
+    [
+      "bossLowWeight", "bossMidWeight", "bossHighWeight",
+      "bossLowMin", "bossLowMax", "bossMidMin", "bossMidMax", "bossHighMin", "bossHighMax",
+      "bossHpMul", "bossAtkMul", "bossSpeedMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+  }
+  if ((Number(input.balanceRevision) || 0) < 1) {
+    if (!Object.prototype.hasOwnProperty.call(input, "moneyMul") || Number(input.moneyMul) === 1.2) next.moneyMul = DEFAULT_PARAMS.moneyMul;
+    if (!Object.prototype.hasOwnProperty.call(input, "bossFirstHpMul") || Number(input.bossFirstHpMul) === 1.45) next.bossFirstHpMul = DEFAULT_PARAMS.bossFirstHpMul;
+    if (!Object.prototype.hasOwnProperty.call(input, "bossFirstRewardMul") || Number(input.bossFirstRewardMul) === .75) next.bossFirstRewardMul = DEFAULT_PARAMS.bossFirstRewardMul;
+    next.balanceRevision = 1;
+  }
+  if ((Number(input.balanceRevision) || 0) < 2) return { ...DEFAULT_PARAMS, balanceRevision:29 };
+  if ((Number(input.balanceRevision) || 0) < 3) {
+    next.wave_1_hpMul = DEFAULT_PARAMS.wave_1_hpMul;
+    next.wave_2_hpMul = DEFAULT_PARAMS.wave_2_hpMul;
+    next.balanceRevision = 3;
+  }
+  if ((Number(input.balanceRevision) || 0) < 4) return { ...DEFAULT_PARAMS, balanceRevision:29 };
+  if ((Number(input.balanceRevision) || 0) < 5) next.balanceRevision = 5;
+  if ((Number(input.balanceRevision) || 0) < 6) {
+    ["moneyMul", "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "spawnInterval", "betMidMul", "tower_cryo_minionMul", "tower_laser_minionMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 6;
+  }
+  if ((Number(input.balanceRevision) || 0) < 7) next.balanceRevision = 7;
+  if ((Number(input.balanceRevision) || 0) < 8) {
+    [
+      ...WAVE_REWARD_TIERS.flatMap(tier => [tier.weightKey, tier.mulKey]),
+      ...BOSS_DIFFICULTY_TIERS.flatMap(tier => [tier.weightKey, tier.hpKey, tier.atkKey, tier.speedKey]),
+      "deepMoneyBase", "deepMoneyRamp", "deepMoneyCap", "bossHpMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 8;
+  }
+  if ((Number(input.balanceRevision) || 0) < 9) {
+    [
+      "bossFirstHpMul", "bossFirstRewardMul", "bossLaterRewardMul", "moneyMul",
+      "bossDiffEasyWeight", "bossDiffNormalWeight", "bossDiffHardWeight", "bossDiffBrutalWeight"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 9;
+  }
+  if ((Number(input.balanceRevision) || 0) < 10) {
+    next.moneyMul = DEFAULT_PARAMS.moneyMul;
+    next.balanceRevision = 10;
+  }
+  if ((Number(input.balanceRevision) || 0) < 11) {
+    [
+      "bossFirstRewardMul", "bossLaterRewardMul", "bossFirstHpMul", "bossHpMul", "postBossRewardFunding",
+      "tower_cryo_minionMul", "tower_cryo_bossMul", "tower_laser_minionMul", "tower_laser_bossMul",
+      "tower_gas_bossMul", "tower_needle_minionMul", "tower_needle_splash",
+      "tower_trap_damage", "tower_trap_rate", "tower_trap_minionMul", "tower_trap_eliteMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 11;
+  }
+  if ((Number(input.balanceRevision) || 0) < 12) {
+    ["bossFirstRewardMul", "bossLaterRewardMul", "postBossRewardFunding"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 12;
+  }
+  if ((Number(input.balanceRevision) || 0) < 13) {
+    next.balanceRevision = 13;
+  }
+  if ((Number(input.balanceRevision) || 0) < 14) {
+    [
+      "bossFirstRewardMul", "bossFirstHpMul", "preBossRewardMul",
+      "bossFirstDiffEasyWeight", "bossFirstDiffNormalWeight", "bossFirstDiffHardWeight", "bossFirstDiffBrutalWeight",
+      "bossFirstDifficultyCompression", "tower_cryo_bossMul", "tower_laser_bossMul", "tower_needle_bossMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 14;
+  }
+  if ((Number(input.balanceRevision) || 0) < 15) {
+    ["bossFirstRewardMul", "preBossRewardMul"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 15;
+  }
+  if ((Number(input.balanceRevision) || 0) < 16) {
+    ["bossRollDuration", "bossRollHighThreshold", "bossRollJackpotThreshold"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 16;
+  }
+  if ((Number(input.balanceRevision) || 0) < 17) next.balanceRevision = 17;
+  if ((Number(input.balanceRevision) || 0) < 18) {
+    ["mathModelEnabled", "mathTargetRtp", "mathTolerancePct", "mathBuildInfluence", "mathBossPenalty", "mathMinClearChance", "mathMaxClearChance", "mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 18;
+  }
+  if ((Number(input.balanceRevision) || 0) < 19) {
+    [
+      "mathModelEnabled", "moneyMul", "minionHpMul",
+      "tower_flame_bossMul", "tower_grenade_bossMul", "tower_cryo_minionMul", "tower_cryo_bossMul",
+      "tower_frostbomb_damage", "tower_frostbomb_bossMul", "tower_laser_minionMul", "tower_laser_bossMul",
+      "tower_chain_bossMul", "tower_gas_bossMul", "tower_needle_minionMul", "tower_needle_bossMul",
+      "tower_trap_damage", "tower_trap_bossMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 19;
+  }
+  if ((Number(input.balanceRevision) || 0) < 20) {
+    next.moneyMul = DEFAULT_PARAMS.moneyMul;
+    next.balanceRevision = 20;
+  }
+  if ((Number(input.balanceRevision) || 0) < 21) {
+    next.moneyMul = DEFAULT_PARAMS.moneyMul;
+    next.balanceRevision = 21;
+  }
+  if ((Number(input.balanceRevision) || 0) < 22) {
+    ["moneyMul", "tower_flame_bossMul", "tower_grenade_bossMul", "tower_chain_bossMul", "tower_gas_bossMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 22;
+  }
+  if ((Number(input.balanceRevision) || 0) < 23) {
+    [
+      "bossFirstRewardMul", "bossLaterRewardMul", "bossChanceMul", "bossFirstHpMul", "bossHpMul",
+      "tower_flame_damage", "tower_flame_minionMul", "tower_flame_eliteMul",
+      "tower_grenade_damage", "tower_grenade_splash", "tower_grenade_minionMul", "tower_grenade_eliteMul", "tower_grenade_bossMul",
+      "tower_frostbomb_damage", "tower_frostbomb_splash", "tower_frostbomb_minionMul", "tower_frostbomb_eliteMul", "tower_frostbomb_bossMul",
+      "tower_laser_damage", "tower_laser_minionMul", "tower_laser_eliteMul", "tower_laser_bossMul",
+      "tower_chain_damage", "tower_chain_minionMul", "tower_chain_eliteMul", "tower_chain_bossMul",
+      "tower_gas_damage", "tower_gas_splash", "tower_gas_duration", "tower_gas_minionMul", "tower_gas_eliteMul", "tower_gas_bossMul",
+      "tower_needle_damage", "tower_needle_splash", "tower_needle_minionMul", "tower_needle_eliteMul", "tower_needle_bossMul",
+      "tower_blade_damage", "tower_blade_rate", "tower_blade_minionMul", "tower_blade_eliteMul", "tower_blade_bossMul",
+      "tower_trap_damage", "tower_trap_rate", "tower_trap_splash", "tower_trap_duration", "tower_trap_minionMul", "tower_trap_eliteMul", "tower_trap_bossMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 23;
+  }
+  if ((Number(input.balanceRevision) || 0) < 24) {
+    ["moneyMul","tower_flame_damage","tower_grenade_damage","tower_cryo_damage","tower_laser_damage","tower_chain_damage","tower_blade_damage"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 24;
+  }
+  if ((Number(input.balanceRevision) || 0) < 25) {
+    ["moneyMul","tower_flame_damage","tower_grenade_damage","tower_cryo_damage","tower_frostbomb_damage","tower_laser_damage","tower_chain_damage","tower_gas_damage","tower_needle_damage","tower_trap_damage"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 25;
+  }
+  if ((Number(input.balanceRevision) || 0) < 26) {
+    next.mathModelEnabled = DEFAULT_PARAMS.mathModelEnabled;
+    next.balanceRevision = 26;
+  }
+  if ((Number(input.balanceRevision) || 0) < 27) {
+    Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("hero_") || key.startsWith("heroSame") || key.startsWith("heroResonance") || key.startsWith("heroAll") || key.startsWith("heroDamage") || key.startsWith("heroRate") || key.startsWith("heroQuantity"))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 27;
+  }
+  if ((Number(input.balanceRevision) || 0) < 28) {
+    ["mathLossHpMul", "mathLossAtkMul", "mathLossSpeedMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 28;
+  }
+  if ((Number(input.balanceRevision) || 0) < 29) {
+    ["mathLossHpMul", "mathLossAtkMul", "mathLossSpeedMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 29;
+  }
+  if ((Number(input.balanceRevision) || 0) < 30) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 30;
+  }
+  if ((Number(input.balanceRevision) || 0) < 31) {
+    ["heroDamageUpgradePct", "heroRateUpgradePct", "heroQuantityUpgrade", "heroQuantityEveryLevels"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 31;
+  }
+  if ((Number(input.balanceRevision) || 0) < 32) {
+    Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("upgradeVal_"))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 32;
+  }
+  if ((Number(input.balanceRevision) || 0) < 33) {
+    ["mathLossSpeedMul", "waveAttrBiasEarly", "waveAttrBias"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 33;
+  }
+  if ((Number(input.balanceRevision) || 0) < 34) {
+    ["heroDamageUpgradePct", "heroRateUpgradePct", "heroFirstUpgradeQuantity", "wave1MinionAtkMul", "mathFirstWaveClearChance"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 34;
+  }
+  if ((Number(input.balanceRevision) || 0) < 35) {
+    Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("hero_")).forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 35;
+  }
+  if ((Number(input.balanceRevision) || 0) < 36) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathMinClearChance", "mathMaxClearChance", "mathFirstWaveClearChance", "mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 36;
+  }
+  if ((Number(input.balanceRevision) || 0) < 37) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathMaxClearChance", "mathFirstWaveClearChance", "mathClearBand1", "mathClearBand2", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 37;
+  }
+  if ((Number(input.balanceRevision) || 0) < 38) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathClearBand3", "mathClearBand4", "mathClearBand5"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 38;
+  }
+  if ((Number(input.balanceRevision) || 0) < 39) {
+    next.mathBossPenalty = DEFAULT_PARAMS.mathBossPenalty;
+    next.balanceRevision = 39;
+  }
+  if ((Number(input.balanceRevision) || 0) < 40) {
+    next.mathBossPenalty = DEFAULT_PARAMS.mathBossPenalty;
+    next.balanceRevision = 40;
+  }
+  if ((Number(input.balanceRevision) || 0) < 41) {
+    next.mathBuildInfluence = DEFAULT_PARAMS.mathBuildInfluence;
+    next.mathBossPenalty = DEFAULT_PARAMS.mathBossPenalty;
+    next.balanceRevision = 41;
+  }
+  if ((Number(input.balanceRevision) || 0) < 42) {
+    [
+      "mathBuildInfluence", "mathBossPenalty", "mathPayoutCalibration",
+      "mathPayoutBand1", "mathPayoutBand2", "mathPayoutBand3", "mathPayoutBand4", "mathPayoutBand5",
+      "mathMinClearChance", "bossFirstHpMul", "bossHpMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 42;
+  }
+  if ((Number(input.balanceRevision) || 0) < 43) {
+    ["mathBuildInfluence", "mathBossPenalty", "mathPayoutCalibration", "bossFirstHpMul", "bossHpMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 43;
+  }
+  if ((Number(input.balanceRevision) || 0) < 44) {
+    next.mathBossPenalty = DEFAULT_PARAMS.mathBossPenalty;
+    next.balanceRevision = 44;
+  }
+  if ((Number(input.balanceRevision) || 0) < 45) {
+    ["mathBossPenalty", "mathMinClearChance"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 45;
+  }
+  if ((Number(input.balanceRevision) || 0) < 46) {
+    ["mathHpInfluence", "mathHpReference"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 46;
+  }
+  if ((Number(input.balanceRevision) || 0) < 47) {
+    ["mathHpInfluence", "mathHpReference"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 47;
+  }
+  if ((Number(input.balanceRevision) || 0) < 48) {
+    Object.keys(DEFAULT_PARAMS).filter(key => key.startsWith("mathHeroPower_") || key.startsWith("mathTowerBossPower_"))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 48;
+  }
+  if ((Number(input.balanceRevision) || 0) < 49) {
+    [
+      "mathHeroPower_fire", "mathHeroPower_poison", "mathTowerBossPower_flame",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_needle",
+      "mathTowerBossPower_blade", "mathTowerBossPower_trap"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 49;
+  }
+  if ((Number(input.balanceRevision) || 0) < 50) {
+    [
+      "mathHeroPower_fire", "mathHeroPower_poison", "mathHeroPower_neutral", "mathCoreRiskBonus",
+      "mathTowerBossPower_grenade", "mathTowerBossPower_cryo", "mathTowerBossPower_frostbomb",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_needle", "mathTowerBossPower_trap"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 50;
+  }
+  if ((Number(input.balanceRevision) || 0) < 51) {
+    next.mathCoreRiskBonus = DEFAULT_PARAMS.mathCoreRiskBonus;
+    next.balanceRevision = 51;
+  }
+  if ((Number(input.balanceRevision) || 0) < 52) {
+    [
+      "mathBossBuildInfluence", "mathMinionBuildInfluence", "mathPayoutCalibration",
+      "mathHeroPower_fire", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "mathTowerBossPower_grenade", "mathTowerBossPower_cryo", "mathTowerBossPower_frostbomb",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_needle", "mathTowerBossPower_trap"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 52;
+  }
+  if ((Number(input.balanceRevision) || 0) < 53) {
+    [
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "mathTowerBossPower_flame", "mathTowerBossPower_grenade", "mathTowerBossPower_cryo",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_needle",
+      "mathTowerBossPower_blade", "mathTowerBossPower_trap"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 53;
+  }
+  if ((Number(input.balanceRevision) || 0) < 54) {
+    next.mathMinionBuildInfluence = DEFAULT_PARAMS.mathMinionBuildInfluence;
+    next.balanceRevision = 54;
+  }
+  if ((Number(input.balanceRevision) || 0) < 55) {
+    ["mathBossBuildInfluence", "mathMinionBuildInfluence"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 55;
+  }
+  if ((Number(input.balanceRevision) || 0) < 56) {
+    ["mathAreaBossRiskDiscount", "mathPayoutCalibration"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 56;
+  }
+  if ((Number(input.balanceRevision) || 0) < 57) {
+    [
+      "mathMinionHpInfluence", "mathBossHpInfluence", "mathBossOrdinalPenalty",
+      "bossFirstHpMul", "bossHpMul", "bossHpPerOrdinalMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 57;
+  }
+  if ((Number(input.balanceRevision) || 0) < 58) {
+    [
+      "mathBossPenalty", "mathPayoutBand1", "mathPayoutBand2", "mathPayoutBand3",
+      "mathPayoutBand4", "mathPayoutBand5", "bossFirstHpMul"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 58;
+  }
+  if ((Number(input.balanceRevision) || 0) < 59) {
+    [
+      "mathBossOrdinalPenalty", "mathFirstBossDelayPenalty",
+      "mathClearBand3", "mathClearBand4", "mathClearBand5"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 59;
+  }
+  if ((Number(input.balanceRevision) || 0) < 60) {
+    ["mathFirstBossDelayPenalty", "mathFirstBossGuaranteePenalty"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathClear$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 60;
+  }
+  if ((Number(input.balanceRevision) || 0) < 61) {
+    [
+      "mathMinionBuildInfluence", "mathMinionHpInfluence",
+      "mathBossOrdinalPenalty", "mathFirstBossGuaranteePenalty"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 61;
+  }
+  if ((Number(input.balanceRevision) || 0) < 62) {
+    Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathClear$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 62;
+  }
+  if ((Number(input.balanceRevision) || 0) < 63) {
+    Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathClear$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 63;
+  }
+  if ((Number(input.balanceRevision) || 0) < 64) {
+    [
+      "mathTargetRtp", "mathBossBuildInfluence", "mathAreaBossRiskDiscount",
+      "mathBossOrdinalPenalty", "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+      "mathPayoutCalibration", "bossHpMul", "bossHpPerOrdinalMul",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric",
+      "mathHeroPower_poison", "mathHeroPower_neutral"
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathClear$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 64;
+  }
+  if ((Number(input.balanceRevision) || 0) < 65) {
+    [
+      "mathPayoutCalibration",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "mathTowerBossPower_flame", "mathTowerBossPower_grenade", "mathTowerBossPower_cryo", "mathTowerBossPower_frostbomb",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_gas", "mathTowerBossPower_needle",
+      "mathTowerBossPower_blade", "mathTowerBossPower_trap",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 65;
+  }
+  if ((Number(input.balanceRevision) || 0) < 66) {
+    next.mathPayoutCalibration = DEFAULT_PARAMS.mathPayoutCalibration;
+    next.balanceRevision = 66;
+  }
+  if ((Number(input.balanceRevision) || 0) < 67) {
+    [
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance", "mathPayoutCalibration",
+      "mathHeroPower_fire", "mathHeroPower_electric", "mathHeroPower_neutral", "mathCoreRiskBonus",
+      "mathTowerBossPower_cryo", "mathTowerBossPower_laser", "mathTowerBossPower_chain",
+      "mathTowerBossPower_needle", "mathTowerBossPower_trap", "bossHpMul", "bossHpPerOrdinalMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 67;
+  }
+  if ((Number(input.balanceRevision) || 0) < 68) {
+    [
+      "mathBossLaterBaseChance", "mathBossLaterBuildInfluence", "mathBossLaterHpInfluence", "mathBossOrdinalPenalty",
+      "mathHeroPower_fire", "mathHeroPower_electric", "mathHeroPower_poison", "mathHeroPower_neutral", "mathCoreRiskBonus",
+      "mathTowerBossPower_flame", "mathTowerBossPower_grenade", "mathTowerBossPower_cryo", "mathTowerBossPower_frostbomb",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_gas", "mathTowerBossPower_needle",
+      "mathTowerBossPower_trap", "bossHpPerOrdinalMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 68;
+  }
+  if ((Number(input.balanceRevision) || 0) < 69) {
+    [
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "mathCoreRiskBonus", "mathTowerBossPower_flame", "mathTowerBossPower_grenade", "mathTowerBossPower_cryo",
+      "mathTowerBossPower_frostbomb", "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_gas",
+      "mathTowerBossPower_needle", "mathTowerBossPower_trap",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 69;
+  }
+  if ((Number(input.balanceRevision) || 0) < 70) {
+    [
+      "mathPayoutCalibration", "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric",
+      "mathHeroPower_poison", "mathHeroPower_neutral", "mathTowerBossPower_cryo", "mathTowerBossPower_frostbomb",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_needle", "mathTowerBossPower_trap",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 70;
+  }
+  if ((Number(input.balanceRevision) || 0) < 71) {
+    [
+      "mathPayoutCalibration", "mathBossLaterBaseChance", "mathBossLaterBuildInfluence",
+      "mathTowerBossPower_flame", "mathTowerBossPower_grenade", "mathTowerBossPower_cryo",
+      "mathTowerBossPower_frostbomb", "mathTowerBossPower_laser", "mathTowerBossPower_gas",
+      "mathTowerBossPower_needle", "mathTowerBossPower_trap",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 71;
+  }
+  if ((Number(input.balanceRevision) || 0) < 72) {
+    [
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance", "mathBossOrdinalPenalty",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 72;
+  }
+  if ((Number(input.balanceRevision) || 0) < 73) {
+    [
+      "mathPayoutCalibration", "mathSingleTowerChanceShift", "mathControlTowerChanceShift",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 73;
+  }
+  if ((Number(input.balanceRevision) || 0) < 74) {
+    ["mathSingleTowerChanceShift", "mathControlTowerChanceShift"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 74;
+  }
+  if ((Number(input.balanceRevision) || 0) < 75) {
+    ["mathSingleTowerPayoutShift", "mathAreaTowerPayoutShift", "mathControlTowerPayoutShift"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 75;
+  }
+  if ((Number(input.balanceRevision) || 0) < 76) {
+    ["mathSingleTowerPayoutShift", "mathControlTowerPayoutShift"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 76;
+  }
+  if ((Number(input.balanceRevision) || 0) < 77) {
+    [
+      "mathSingleTowerPayoutShift", "mathAreaTowerPayoutShift", "mathControlTowerPayoutShift",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 77;
+  }
+  if ((Number(input.balanceRevision) || 0) < 78) {
+    [
+      "mathSingleTowerPayoutShift", "mathControlTowerPayoutShift",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 78;
+  }
+  if ((Number(input.balanceRevision) || 0) < 79) {
+    [
+      "mathSingleTowerPayoutShift", "mathAreaTowerPayoutShift", "mathControlTowerPayoutShift",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+      "bossHpPerOrdinalMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 79;
+  }
+  if ((Number(input.balanceRevision) || 0) < 80) {
+    [
+      "mathBossLaterBaseChance", "mathBossOrdinalPenalty", "mathPayoutCalibration",
+      "mathSingleTowerPayoutShift", "mathAreaTowerPayoutShift", "mathControlTowerPayoutShift",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+      "bossHpMul", "bossHpPerOrdinalMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 80;
+  }
+  if ((Number(input.balanceRevision) || 0) < 81) {
+    ["mathPayoutCalibration", "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 81;
+  }
+  if ((Number(input.balanceRevision) || 0) < 82) {
+    [
+      "mathBossFirstBaseChance", "mathPayoutCalibration", "mathAreaTowerChanceShift",
+      "mathControlTowerChanceShift", "mathControlSharePayoutSlope", "mathCoreRiskBonus",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 82;
+  }
+  if ((Number(input.balanceRevision) || 0) < 83) {
+    ["mathPayoutCalibration", "mathSingleSharePayoutSlope", "mathBossLaterBaseChance", "mathBossOrdinalPenalty"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 83;
+  }
+  if ((Number(input.balanceRevision) || 0) < 84) {
+    ["mathControlTowerChanceShift", "mathCoreRiskBonus"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 84;
+  }
+  if ((Number(input.balanceRevision) || 0) < 85) {
+    next.mathPayoutCalibration = DEFAULT_PARAMS.mathPayoutCalibration;
+    next.balanceRevision = 85;
+  }
+  if ((Number(input.balanceRevision) || 0) < 86) {
+    ["mathPayoutCalibration", "mathBossLaterBaseChance", "mathBossOrdinalPenalty"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 86;
+  }
+  if ((Number(input.balanceRevision) || 0) < 87) {
+    [
+      "bossFirstMinWave", "bossFirstChance", "bossFirstChanceInc", "bossFirstChanceCap",
+      "bossChanceMul", "bossChanceCap", "bossHpPerOrdinalMul",
+      "mathBossLaterBuildInfluence", "mathBossLaterHpInfluence", "mathBossLaterBaseChance",
+      "mathBossOrdinalPenalty", "mathFirstBossGuaranteePenalty",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    Object.keys(DEFAULT_PARAMS)
+      .filter(key => /^wave_\d+_(bossBase|bossInc|bossCd)$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 87;
+  }
+  if ((Number(input.balanceRevision) || 0) < 88) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+      "mathBossLaterBaseChance", "mathBossOrdinalPenalty",
+      "bossLaterRewardMul", "bossHpMul", "bossHpPerOrdinalMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 88;
+  }
+  if ((Number(input.balanceRevision) || 0) < 89) {
+    ["mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 89;
+  }
+  if ((Number(input.balanceRevision) || 0) < 108) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance", "mathBossOrdinalPenalty",
+      "mathCoreRiskBonus", "bossLaterRewardMul", "bossHpMul", "bossHpPerOrdinalMul",
+      "hero_fire_damage", "hero_ice_damage", "hero_ice_secondaryMul",
+      "hero_electric_damage", "hero_poison_damage", "hero_poison_rate",
+      "hero_poison_status", "hero_poison_splash", "hero_neutral_damage",
+      "tower_blade_damage", "tower_blade_rate", "tower_blade_minionMul",
+      "tower_blade_eliteMul", "tower_blade_bossMul",
+      "tower_flame_bossMul", "tower_grenade_bossMul",
+      "tower_chain_bossMul", "tower_gas_bossMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 108;
+  }
+  if ((Number(input.balanceRevision) || 0) < 109) {
+    [
+      "mathSingleSharePayoutSlope",
+      "mathAreaSharePayoutSlope",
+      "mathControlSharePayoutSlope",
+    ].forEach(key => { next[key] = 0; });
+    next.balanceRevision = 109;
+  }
+  if ((Number(input.balanceRevision) || 0) < 110) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleTowerChanceShift",
+      "mathAreaTowerChanceShift",
+      "mathControlTowerChanceShift",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 110;
+  }
+  if ((Number(input.balanceRevision) || 0) < 111) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleTowerChanceShift",
+      "mathAreaTowerChanceShift",
+      "mathControlTowerChanceShift",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 111;
+  }
+  if ((Number(input.balanceRevision) || 0) < 112) {
+    [
+      "mathSingleTowerChanceShift",
+      "mathAreaTowerChanceShift",
+      "mathControlTowerChanceShift",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 112;
+  }
+  if ((Number(input.balanceRevision) || 0) < 113) {
+    [
+      "mathPayoutCalibration",
+      "tower_flame_bossMul", "tower_grenade_bossMul",
+      "tower_cryo_bossMul", "tower_frostbomb_bossMul",
+      "tower_laser_bossMul", "tower_chain_bossMul",
+      "tower_gas_bossMul", "tower_needle_bossMul",
+      "tower_blade_bossMul", "tower_trap_bossMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 113;
+  }
+  if ((Number(input.balanceRevision) || 0) < 114) {
+    [
+      "tower_cryo_bossMul",
+      "tower_laser_bossMul",
+      "tower_needle_bossMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 114;
+  }
+  if ((Number(input.balanceRevision) || 0) < 115) {
+    [
+      "tower_cryo_bossMul",
+      "tower_laser_bossMul",
+      "tower_needle_bossMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 115;
+  }
+  if ((Number(input.balanceRevision) || 0) < 116) {
+    [
+      "mathBossOrdinalPenalty", "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+      "mathPayoutBand5", "mathMinClearChance", "bossLaterRewardMul",
+      "bossFirstHpMul", "bossHpMul", "bossHpPerOrdinalMul",
+      "bossBetStepMul", "betMidMul", "betDeepMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 116;
+  }
+  if ((Number(input.balanceRevision) || 0) < 117) {
+    ["mathPayoutCalibration", "bossFirstHpMul"].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 117;
+  }
+  if ((Number(input.balanceRevision) || 0) < 118) {
+    [
+      "mathBossOrdinalPenalty", "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+      "mathFirstBossDelayPenalty", "mathPayoutCalibration",
+      "bossFirstHpMul", "bossHpMul", "bossHpPerOrdinalMul",
+      ...Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathPayout$/.test(key)),
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 118;
+  }
+  if ((Number(input.balanceRevision) || 0) < 119) {
+    [
+      "mathPayoutCalibration",
+      ...Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathPayout$/.test(key)),
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 119;
+  }
+  if ((Number(input.balanceRevision) || 0) < 120) {
+    next.mathSingleTowerChanceShift = DEFAULT_PARAMS.mathSingleTowerChanceShift;
+    next.balanceRevision = 120;
+  }
+  if ((Number(input.balanceRevision) || 0) < 121) {
+    next.mathPayoutCalibration = DEFAULT_PARAMS.mathPayoutCalibration;
+    next.balanceRevision = 128;
+  }
+  if ((Number(input.balanceRevision) || 0) < 129) {
+    [
+      "mathBossLaterBaseChance", "mathBossOrdinalPenalty",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "bossHpPerOrdinalMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 129;
+  }
+  if ((Number(input.balanceRevision) || 0) < 130) {
+    [
+      "mathPayoutCalibration", "mathBossOrdinalPenalty",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+      "mathHeroPower_electric",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 130;
+  }
+  if ((Number(input.balanceRevision) || 0) < 131) {
+    [
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_poison", "mathHeroPower_neutral",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 131;
+  }
+  if ((Number(input.balanceRevision) || 0) < 132) {
+    [
+      "mathBossFirstBaseChance",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 132;
+  }
+  if ((Number(input.balanceRevision) || 0) < 133) {
+    [
+      "mathBossBuildInfluence", "mathBossLaterBuildInfluence",
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 133;
+  }
+  if ((Number(input.balanceRevision) || 0) < 134) {
+    [
+      "mathBossLaterBuildInfluence",
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 134;
+  }
+  if ((Number(input.balanceRevision) || 0) < 135) {
+    [
+      "mathBossLaterBuildInfluence", "mathBossLaterBaseChance",
+      "mathBossOrdinalPenalty", "mathPayoutCalibration",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 135;
+  }
+  if ((Number(input.balanceRevision) || 0) < 136) {
+    [
+      "mathPayoutCalibration",
+      "mathSingleSharePayoutSlope", "mathAreaSharePayoutSlope", "mathControlSharePayoutSlope",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 136;
+  }
+  if ((Number(input.balanceRevision) || 0) < 137) {
+    ["mathBossFirstMinClearChance", "mathBossLaterMinClearChance"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 137;
+  }
+  if ((Number(input.balanceRevision) || 0) < 138) {
+    Object.keys(DEFAULT_PARAMS).filter(key => /^wave_\d+_mathBossCorrection$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 138;
+  }
+  if ((Number(input.balanceRevision) || 0) < 139) {
+    const multiplyMonsterField = (variants, field, multiplier) => {
+      variants.forEach(monster => {
+        const key = `monster_${monster.id}_${field}`;
+        if (Number.isFinite(Number(next[key]))) next[key] = Number(next[key]) * multiplier;
+      });
+    };
+    const minionHp = Number.isFinite(Number(next.minionHpMul)) ? Number(next.minionHpMul) : 1.05;
+    const minionAtk = Number.isFinite(Number(next.minionAtkMul)) ? Number(next.minionAtkMul) : .82;
+    const minionSpeed = Number.isFinite(Number(next.minionSpeedMul)) ? Number(next.minionSpeedMul) : .90;
+    const eliteHp = Number.isFinite(Number(next.eliteHpMul)) ? Number(next.eliteHpMul) : 1.05;
+    const eliteAtk = Number.isFinite(Number(next.eliteAtkMul)) ? Number(next.eliteAtkMul) : 1.05;
+    const bossFirstHp = Number.isFinite(Number(next.bossFirstHpMul)) ? Number(next.bossFirstHpMul) : 2.35;
+    const bossLaterHp = Number.isFinite(Number(next.bossHpMul)) ? Number(next.bossHpMul) : 2.30;
+    const bossAtk = Number.isFinite(Number(next.bossAtkMul)) ? Number(next.bossAtkMul) : 1;
+    const bossSpeed = Number.isFinite(Number(next.bossSpeedMul)) ? Number(next.bossSpeedMul) : 1;
+    const rewardMul = Number.isFinite(Number(next.moneyMul)) ? Number(next.moneyMul) : 1.085;
+    const bossChanceMul = Number.isFinite(Number(next.bossChanceMul)) ? Number(next.bossChanceMul) : .45;
+    multiplyMonsterField(ALL_MINION_VARIANTS, "hp", minionHp);
+    multiplyMonsterField(ALL_MINION_VARIANTS, "atk", minionAtk);
+    multiplyMonsterField(ALL_MINION_VARIANTS, "speed", minionSpeed);
+    multiplyMonsterField(ALL_ELITE_VARIANTS, "hp", eliteHp);
+    multiplyMonsterField(ALL_ELITE_VARIANTS, "atk", eliteAtk);
+    multiplyMonsterField(ALL_BOSS_VARIANTS, "hp", bossFirstHp);
+    multiplyMonsterField(ALL_BOSS_VARIANTS, "atk", bossAtk);
+    multiplyMonsterField(ALL_BOSS_VARIANTS, "speed", bossSpeed);
+    next.minionHpMul = 1;
+    next.minionAtkMul = 1;
+    next.minionSpeedMul = 1;
+    next.eliteHpMul = 1;
+    next.eliteAtkMul = 1;
+    next.bossFirstHpMul = 1;
+    next.bossHpMul = bossFirstHp > 0 ? bossLaterHp / bossFirstHp : 1;
+    next.bossAtkMul = 1;
+    next.bossSpeedMul = 1;
+    WAVE_REWARD_TIERS.forEach(tier => {
+      if (Number.isFinite(Number(next[tier.mulKey]))) next[tier.mulKey] = Number(next[tier.mulKey]) * rewardMul;
+    });
+    next.moneyMul = 1;
+    WAVE.forEach(row => {
+      const key = `wave_${row.wave}_bossInc`;
+      if (Number.isFinite(Number(next[key]))) next[key] = Number(next[key]) * bossChanceMul;
+    });
+    next.bossChanceMul = 1;
+    next.balanceRevision = 139;
+  }
+  if ((Number(input.balanceRevision) || 0) < 140) {
+    next.mathTargetRtp = .95;
+    next.balanceRevision = 140;
+  }
+  if ((Number(input.balanceRevision) || 0) < 141) {
+    WAVE_REWARD_TIERS.forEach(tier => {
+      next[tier.weightKey] = DEFAULT_PARAMS[tier.weightKey];
+      next[tier.mulKey] = DEFAULT_PARAMS[tier.mulKey];
+    });
+    next.balanceRevision = 141;
+  }
+  if ((Number(input.balanceRevision) || 0) < 142) {
+    next.mathTargetRtp = .95;
+    next.mathPoolEnabled = 1;
+    next.mathPoolSeedBetUnits = 200;
+    next.mathPoolMaxPayoutMul = 60;
+    next.mathSingleTowerPayoutShift = 0;
+    next.mathAreaTowerPayoutShift = 0;
+    next.mathControlTowerPayoutShift = 0;
+    next.mathSingleSharePayoutSlope = 0;
+    next.mathAreaSharePayoutSlope = 0;
+    next.mathControlSharePayoutSlope = 0;
+    next.mathPayoutCalibration = 1;
+    next.mathMinionPayoutChanceScale = 1;
+    next.mathBossPayoutChanceScale = 1;
+    next.mathBossPayoutChanceMidScale = 1;
+    next.mathBossPayoutChanceDeepScale = 1;
+    next.mathBossPayoutChanceUltraScale = 1;
+    ["mathPayoutBand1", "mathPayoutBand2", "mathPayoutBand3", "mathPayoutBand4", "mathPayoutBand5"]
+      .forEach(key => { next[key] = 1; });
+    Object.keys(next).filter(key => /^wave_\d+_mathPayout$/.test(key))
+      .forEach(key => { next[key] = 1; });
+    next.bossBetStepMul = 1.5;
+    next.balanceRevision = 142;
+  }
+  if ((Number(input.balanceRevision) || 0) < 143) {
+    next.mathPoolReleaseRate = .12;
+    next.mathPoolReleaseCapMul = 3;
+    next.balanceRevision = 143;
+  }
+  if ((Number(input.balanceRevision) || 0) < 144) {
+    next.mathPoolSeedBetUnits = 0;
+    next.mathPoolMaxPayoutMul = 500;
+    next.mathPoolReleaseRate = 0;
+    next.mathPoolReleaseCapMul = 0;
+    next.balanceRevision = 144;
+  }
+  if ((Number(input.balanceRevision) || 0) < 145) {
+    next.balanceRevision = 145;
+  }
+  if ((Number(input.balanceRevision) || 0) < 146) {
+    [
+      "mathPoolReleaseRate", "mathPoolReleaseCapMul",
+      "mathBossLaterBaseChance", "mathBossOrdinalPenalty", "mathBossLaterMinClearChance",
+      "bossLaterRewardMul",
+      "waveRewardDryWeight", "waveRewardDryMul", "waveRewardLowWeight", "waveRewardLowMul",
+      "waveRewardNormalWeight", "waveRewardNormalMul", "waveRewardProfitWeight", "waveRewardProfitMul",
+      "waveRewardHotWeight", "waveRewardHotMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 146;
+  }
+  if ((Number(input.balanceRevision) || 0) < 147) {
+    [
+      "mathPoolReleaseRate", "mathPoolReleaseCapMul",
+      "mathBossLaterBaseChance", "mathBossOrdinalPenalty", "mathBossLaterMinClearChance",
+      "bossLaterRewardMul", "bossHpMul", "bossHpPerOrdinalMul",
+      "bossDiffEasyWeight", "bossDiffNormalWeight", "bossDiffHardWeight", "bossDiffBrutalWeight",
+      "bossLowWeight", "bossMidWeight", "bossHighWeight", "bossHighMin", "bossHighMax",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 147;
+  }
+  if ((Number(input.balanceRevision) || 0) < 148) {
+    [
+      "mathPoolBaseOutcomeCapMul", "mathPoolBossAddCapScale", "mathPoolReleaseRate", "mathPoolReleaseCapMul",
+      "mathBossLaterBaseChance", "mathBossOrdinalPenalty", "mathBossLaterMinClearChance",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_poison", "mathHeroPower_neutral",
+      "bossHpPerOrdinalMul", "bossDiffEasyWeight", "bossDiffNormalWeight", "bossDiffHardWeight", "bossDiffBrutalWeight",
+      "waveRewardDryWeight", "waveRewardDryMul", "waveRewardLowWeight", "waveRewardLowMul",
+      "waveRewardNormalWeight", "waveRewardNormalMul", "waveRewardProfitWeight", "waveRewardProfitMul",
+      "waveRewardHotWeight", "waveRewardHotMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 148;
+  }
+  if ((Number(input.balanceRevision) || 0) < 149) {
+    [
+      "hero_fire_damage", "hero_ice_damage", "hero_electric_damage",
+      "hero_poison_damage", "hero_poison_rate", "hero_neutral_damage",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 149;
+  }
+  if ((Number(input.balanceRevision) || 0) < 150) {
+    next.mathPoolBossAddCapScale = DEFAULT_PARAMS.mathPoolBossAddCapScale;
+    next.balanceRevision = 150;
+  }
+  if ((Number(input.balanceRevision) || 0) < 151) {
+    ["mathPoolBaseOutcomeCapMul", "mathPoolMeaningfulWinTriggerMul", "mathPoolMeaningfulWinFloorMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 151;
+  }
+  if ((Number(input.balanceRevision) || 0) < 152) {
+    ["mathPoolStrongWinChance", "mathPoolStrongWinFloorMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 152;
+  }
+  if ((Number(input.balanceRevision) || 0) < 153) {
+    ["mathPoolBaseOutcomeCapMul", "mathPoolBossAddCapScale", "mathPoolReleaseRate", "mathPoolReleaseCapMul"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 153;
+  }
+  if ((Number(input.balanceRevision) || 0) < 154) {
+    for (let tier=1; tier<=6; tier+=1) {
+      next[`mathPoolEntryTier${tier}Mul`] = DEFAULT_PARAMS[`mathPoolEntryTier${tier}Mul`];
+      next[`mathPoolEntryTier${tier}Weight`] = DEFAULT_PARAMS[`mathPoolEntryTier${tier}Weight`];
+    }
+    next.balanceRevision = 154;
+  }
+  if ((Number(input.balanceRevision) || 0) < 155) {
+    [
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 155;
+  }
+  if ((Number(input.balanceRevision) || 0) < 156) {
+    [
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 156;
+  }
+  if ((Number(input.balanceRevision) || 0) < 157) {
+    [
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 157;
+  }
+  if ((Number(input.balanceRevision) || 0) < 159) {
+    [
+      "mathBossBuildInfluence", "mathBossLaterBuildInfluence",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 159;
+  }
+  if ((Number(input.balanceRevision) || 0) < 160) {
+    [
+      "mathBossBuildInfluence", "mathBossLaterBuildInfluence",
+      "mathBossOrdinalPenalty", "mathBossFirstBaseChance", "mathBossLaterBaseChance",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 160;
+  }
+  if ((Number(input.balanceRevision) || 0) < 161) {
+    [
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 161;
+  }
+  if ((Number(input.balanceRevision) || 0) < 162) {
+    [
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 162;
+  }
+  if ((Number(input.balanceRevision) || 0) < 163) {
+    next.mathBossOrdinalPenalty = DEFAULT_PARAMS.mathBossOrdinalPenalty;
+    next.balanceRevision = 163;
+  }
+  if ((Number(input.balanceRevision) || 0) < 164) {
+    [
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 164;
+  }
+  if ((Number(input.balanceRevision) || 0) < 166) {
+    ["mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 166;
+  }
+  if ((Number(input.balanceRevision) || 0) < 167) {
+    next.mathPoolReleaseRate = DEFAULT_PARAMS.mathPoolReleaseRate;
+    next.mathPoolReleaseCapMul = DEFAULT_PARAMS.mathPoolReleaseCapMul;
+    next.balanceRevision = 167;
+  }
+  if ((Number(input.balanceRevision) || 0) < 168) {
+    [
+      "mathBossFirstBaseChance", "mathBossLaterBaseChance", "mathBossOrdinalPenalty",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+      "mathBossPayoutChanceScale", "mathBossPayoutChanceMidScale",
+      "mathBossPayoutChanceDeepScale", "mathBossPayoutChanceUltraScale",
+      "mathBossPayoutChanceTailScale", "mathPoolReleaseRate", "mathPoolReleaseCapMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 168;
+  }
+  if ((Number(input.balanceRevision) || 0) < 169) {
+    [
+      "mathPoolEntryTier1Mul", "mathPoolEntryTier1Weight",
+      "mathPoolEntryTier2Mul", "mathPoolEntryTier2Weight",
+      "mathPoolEntryTier3Mul", "mathPoolEntryTier3Weight",
+      "mathPoolEntryTier4Mul", "mathPoolEntryTier4Weight",
+      "mathPoolEntryTier5Mul", "mathPoolEntryTier5Weight",
+      "mathPoolEntryTier6Mul", "mathPoolEntryTier6Weight",
+      "waveRewardDryWeight", "waveRewardDryMul", "waveRewardLowWeight", "waveRewardLowMul",
+      "waveRewardNormalWeight", "waveRewardNormalMul", "waveRewardProfitWeight", "waveRewardProfitMul",
+      "waveRewardHotWeight", "waveRewardHotMul",
+      "bossLowWeight", "bossMidWeight", "bossHighWeight",
+      "bossLowMin", "bossLowMax", "bossMidMin", "bossMidMax", "bossHighMin", "bossHighMax",
+      "bossFirstRewardMul", "bossLaterRewardMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 169;
+  }
+  if ((Number(input.balanceRevision) || 0) < 170) {
+    [
+      "waveRewardDryWeight", "waveRewardDryMul", "waveRewardLowWeight", "waveRewardLowMul",
+      "waveRewardNormalWeight", "waveRewardNormalMul", "waveRewardProfitWeight", "waveRewardProfitMul",
+      "waveRewardHotWeight", "waveRewardHotMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 170;
+  }
+  if ((Number(input.balanceRevision) || 0) < 171) {
+    ["mathPoolReleaseRate", "mathPoolBossReleaseRate"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 171;
+  }
+  if ((Number(input.balanceRevision) || 0) < 172) {
+    [
+      "mathPoolEntryTier1Mul", "mathPoolEntryTier1Weight", "mathPoolEntryTier2Mul", "mathPoolEntryTier2Weight",
+      "mathPoolEntryTier3Mul", "mathPoolEntryTier3Weight", "mathPoolEntryTier4Mul", "mathPoolEntryTier4Weight",
+      "mathPoolEntryTier5Mul", "mathPoolEntryTier5Weight", "mathPoolEntryTier6Mul", "mathPoolEntryTier6Weight",
+      "mathPoolReleaseRate", "mathMinionBuildInfluence", "mathAttributeMinionInfluence", "mathAttributeBossInfluence",
+      "mathTowerBossPower_flame", "mathTowerBossPower_grenade", "mathTowerBossPower_cryo", "mathTowerBossPower_frostbomb",
+      "mathTowerBossPower_laser", "mathTowerBossPower_chain", "mathTowerBossPower_gas", "mathTowerBossPower_needle",
+      "mathTowerBossPower_blade", "mathTowerBossPower_trap",
+      "mathMinionHpInfluence", "mathFirstWaveClearChance", "mathClearBand1", "mathClearBand2", "mathClearBand3",
+      "mathClearBand4", "mathClearBand5", "minionHpMul", "minionAtkMul", "wave1MinionAtkMul",
+      "waveAttrBiasEarly", "waveAttrBias", "bossDiffEasyHpMul", "bossDiffNormalHpMul", "bossDiffHardHpMul",
+      "bossDiffBrutalHpMul", "bossShieldHpPct", "bossShieldDamageMul", "bossBreakDamageMul",
+      "bossBreakDuration", "bossEnrageHpPct", "bossEnrageAttackSpeedMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    Object.keys(DEFAULT_PARAMS)
+      .filter(key => /^tower_.+_(?:minionMul|eliteMul|bossMul)$/.test(key) || /^monster_.+_(?:fire|ice|electric|poison|neutral)Mul$/.test(key) || /^wave_\d+_mathClear$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 172;
+  }
+  if ((Number(input.balanceRevision) || 0) < 173) {
+    [
+      "bossBreakAttackPause", "bossAttackWindup", "bossAttackIntervalJitterPct",
+      "bossPreludeCountMul", "bossFirstAtkMul", "bossFirstHpMul", "bossHpMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 173;
+  }
+  if ((Number(input.balanceRevision) || 0) < 174) {
+    ["mathGeneralRtpShare", "mathBossRtpShare"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 174;
+  }
+  if ((Number(input.balanceRevision) || 0) < 175) {
+    ["mathPoolStrongWinChance", "mathPoolStrongWinFloorMul", "mathPoolWeakBossCapMul", "mathPoolWeakBossReleaseRate"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 175;
+  }
+  if ((Number(input.balanceRevision) || 0) < 176) {
+    [
+      "mathPoolHotWaveFloorMul", "mathPoolHotWaveReleaseRate",
+      "waveRewardDryWeight", "waveRewardDryMul", "waveRewardLowWeight", "waveRewardLowMul",
+      "waveRewardNormalWeight", "waveRewardNormalMul", "waveRewardProfitWeight", "waveRewardProfitMul",
+      "waveRewardHotWeight", "waveRewardHotMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 176;
+  }
+  if ((Number(input.balanceRevision) || 0) < 177) {
+    [
+      "minionHpMul", "minionAtkMul", "minionSpeedMul", "wave1MinionAtkMul",
+      "bossFirstHpMul", "bossHpMul", "bossHpPerOrdinalMul", "bossAtkMul",
+      "bossFirstAtkMul", "bossShieldHpPct",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    Object.keys(DEFAULT_PARAMS)
+      .filter(key => /^wave_\d+_hpMul$/.test(key) || /^monster_.+_(?:fire|ice|electric|poison|neutral)Mul$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 177;
+  }
+  if ((Number(input.balanceRevision) || 0) < 178) {
+    [
+      "minionHpMul", "minionAtkMul", "minionSpeedMul", "wave1MinionAtkMul",
+      "mathMinionBuildInfluence", "mathAttributeMinionInfluence", "mathAttributeBossInfluence",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    Object.keys(DEFAULT_PARAMS)
+      .filter(key => /^tower_.+_(?:minion|elite|boss)Mul$/.test(key) || /^monster_.+_(?:fire|ice|electric|poison|neutral)Mul$/.test(key))
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 178;
+  }
+  if ((Number(input.balanceRevision) || 0) < 179) {
+    [
+      "mathPoolReleaseRate", "mathPoolWeakBossReleaseRate",
+      "mathSingleTowerChanceShift", "mathAreaTowerChanceShift", "mathControlTowerChanceShift",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 179;
+  }
+  if ((Number(input.balanceRevision) || 0) < 180) {
+    [
+      "mathPoolEntryTier1Mul", "mathPoolEntryTier1Weight", "mathPoolEntryTier2Mul", "mathPoolEntryTier2Weight",
+      "mathPoolEntryTier3Mul", "mathPoolEntryTier3Weight", "mathPoolEntryTier4Mul", "mathPoolEntryTier4Weight",
+      "mathPoolEntryTier5Mul", "mathPoolEntryTier5Weight", "mathPoolEntryTier6Mul", "mathPoolEntryTier6Weight",
+      "mathPoolReleaseRate", "mathPoolDeepReleaseRate", "mathPoolDepthRampWaves",
+      "mathPoolBossReleaseRate", "mathPoolFirstBossReleaseRate", "mathPoolLaterBossReleaseRate",
+      "mathPoolStrongWinEarlyFloorMul", "mathPoolStrongWinFloorMul",
+      "mathPoolHotWaveEarlyFloorMul", "mathPoolHotWaveFloorMul",
+      "mathPoolHotWaveEarlyReleaseRate", "mathPoolHotWaveReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 180;
+  }
+  if ((Number(input.balanceRevision) || 0) < 181) {
+    ["mathPoolBaseOutcomeCapMul", "mathPoolDeepOutcomeCapMul", "mathPoolOutcomeCapRampWaves"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 181;
+  }
+  if ((Number(input.balanceRevision) || 0) < 182) {
+    [
+      "mathPoolBaseOutcomeCapMul", "mathPoolDeepOutcomeCapMul", "mathPoolOutcomeCapRampWaves", "mathPoolFirstBossOutcomeCapMul",
+      "mathPoolReleaseRate", "mathPoolDeepReleaseRate", "mathPoolDepthRampWaves",
+      "mathPoolFirstBossReleaseRate", "mathPoolLaterBossReleaseRate", "mathPoolBossReleaseRate",
+      "mathPoolStrongWinEarlyFloorMul", "mathPoolStrongWinFloorMul",
+      "mathPoolHotWaveEarlyFloorMul", "mathPoolHotWaveFloorMul", "mathPoolHotWaveEarlyReleaseRate", "mathPoolHotWaveReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 182;
+  }
+  if ((Number(input.balanceRevision) || 0) < 183) {
+    [
+      "mathGeneralRtpShare", "mathBossRtpShare",
+      "mathPoolEntryTier1Mul", "mathPoolEntryTier1Weight", "mathPoolEntryTier2Mul", "mathPoolEntryTier2Weight",
+      "mathPoolEntryTier3Mul", "mathPoolEntryTier3Weight", "mathPoolEntryTier4Mul", "mathPoolEntryTier4Weight",
+      "mathPoolEntryTier5Mul", "mathPoolEntryTier5Weight", "mathPoolEntryTier6Mul", "mathPoolEntryTier6Weight",
+      "mathPoolBossCarryRecycleRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 183;
+  }
+  if ((Number(input.balanceRevision) || 0) < 184) {
+    ["mathPoolDeepOutcomeCapMul", "mathPoolOutcomeCapRampWaves", "mathPoolOutcomeCapCurve"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 184;
+  }
+  if ((Number(input.balanceRevision) || 0) < 199) {
+    next.balanceRevision = 199;
+  }
+  if ((Number(input.balanceRevision) || 0) < 200) {
+    [
+      "mathPoolReleaseRate", "mathPoolFirstBossReleaseRate", "mathPoolLaterBossReleaseRate",
+      "mathPoolStrongWinChance", "mathPoolHotWaveEarlyReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 200;
+  }
+  if ((Number(input.balanceRevision) || 0) < 201) {
+    ["mathPoolReleaseRate", "mathPoolDeepReleaseRate"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 201;
+  }
+  if ((Number(input.balanceRevision) || 0) < 202) {
+    next.mathPoolHotWaveDeepWeight = DEFAULT_PARAMS.mathPoolHotWaveDeepWeight;
+    next.balanceRevision = 202;
+  }
+  if ((Number(input.balanceRevision) || 0) < 203) {
+    next.balanceRevision = 203;
+  }
+  if ((Number(input.balanceRevision) || 0) < 204) {
+    [
+      "mathPoolTemporaryDeficitEnabled",
+      "mathCarryShapeEnabled",
+      "mathCarryAnchorChance",
+      "mathCarryMinReturn",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 204;
+  }
+  if ((Number(input.balanceRevision) || 0) < 205) {
+    ["mathPoolStrongWinChance", "mathPoolStrongWinDeepChance"]
+      .forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 205;
+  }
+  if ((Number(input.balanceRevision) || 0) < 206) {
+    [
+      "mathPostBossIncrementBossShare",
+      "mathPoolFirstBossReleaseRate",
+      "mathPoolLaterBossReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 206;
+  }
+  if ((Number(input.balanceRevision) || 0) < 208) {
+    [
+      "mathCarryAnchorChance",
+      "mathPostBossIncrementBossShare",
+      "mathPoolLaterBossReleaseRate",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 208;
+  }
+  if ((Number(input.balanceRevision) || 0) < 210) {
+    [
+      "mathPostBossIncrementBossShare", "mathPoolFirstBossReleaseRate",
+      "mathPoolHotWaveDeepWeight", "mathPoolHotWaveEarlyReleaseRate",
+      "minionHpMul", "minionAtkMul", "minionSpeedMul",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 210;
+  }
+  if ((Number(input.balanceRevision) || 0) < 211) {
+    [...ALL_MINION_VARIANTS, ...ALL_ELITE_VARIANTS, ...ALL_BOSS_VARIANTS].forEach(base => {
+      ATTRIBUTE_KEYS.forEach(attr => {
+        const key = `monster_${base.id}_${attr}Mul`;
+        next[key] = DEFAULT_PARAMS[key];
+      });
+    });
+    next.balanceRevision = 211;
+  }
+  if ((Number(input.balanceRevision) || 0) < 212) {
+    [
+      "hero_fire_damage", "hero_ice_damage", "hero_electric_damage", "hero_neutral_damage",
+      "mathHeroPower_fire", "mathHeroPower_ice", "mathHeroPower_electric", "mathHeroPower_neutral",
+    ].forEach(key => { next[key] = DEFAULT_PARAMS[key]; });
+    next.balanceRevision = 212;
+  }
+  return migrateEncounterRewardParams(next);
+}
+
+let params = loadParams();
+let headlessParamsLocked = false;
+let pendingExternalParams = null;
+
+function applyExternalParams(next) {
+  if (HEADLESS_SIM && headlessParamsLocked) return;
+  const normalized = cleanParams(migrateEncounterRewardParams(next));
+  if (state?.started && !state.over) {
+    pendingExternalParams = normalized;
+    return;
+  }
+  params = normalized;
+  pendingExternalParams = null;
+  if (state) {
+    state.hp = Math.min(state.hp, params.baseHp);
+    updateUi();
+  }
+}
+
+try {
+  const paramChannel = new BroadcastChannel(PARAM_CHANNEL);
+  paramChannel.onmessage = event => {
+    if (event.data && event.data.type === "towerDefenseParams") applyExternalParams(event.data.params);
+  };
+} catch {}
+
+window.addEventListener("storage", event => {
+  if (event.key === PARAM_STORAGE_KEY && event.newValue) applyExternalParams(loadParams());
+});
+
+let state;
+let currentChoices = [];
+let currentChoiceOptions = null;
+let last = performance.now();
+let speedIndex = 0;
+let lastUiFrame = 0;
+let lastDebugFrame = 0;
+let lastDebugSnapshot = "";
+let mathRunSeed = 1;
+let mathPoolLedger = null;
+let biomeTransitionTimer = null;
+const slotViews = [];
+
+function reset() {
+  stopChannelAudio();
+  clearTimeout(biomeTransitionTimer);
+  if (state?.mathReservedPayout > 0) releaseMathReservation();
+  if (pendingExternalParams) {
+    params = pendingExternalParams;
+    pendingExternalParams = null;
+  }
+  const wallet = state && Number.isFinite(state.wallet) ? state.wallet : INITIAL_WALLET;
+  const randomizedBiomeOrder = shuffled(PROTOTYPE_BIOMES.map(biome => biome.id));
+  const biomeOrder = DEBUG_BIOME
+    ? [DEBUG_BIOME, ...randomizedBiomeOrder.filter(biomeId => biomeId !== DEBUG_BIOME)]
+    : randomizedBiomeOrder;
+  mathRunSeed = ((gameplayRandom() * 4294967296) >>> 0) || 1;
+  state = {
+    wallet, baseBetIndex: ENCOUNTER_DRAFT_PROTOTYPE ? 2 : 3, started: false, over: false, wave: 0, hp: params.baseHp, hpWarningStage:0, pot: 0, exp: 0, level: 1,
+    hero: null, towers: [], monsters: [], projectiles: [], effects: [], zones: [], choicesOpen: false, choiceKind:"", choiceRerollUsed:false, rerollSpent:0, waveActive: false, upgradeRepeatLocks: {}, heroUpgradeRepeatLocks: {},
+    spawn: null, waveReward: null, rewardRoundingCarry: .5, bossWeight: 0, bossCd: 0, bossRolled: 0, bossAdd: 0, bossSeen: 0, bossRoll: null, betRaise: null, nextBoss: false, nextBossWave: 0, bossDanger: 0, selectedTemplate: "standard", currentWaveAttr: "neutral", currentEncounter:null, pendingEncounter:null, encounterChoices:[], simBossSpawned:0,
+    biomeOrder, biomeIndex:0, biomeWave:0, biomeBossAt:FORCE_FIRST_BOSS ? 1 : rollPrototypeBossEncounter(), biomeTransitionToken:0,
+    certifiedPayout:0, mathTicket:null, mathLedger:[], mathTotalStake:0, mathPendingStake:0, mathPendingCredit:0,
+    mathReservedPayout:0, mathReservedBossAmount:0, mathPoolContribution:0, mathGeneralContribution:0, mathBossContribution:0,
+    mathPoolCapHits:0, mathPoolRecycled:0, mathPoolLastEntryMultiplier:0,
+    pendingWaveStart:false,
+  };
+  ui.betRaise?.classList.add("hidden");
+  ui.biomeTransition?.classList.add("hidden");
+  ui.biomeTransition?.classList.remove("play");
+  ui.phone?.classList.remove("boss-roll-active", "boss-roll-high", "boss-roll-jackpot", "boss-result-high", "boss-result-jackpot", "base-warning", "base-danger", "base-warning-pulse");
+  ui.potChip?.classList.remove("boss-high-pop", "boss-jackpot-pop");
+  hideChoices();
+  hideEncounterDraft();
+  hideResult();
+  applyBiomePresentation(false);
+  updateUi();
+}
+
+const rand = (a,b) => Math.floor(a + gameplayRandom() * (b - a + 1));
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const pick = arr => arr[rand(0, arr.length - 1)];
+function pickWeighted(obj) {
+  const entries = Object.entries(obj).filter(([,w]) => w > 0);
+  const total = entries.reduce((s, [,w]) => s + Number(w), 0);
+  let r = gameplayRandom() * total;
+  for (const [k,w] of entries) { r -= Number(w); if (r <= 0) return k; }
+  return entries[0][0];
+}
+function paramNumber(key, fallback) {
+  const value = Number(params[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+function bandFor(wave) { return BANDS.find(b => wave >= b.from && wave <= b.to) || BANDS[BANDS.length - 1]; }
+function waveInfoFor(wave) {
+  const base = WAVE[Math.max(0, Math.min(29, wave - 1))] || WAVE[0];
+  return {
+    ...base,
+    hpMul: paramNumber(`wave_${base.wave}_hpMul`, base.hpMul),
+    eliteWeight: paramNumber(`wave_${base.wave}_eliteWeight`, base.eliteWeight),
+    e1: paramNumber(`wave_${base.wave}_e1`, base.e1),
+    e2: paramNumber(`wave_${base.wave}_e2`, base.e2),
+    e3: paramNumber(`wave_${base.wave}_e3`, base.e3),
+    bossBase: paramNumber(`wave_${base.wave}_bossBase`, base.bossBase),
+    bossInc: paramNumber(`wave_${base.wave}_bossInc`, base.bossInc),
+    bossCd: paramNumber(`wave_${base.wave}_bossCd`, base.bossCd),
+  };
+}
+function waveInfo() { return waveInfoFor(state.wave); }
+function bandIndexFor(wave) {
+  const index = BANDS.findIndex(b => wave >= b.from && wave <= b.to);
+  return index >= 0 ? index + 1 : BANDS.length;
+}
+function tunedBand(base, wave) {
+  const bandId = bandIndexFor(wave);
+  const drop = {};
+  Object.keys(base.drop).forEach(monsterId => drop[monsterId] = paramNumber(`band_${bandId}_drop_${monsterId}`, base.drop[monsterId]));
+  const templates = {};
+  Object.keys(TEMPLATE).forEach(templateId => templates[templateId] = paramNumber(`band_${bandId}_template_${templateId}`, base.templates[templateId] || 0));
+  return {
+    ...base,
+    count: [
+      Math.round(paramNumber(`band_${bandId}_countMin`, base.count[0])),
+      Math.round(paramNumber(`band_${bandId}_countMax`, base.count[1])),
+    ],
+    drop,
+    templates,
+  };
+}
+function tunedTemplate(templateId) {
+  const base = TEMPLATE[templateId] || TEMPLATE.standard;
+  const weights = {};
+  Object.keys(base).forEach(monsterId => weights[monsterId] = paramNumber(`template_${templateId}_${monsterId}`, base[monsterId]));
+  return weights;
+}
+function currentBiomeConfig() {
+  const id = state?.biomeOrder?.[state.biomeIndex] || PROTOTYPE_BIOMES[0].id;
+  return PROTOTYPE_BIOMES.find(biome => biome.id === id) || PROTOTYPE_BIOMES[0];
+}
+function biomeBossPressure() {
+  if (!ENCOUNTER_DRAFT_PROTOTYPE || !state?.biomeBossAt || prototypeRunComplete()) return 0;
+  return clamp((state.biomeWave + 1) / Math.max(1, state.biomeBossAt), 0, 1);
+}
+function rollPrototypeBossEncounter() {
+  return rand(PROTOTYPE_BOSS_MIN_ENCOUNTER, PROTOTYPE_BOSS_MAX_ENCOUNTER);
+}
+function prototypeRunComplete() {
+  return ENCOUNTER_DRAFT_PROTOTYPE && (state?.bossSeen || 0) >= PROTOTYPE_BOSS_TOTAL;
+}
+function wavePrimaryAttribute(wave) {
+  if (ENCOUNTER_DRAFT_PROTOTYPE && state?.biomeOrder?.length) return currentBiomeConfig().attr;
+  if (wave <= 2) return "neutral";
+  return WAVE_ATTRIBUTE_CYCLE[(wave - 3) % WAVE_ATTRIBUTE_CYCLE.length];
+}
+function waveAttributeBias(wave) {
+  return clamp(paramNumber(wave <= 2 ? "waveAttrBiasEarly" : "waveAttrBias", wave <= 2 ? .72 : .58), 0, 1);
+}
+function pickWaveMonster(templateId) { return pickWeighted(tunedTemplate(templateId)); }
+function pickWaveAttribute(primaryAttr, wave, force=false) {
+  if (force || gameplayRandom() < waveAttributeBias(wave)) return primaryAttr;
+  if (primaryAttr === "neutral") return pick(ATTRIBUTE_KEYS.filter(attr => attr !== "neutral"));
+  if (gameplayRandom() < .68) return "neutral";
+  return pick(ATTRIBUTE_KEYS.filter(attr => attr !== primaryAttr && attr !== "neutral"));
+}
+function applyWaveAttributeBias(attrMultipliers, primaryAttr) {
+  if (!primaryAttr || !ATTRIBUTE_KEYS.includes(primaryAttr)) return attrMultipliers;
+  const weakAttr = ATTRIBUTE_KEYS.reduce((best, attr) => attrMultipliers[attr] > attrMultipliers[best] ? attr : best, ATTRIBUTE_KEYS[0]);
+  if (weakAttr === primaryAttr) return attrMultipliers;
+  const result = { ...attrMultipliers };
+  [result[weakAttr], result[primaryAttr]] = [result[primaryAttr], result[weakAttr]];
+  return result;
+}
+function currentBet() {
+  return betForWave(state.wave + 1);
+}
+function depthBetFloor(wave) {
+  return wave >= 21 ? params.betDeepMul : wave >= 11 ? params.betMidMul : 1;
+}
+function bossBetMultiplier(bosses=state.bossSeen) {
+  return 1 + Math.max(0, bosses) * (Math.max(1, params.bossBetStepMul) - 1);
+}
+function combinedBetMultiplier(wave, bosses=state.bossSeen) {
+  return Math.max(depthBetFloor(wave), bossBetMultiplier(bosses));
+}
+function betForWave(wave, bosses=state.bossSeen) {
+  const base = BET_STEPS[state.baseBetIndex];
+  return Math.round(base * combinedBetMultiplier(wave, bosses));
+}
+function certifiedMathEnabled() {
+  // Encounter playtests must not be repriced/capped by the legacy RTP engine.
+  return !ENCOUNTER_DRAFT_PROTOTYPE && paramNumber("mathModelEnabled", 1) >= .5;
+}
+function encounterEconomyEnabled() {
+  return ENCOUNTER_DRAFT_PROTOTYPE && params.encounterEconomyEnabled >= .5;
+}
+function economyMode() {
+  return ENCOUNTER_DRAFT_PROTOTYPE
+    ? encounterEconomyEnabled() ? "encounter-rtp-candidate-284" : "encounter-playtest-unbalanced-284"
+    : "legacy-math";
+}
+function mathPoolEnabled() {
+  return certifiedMathEnabled() && paramNumber("mathPoolEnabled", 1) >= .5;
+}
+function mathPoolEntryTiers() {
+  return Array.from({ length:6 }, (_, index) => {
+    const tier = index + 1;
+    return {
+      multiplier:Math.max(0, paramNumber(`mathPoolEntryTier${tier}Mul`, DEFAULT_PARAMS[`mathPoolEntryTier${tier}Mul`])),
+      weight:Math.max(0, paramNumber(`mathPoolEntryTier${tier}Weight`, DEFAULT_PARAMS[`mathPoolEntryTier${tier}Weight`])),
+    };
+  });
+}
+function mathPoolEntryExpectedRtp() {
+  const tiers = mathPoolEntryTiers();
+  const totalWeight = tiers.reduce((sum, tier) => sum + tier.weight, 0);
+  if (totalWeight <= 0) return Math.max(0, paramNumber("mathTargetRtp", .95));
+  return tiers.reduce((sum, tier) => sum + tier.multiplier * tier.weight, 0) / totalWeight;
+}
+function drawMathPoolEntryMultiplier() {
+  const tiers = mathPoolEntryTiers();
+  const totalWeight = tiers.reduce((sum, tier) => sum + tier.weight, 0);
+  if (totalWeight <= 0) return Math.max(0, paramNumber("mathTargetRtp", .95));
+  let cursor = gameplayRandom() * totalWeight;
+  for (const tier of tiers) {
+    cursor -= tier.weight;
+    if (cursor <= 0) return tier.multiplier;
+  }
+  return tiers[tiers.length - 1].multiplier;
+}
+function resetMathPool(referenceBet=0) {
+  const bet = Math.max(0, Number(referenceBet) || 0);
+  const seed = bet * paramNumber("mathPoolSeedBetUnits", 0);
+  mathPoolLedger = {
+    seed, available:seed, reserved:0, contributed:0, generalContributed:0, bossContributed:0,
+    bossAvailable:0, bossReserved:0, bossPaid:0, bossMatured:0,
+    paid:0, house:0, operatorAdvance:0,
+    stake:0, capHits:0,
+  };
+  return mathPoolLedger;
+}
+function ensureMathPool(referenceBet=0) {
+  if (!mathPoolLedger) resetMathPool(referenceBet || BET_STEPS[state?.baseBetIndex ?? 3]);
+  return mathPoolLedger;
+}
+function mathPoolSnapshot() {
+  if (!mathPoolLedger) return null;
+  const pool = mathPoolLedger;
+  const invariantError = pool.seed + pool.contributed + (pool.operatorAdvance || 0) - pool.available - pool.reserved - pool.paid;
+  return { ...pool, invariantError };
+}
+function restoreMathPool(snapshot, reservation=0) {
+  if (!snapshot || typeof snapshot !== "object") return mathPoolLedger;
+  const fields = ["seed", "available", "reserved", "contributed", "generalContributed", "bossContributed", "bossAvailable", "bossReserved", "bossPaid", "bossMatured", "paid", "house", "operatorAdvance", "stake", "capHits"];
+  mathPoolLedger = Object.fromEntries(fields.map(key => [
+    key,
+    key === "house" || key === "available"
+      ? Number(snapshot[key]) || 0
+      : Math.max(0, Number(snapshot[key]) || 0),
+  ]));
+  if (state) state.mathReservedPayout = Math.max(0, Number(reservation) || 0);
+  if (state) state.mathReservedBossAmount = Math.min(
+    state.mathReservedPayout,
+    Math.max(0, Number(mathPoolLedger.bossReserved) || 0),
+  );
+  return mathPoolLedger;
+}
+function registerMathStake(amount, source="wave") {
+  if (!certifiedMathEnabled() || !state) return;
+  const stake = Math.max(0, Number(amount) || 0);
+  if (!stake) return;
+  state.mathTotalStake += stake;
+  const targetRtp = paramNumber("mathTargetRtp", .95);
+  const generalShare = mathPoolEnabled() ? paramNumber("mathGeneralRtpShare", .65) : targetRtp;
+  const bossShare = mathPoolEnabled() ? paramNumber("mathBossRtpShare", .30) : 0;
+  const allocatedShare = Math.max(.0001, generalShare + bossShare);
+  const entryMultiplier = mathPoolEnabled() ? drawMathPoolEntryMultiplier() : targetRtp;
+  const contribution = stake * entryMultiplier;
+  const baseStake = Math.min(stake, BET_STEPS[state.baseBetIndex] || stake);
+  const bossRaisedStake = state.bossSeen > 0
+    ? clamp(Math.min(stake, (BET_STEPS[state.baseBetIndex] || stake) * bossBetMultiplier()) - baseStake, 0, stake)
+    : 0;
+  const regularStake = Math.max(0, stake - bossRaisedStake);
+  const postBossBossShare = clamp(
+    paramNumber("mathPostBossIncrementBossShare", bossShare),
+    0,
+    allocatedShare,
+  );
+  const postBossGeneralShare = Math.max(0, allocatedShare - postBossBossShare);
+  const pricedContribution = mathPoolEnabled()
+    ? entryMultiplier * (
+      regularStake * generalShare / allocatedShare
+      + bossRaisedStake * postBossGeneralShare / allocatedShare
+    )
+    : contribution;
+  const bossContribution = Math.max(0, contribution - pricedContribution);
+  if (mathPoolEnabled()) {
+    const pool = ensureMathPool(stake);
+    if (source === "wave" && !state.started) {
+      const matured = Math.max(0,Number(pool.bossAvailable)||0) * paramNumber("mathPoolBossCarryRecycleRate", 1);
+      pool.bossAvailable = Math.max(0,(Number(pool.bossAvailable)||0)-matured);
+      pool.bossMatured = Math.max(0,(Number(pool.bossMatured)||0)+matured);
+    }
+    pool.stake += stake;
+    pool.contributed += contribution;
+    pool.generalContributed += pricedContribution;
+    pool.bossContributed += bossContribution;
+    pool.bossAvailable += bossContribution;
+    pool.house += stake - contribution;
+    pool.available += contribution;
+    repayMathPoolAdvance(pricedContribution);
+    state.mathPoolContribution += contribution;
+    state.mathGeneralContribution += pricedContribution;
+    state.mathBossContribution += bossContribution;
+    state.mathPoolLastEntryMultiplier = entryMultiplier;
+  }
+  const activeReroll = source === "reroll" && state.waveActive && state.mathTicket && !state.mathTicket.settled
+    && paramNumber("mathRerollEntryEnabled", 1) >= .5;
+  if (activeReroll) {
+    state.mathTicket.pricedStake += stake;
+    state.mathTicket.rerollStake = (state.mathTicket.rerollStake || 0) + stake;
+    state.mathTicket.unpricedCredit = (state.mathTicket.unpricedCredit || 0) + pricedContribution;
+    state.mathTicket.rerollCredits = [...(state.mathTicket.rerollCredits || []), { stake, multiplier:generalShare, contribution:pricedContribution, bossContribution }];
+  } else {
+    state.mathPendingStake += stake;
+    state.mathPendingCredit += pricedContribution;
+  }
+  return {
+    stake, multiplier:entryMultiplier, contribution, pricedContribution, bossContribution, activeReroll,
+    bossRaisedStake, postBossGeneralShare, postBossBossShare,
+  };
+}
+function mathPoolDepthProgress(wave=state?.wave || 1) {
+  const rampWaves = Math.max(1, paramNumber("mathPoolDepthRampWaves", 14));
+  return clamp((Math.max(1, Number(wave) || 1) - 1) / rampWaves, 0, 1);
+}
+function mathPoolDepthValue(earlyValue, deepValue, wave=state?.wave || 1) {
+  const progress = mathPoolDepthProgress(wave);
+  return earlyValue + (deepValue - earlyValue) * progress;
+}
+function normalPoolReleaseRate(wave=state?.wave || 1) {
+  return clamp(mathPoolDepthValue(
+    paramNumber("mathPoolReleaseRate", .08),
+    paramNumber("mathPoolDeepReleaseRate", .65),
+    wave,
+  ), 0, 1);
+}
+function releaseMathReservation() {
+  const amount = Math.max(0, Number(state?.mathReservedPayout) || 0);
+  if (!amount || !mathPoolEnabled()) {
+    if (state) {
+      state.mathReservedPayout = 0;
+      state.mathReservedBossAmount = 0;
+      state.mathPoolRecycled = 0;
+    }
+    return;
+  }
+  const pool = ensureMathPool();
+  const releasable = Math.min(amount, pool.reserved);
+  const reservedBoss = Math.min(
+    releasable,
+    Math.max(0, Number(state.mathReservedBossAmount) || Number(pool.bossReserved) || 0),
+  );
+  pool.reserved -= releasable;
+  pool.available += releasable;
+  pool.bossReserved = Math.max(0, (Number(pool.bossReserved) || 0) - reservedBoss);
+  pool.bossAvailable = Math.min(pool.available, Math.max(0, (Number(pool.bossAvailable) || 0) + reservedBoss));
+  repayMathPoolAdvance(Math.max(0, releasable - reservedBoss));
+  state.mathReservedPayout = 0;
+  state.mathReservedBossAmount = 0;
+  state.mathPoolRecycled = 0;
+}
+function mathPoolExposureCap(stakeOverride=null) {
+  const payoutStake = Math.max(
+    Math.max(0, Number(state?.mathTotalStake) || 0),
+    Number.isFinite(Number(stakeOverride)) ? Math.max(0, Number(stakeOverride)) : 0,
+  );
+  return Math.max(0, payoutStake * paramNumber("mathPoolMaxPayoutMul", 500));
+}
+function mathPoolTemporaryDeficitEnabled() {
+  return mathPoolEnabled() && paramNumber("mathPoolTemporaryDeficitEnabled", 0) >= .5;
+}
+function repayMathPoolAdvance(limit=Number.POSITIVE_INFINITY) {
+  if (!mathPoolEnabled() || !mathPoolLedger) return 0;
+  const pool = ensureMathPool();
+  const generalAvailable = Math.max(0, (Number(pool.available) || 0) - Math.max(0, Number(pool.bossAvailable) || 0));
+  const repaid = Math.min(
+    Math.max(0, Number(pool.operatorAdvance) || 0),
+    generalAvailable,
+    Math.max(0, Number(limit) || 0),
+  );
+  if (!repaid) return 0;
+  pool.available -= repaid;
+  pool.operatorAdvance -= repaid;
+  return repaid;
+}
+function personalPoolPayoutCeiling(stakeOverride=null, allowBossBudget=false, options={}) {
+  const exposureCap = mathPoolExposureCap(stakeOverride);
+  const pool = mathPoolEnabled() ? ensureMathPool() : null;
+  const includeReservation = options.includeReservation !== false;
+  const pendingReservation = includeReservation ? Math.max(0, Number(state.mathReservedPayout) || 0) : 0;
+  const pendingBossReservation = includeReservation
+    ? Math.min(pendingReservation, Math.max(0, Number(state.mathReservedBossAmount) || 0))
+    : 0;
+  const carriedBossEligibility = Math.max(0, Number(options.carriedBossEligibility) || 0);
+  const projectedAvailable = mathPoolEnabled()
+    ? Math.max(0, (Number(pool.available) || 0) + pendingReservation)
+    : Number.POSITIVE_INFINITY;
+  const projectedBossAvailable = mathPoolEnabled()
+    ? Math.min(projectedAvailable, Math.max(0, (Number(pool.bossAvailable) || 0) + pendingBossReservation))
+    : 0;
+  const projectedGeneralAvailable = Math.max(0, projectedAvailable - projectedBossAvailable);
+  const eligibleBossAvailable = allowBossBudget
+    ? projectedBossAvailable
+    : Math.min(projectedBossAvailable, pendingBossReservation + carriedBossEligibility);
+  const liquidityCap = mathPoolEnabled()
+    ? projectedGeneralAvailable + eligibleBossAvailable
+    : Number.POSITIVE_INFINITY;
+  return Math.max(0, Math.min(exposureCap, liquidityCap));
+}
+function fundMathPoolTemporaryDeficit(targetPayout, stakeOverride=null, allowBossBudget=false, options={}) {
+  const desired = Math.min(
+    Math.max(0, Number(targetPayout) || 0),
+    mathPoolExposureCap(stakeOverride),
+  );
+  const liquid = personalPoolPayoutCeiling(stakeOverride, allowBossBudget, options);
+  if (!mathPoolTemporaryDeficitEnabled() || desired <= liquid) return Math.min(desired, liquid);
+  const pool = ensureMathPool();
+  const deficit = desired - liquid;
+  pool.available += deficit;
+  pool.operatorAdvance = Math.max(0, Number(pool.operatorAdvance) || 0) + deficit;
+  return desired;
+}
+function recordMathPoolCapHit() {
+  if (!mathPoolEnabled()) return;
+  const pool = ensureMathPool();
+  pool.capHits = (pool.capHits || 0) + 1;
+  state.mathPoolCapHits = (state.mathPoolCapHits || 0) + 1;
+}
+function personalPoolPayoutAmount(targetPayout, stakeOverride=null, allowBossBudget=false, releaseRateOverride=null) {
+  const pool = ensureMathPool();
+  const desired = Math.max(0, Math.round(Number(targetPayout) || 0));
+  const payoutStake = Number.isFinite(Number(stakeOverride)) && Number(stakeOverride) > 0
+    ? Number(stakeOverride)
+    : state.mathTotalStake;
+  const available = Math.max(0, personalPoolPayoutCeiling(payoutStake, allowBossBudget));
+  const fundedTarget = Math.min(desired, available);
+  const surplus = Math.max(0, available - fundedTarget);
+  const hasReleaseRateOverride = releaseRateOverride !== null
+    && releaseRateOverride !== undefined
+    && Number.isFinite(Number(releaseRateOverride));
+  const configuredReleaseRate = hasReleaseRateOverride
+    ? Number(releaseRateOverride)
+    : allowBossBudget
+      ? paramNumber("mathPoolBossReleaseRate", 1)
+      : normalPoolReleaseRate(state?.wave || 1);
+  const releaseRate = clamp(configuredReleaseRate, 0, 1);
+  const releaseCap = Math.max(0, payoutStake * paramNumber("mathPoolReleaseCapMul", 500));
+  const backlogRelease = Math.min(surplus * releaseRate, releaseCap);
+  return Math.max(0, Math.floor(Math.min(available, fundedTarget + backlogRelease)));
+}
+function reserveMathPayout(targetPayout, pricedStake=0, allowBossBudget=false, bossBudgetRelease=0) {
+  if (!mathPoolEnabled()) return Math.max(0, Math.round(targetPayout || 0));
+  const pool = ensureMathPool();
+  const carriedPayout = Math.max(0, Number(state.mathReservedPayout) || 0);
+  const carriedBossPayout = Math.min(carriedPayout, Math.max(0, Number(state.mathReservedBossAmount) || 0));
+  releaseMathReservation();
+  const desired = Math.max(0, Math.round(targetPayout || 0));
+  const fundable = fundMathPoolTemporaryDeficit(
+    desired,
+    pricedStake,
+    allowBossBudget,
+    { includeReservation:false, carriedBossEligibility:carriedBossPayout },
+  );
+  const reserved = Math.max(0, Math.floor(Math.min(fundable, personalPoolPayoutCeiling(
+    pricedStake,
+    allowBossBudget,
+    { includeReservation:false, carriedBossEligibility:carriedBossPayout },
+  ))));
+  if (reserved < desired) recordMathPoolCapHit();
+  state.mathPoolRecycled = 0;
+  const generalAvailableBefore = Math.max(
+    0,
+    (Number(pool.available) || 0) - Math.max(0, Number(pool.bossAvailable) || 0),
+  );
+  const eligibleBossAvailable = allowBossBudget
+    ? Math.max(0, Number(pool.bossAvailable) || 0)
+    : Math.min(carriedBossPayout, Math.max(0, Number(pool.bossAvailable) || 0));
+  const carriedBossRequirement = Math.min(reserved, carriedBossPayout);
+  const newBossRequirement = Math.min(
+    Math.max(0, reserved - carriedBossRequirement),
+    Math.max(0, Number(bossBudgetRelease) || 0),
+  );
+  const minimumBossReservation = Math.min(
+    reserved,
+    eligibleBossAvailable,
+    carriedBossRequirement + newBossRequirement,
+  );
+  const liquidityBossReservation = Math.min(
+    Math.max(0, reserved - generalAvailableBefore),
+    eligibleBossAvailable,
+  );
+  const reservedBoss = Math.max(minimumBossReservation, liquidityBossReservation);
+  pool.available -= reserved;
+  pool.reserved += reserved;
+  pool.bossAvailable = Math.max(0,(Number(pool.bossAvailable)||0)-reservedBoss);
+  pool.bossReserved = Math.max(0,(Number(pool.bossReserved)||0)+reservedBoss);
+  state.mathReservedPayout = reserved;
+  state.mathReservedBossAmount = reservedBoss;
+  return reserved;
+}
+function payMathReservation() {
+  if (!mathPoolEnabled()) return;
+  const amount = Math.max(0, Number(state.mathReservedPayout) || 0);
+  if (!amount) return;
+  const pool = ensureMathPool();
+  const paidBoss = Math.min(amount,Math.max(0,Number(state.mathReservedBossAmount)||Number(pool.bossReserved)||0));
+  pool.reserved = Math.max(0, pool.reserved - amount);
+  pool.bossReserved = Math.max(0,(Number(pool.bossReserved)||0)-paidBoss);
+  pool.bossPaid = Math.max(0,(Number(pool.bossPaid)||0)+paidBoss);
+  pool.paid += amount;
+  state.mathReservedPayout = 0;
+  state.mathReservedBossAmount = 0;
+}
+function settleSimulatedPoolPayout(requestedPayout, stakeOverride=null) {
+  const requested = Math.max(0, Math.round(Number(requestedPayout) || 0));
+  if (!mathPoolEnabled()) return requested;
+  if (!requested) {
+    releaseMathReservation();
+    return 0;
+  }
+  const reservedBossPayout = Math.max(0,Number(state.mathReservedBossAmount)||0);
+  const allowBossBudget = reservedBossPayout > 0;
+  releaseMathReservation();
+  const pool = ensureMathPool();
+  const fundable = fundMathPoolTemporaryDeficit(requested, stakeOverride, allowBossBudget);
+  const paid = Math.max(0, Math.floor(Math.min(fundable, personalPoolPayoutCeiling(stakeOverride, allowBossBudget))));
+  if (paid < requested) recordMathPoolCapHit();
+  const generalAvailableBefore = Math.max(
+    0,
+    (Number(pool.available) || 0) - Math.max(0, Number(pool.bossAvailable) || 0),
+  );
+  const paidBoss = allowBossBudget
+    ? Math.min(
+      paid,
+      Math.max(0, Number(pool.bossAvailable) || 0),
+      Math.max(reservedBossPayout, Math.max(0, paid - generalAvailableBefore)),
+    )
+    : 0;
+  pool.available -= paid;
+  pool.bossAvailable = Math.max(0,(Number(pool.bossAvailable)||0)-paidBoss);
+  pool.bossPaid = Math.max(0,(Number(pool.bossPaid)||0)+paidBoss);
+  pool.paid += paid;
+  return paid;
+}
+function payout() {
+  return certifiedMathEnabled()
+    ? Math.max(0, Math.round(state.certifiedPayout || 0))
+    : Math.round(state.pot * (1 + state.bossAdd));
+}
+
+function scoreDisplaySnapshot() {
+  const multiplier = Math.max(.1, Number(state.bossRoll?.value) || 1 + state.bossAdd);
+  const total = Math.max(0, Math.round(state.pot * multiplier));
+  const exactPot = total / multiplier;
+  let potText = exactPot.toFixed(4);
+  for (let decimals=0; decimals<=4; decimals+=1) {
+    const candidate = exactPot.toFixed(decimals);
+    if (Math.round(Number(candidate) * multiplier) === total) {
+      potText = candidate;
+      break;
+    }
+  }
+  return { multiplier, total, potText };
+}
+
+function mathUniform(wave, lane) {
+  let value = (mathRunSeed ^ Math.imul((wave >>> 0) + 1, 0x9e3779b1) ^ Math.imul((lane >>> 0) + 1, 0x85ebca6b)) >>> 0;
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x7feb352d) >>> 0;
+  value ^= value >>> 15;
+  value = Math.imul(value, 0x846ca68b) >>> 0;
+  value ^= value >>> 16;
+  return (value >>> 0) / 4294967296;
+}
+
+function stochasticRound(value, uniform=gameplayRandom()) {
+  const safe = Math.max(0, Number(value) || 0);
+  const floor = Math.floor(safe);
+  return floor + (uniform < safe - floor ? 1 : 0);
+}
+
+function mathCarryPayoutShape(conditionalPayout, beforePayout, pricedStake, wave, carryUniform=gameplayRandom()) {
+  const meanTarget = Math.max(0, Number(conditionalPayout) || 0);
+  const before = Math.max(0, Number(beforePayout) || 0);
+  const currentStake = Math.max(0, Number(state.mathTotalStake) || 0);
+  const addedStake = Math.max(0, Number(pricedStake) || 0);
+  const previousStake = Math.max(0, currentStake - addedStake);
+  const previousReturn = previousStake > 0 ? before / previousStake : 0;
+  if (paramNumber("mathCarryShapeEnabled", 0) < .5
+      || before <= 0
+      || previousStake <= 0
+      || addedStake <= 0
+      || previousReturn < paramNumber("mathCarryMinReturn", 1)) {
+    return { enabled:false, target:meanTarget, meanTarget, anchorTarget:meanTarget, anchorChance:1, branch:"mean", previousReturn };
+  }
+  const anchorTarget = before + previousReturn * addedStake;
+  const configuredChance = clamp(paramNumber("mathCarryAnchorChance", .70), .05, .95);
+  const anchorChance = meanTarget < anchorTarget
+    ? Math.min(configuredChance, meanTarget / Math.max(1, anchorTarget) * .95)
+    : configuredChance;
+  const alternateTarget = Math.max(0, (meanTarget - anchorChance * anchorTarget) / Math.max(.0001, 1 - anchorChance));
+  const normalizedUniform = clamp(Number(carryUniform) || 0, 0, 1 - Number.EPSILON);
+  const anchorSelected = normalizedUniform < anchorChance;
+  return {
+    enabled:true,
+    target:anchorSelected ? anchorTarget : alternateTarget,
+    meanTarget,
+    anchorTarget,
+    alternateTarget,
+    anchorChance,
+    carryUniform:normalizedUniform,
+    branch:anchorSelected ? "anchor" : alternateTarget >= anchorTarget ? "up" : "down",
+    previousReturn,
+  };
+}
+
+function mathBaseClearChance(wave) {
+  const exact = Number(params[`wave_${wave}_mathClear`]);
+  if (Number.isFinite(exact)) return exact;
+  const key = wave <= 2 ? "mathClearBand1" : wave <= 5 ? "mathClearBand2" : wave <= 10 ? "mathClearBand3" : wave <= 20 ? "mathClearBand4" : "mathClearBand5";
+  return paramNumber(key, .75);
+}
+
+function mathPayoutBandScale(wave) {
+  const key = wave <= 2 ? "mathPayoutBand1" : wave <= 5 ? "mathPayoutBand2" : wave <= 10 ? "mathPayoutBand3" : wave <= 20 ? "mathPayoutBand4" : "mathPayoutBand5";
+  return paramNumber(key, 1) * paramNumber(`wave_${wave}_mathPayout`, 1);
+}
+
+function mathBuildPower(boss=false) {
+  if (!state.towers.length) {
+    const heroRanks = state.hero?.triadRanks || 0;
+    return .72 + Math.min(.28, heroRanks * .22);
+  }
+  const key = boss ? "boss" : "minion";
+  const roleAverage = state.towers.reduce((sum, tower) => {
+    const fallback = MATH_TOWER_POWER[tower.id]?.[key] || 1;
+    const baseClassMul = Number(TOWER_BASE_PARAMS[tower.id]?.minionMul) || 1;
+    const tunedClassMul = Math.max(.01, paramNumber(`tower_${tower.id}_minionMul`, baseClassMul));
+    const power = boss
+      ? paramNumber(`mathTowerBossPower_${tower.id}`, fallback)
+      : fallback * tunedClassMul / baseClassMul;
+    return sum + power;
+  }, 0) / state.towers.length;
+  const slotFactor = .82 + Math.min(3, state.towers.length - 1) * .10;
+  const upgrades = state.towers.reduce((sum, tower) => sum + (tower.upgrades?.length || 0), 0);
+  const upgradeFactor = 1 + Math.min(.30, upgrades * .02);
+  const coreUpgrades = state.towers.reduce((sum, tower) => sum + (tower.upgrades || []).filter(name => CORE_UPGRADE_NAMES.has(name) || !!UPGRADE_REQUIREMENTS[name]).length, 0);
+  const coreFactor = 1 + Math.min(.35, coreUpgrades * paramNumber("mathCoreRiskBonus", .06));
+  const heroUpgradeFactor = 1 + Math.min(.18, (state.hero?.upgrades?.length || 0) * .018);
+  const matchingTowers = state.hero ? state.towers.filter(tower => towerAttr(tower) === state.hero.attrKey).length : 0;
+  const resonanceFactor = 1 + matchingTowers * .02 + (state.hero?.sameAttrBonus || 0) / 500;
+  const heroPower = state.hero ? paramNumber(`mathHeroPower_${state.hero.attrKey}`, 1) : 1;
+  return roleAverage * slotFactor * upgradeFactor * coreFactor * heroUpgradeFactor * resonanceFactor * heroPower;
+}
+
+function mathAttributePower() {
+  const profile = enemyAttributeProfile(state.currentWaveAttr);
+  const sources = [];
+  if (state.hero) {
+    sources.push({ attr:state.hero.attrKey || "neutral", weight:1 + Math.min(1.5, (state.hero.upgrades?.length || 0) * .12) });
+  }
+  state.towers.forEach(tower => {
+    const upgrades = tower.upgrades?.length || 0;
+    const hasCore = (tower.upgrades || []).some(name => CORE_UPGRADE_NAMES.has(name) || !!UPGRADE_REQUIREMENTS[name]);
+    sources.push({ attr:towerAttr(tower), weight:1.15 + Math.min(2, upgrades * .18) + (hasCore ? .35 : 0) });
+  });
+  if (!sources.length) return 1;
+  const totalWeight = sources.reduce((sum, source) => sum + source.weight, 0) || 1;
+  return sources.reduce((sum, source) => sum + (Number(profile[source.attr]) || 1) * source.weight, 0) / totalWeight;
+}
+
+function mathRoleProfile(boss=false) {
+  const roleInvestment = role => state.towers
+    .filter(tower => TOWER_ROLE[tower.id] === role)
+    .reduce((sum, tower) => sum + 1 + Math.min(2, (tower.upgrades?.length || 0) * .25), 0);
+  const singleInvestment = roleInvestment("single");
+  const areaInvestment = roleInvestment("area");
+  const controlInvestment = roleInvestment("control");
+  const total = singleInvestment + areaInvestment + controlInvestment;
+  const singleShare = total > 0 ? singleInvestment / total : 1 / 3;
+  const areaShare = total > 0 ? areaInvestment / total : 1 / 3;
+  const controlShare = total > 0 ? controlInvestment / total : 1 / 3;
+  return { buildPower:mathBuildPower(boss), singleInvestment, areaInvestment, controlInvestment, singleShare, areaShare, controlShare };
+}
+
+function mathClearChance(wave, boss=false, difficulty=null, bossOrdinal=null) {
+  if (wave === 1 && !boss) return paramNumber("mathFirstWaveClearChance", .985);
+  const seenBefore = boss && Number.isFinite(Number(bossOrdinal))
+    ? Math.max(0, Number(bossOrdinal) - 1)
+    : state.bossSeen;
+  const firstBoss = boss && seenBefore === 0;
+  const base = boss
+    ? (firstBoss
+      ? paramNumber("mathBossFirstBaseChance", .995)
+      : paramNumber("mathBossLaterBaseChance", .905))
+    : mathBaseClearChance(wave);
+  const buildInfluence = boss
+    ? (firstBoss
+      ? paramNumber("mathBossBuildInfluence", .8)
+      : paramNumber("mathBossLaterBuildInfluence", .45))
+    : paramNumber("mathMinionBuildInfluence", 0);
+  const buildShift = (mathBuildPower(boss) - 1) * buildInfluence;
+  const attributeInfluence = boss
+    ? paramNumber("mathAttributeBossInfluence", .34)
+    : paramNumber("mathAttributeMinionInfluence", .24);
+  const attributeShift = (mathAttributePower() - 1) * attributeInfluence;
+  const hpRatio = clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1);
+  const hpInfluence = boss
+    ? (firstBoss
+      ? paramNumber("mathBossHpInfluence", paramNumber("mathHpInfluence", .9))
+      : paramNumber("mathBossLaterHpInfluence", .3))
+    : paramNumber("mathMinionHpInfluence", 0);
+  const hpShift = (hpRatio - paramNumber("mathHpReference", .85)) * hpInfluence;
+  const areaCount = boss ? state.towers.filter(tower => TOWER_ROLE[tower.id] === "area").length : 0;
+  const singleCount = boss ? state.towers.filter(tower => TOWER_ROLE[tower.id] === "single").length : 0;
+  const controlCount = boss ? state.towers.filter(tower => TOWER_ROLE[tower.id] === "control").length : 0;
+  const areaRiskShift = boss ? -Math.max(0, areaCount - singleCount) * paramNumber("mathAreaBossRiskDiscount", .05) : 0;
+  const roleRiskShift = boss
+    ? singleCount * paramNumber("mathSingleTowerChanceShift", 0)
+      + areaCount * paramNumber("mathAreaTowerChanceShift", 0)
+      + controlCount * paramNumber("mathControlTowerChanceShift", 0)
+    : 0;
+  const difficultyShift = boss ? ({ easy:.08, normal:0, hard:-.08, brutal:-.16 }[difficulty?.id] || 0) : 0;
+  const ordinalShift = boss ? -Math.max(0, seenBefore - 1) * paramNumber("mathBossOrdinalPenalty", .25) : 0;
+  const firstBossDelay = firstBoss
+    ? Math.max(0, wave - paramNumber("bossFirstMinWave", 3))
+    : 0;
+  const firstBossDelayShift = -firstBossDelay * firstBossDelay * paramNumber("mathFirstBossDelayPenalty", .06);
+  const waveBossCorrection = boss ? paramNumber(`wave_${wave}_mathBossCorrection`, 0) : 0;
+  const raw = base + buildShift + attributeShift + hpShift + areaRiskShift + roleRiskShift + difficultyShift + ordinalShift + firstBossDelayShift + waveBossCorrection - (boss ? paramNumber("mathBossPenalty", .28) : 0);
+  const min = boss
+    ? (firstBoss
+      ? paramNumber("mathBossFirstMinClearChance", paramNumber("mathMinClearChance", .18))
+      : paramNumber("mathBossLaterMinClearChance", paramNumber("mathMinClearChance", .18)))
+    : paramNumber("mathMinClearChance", .18);
+  const max = Math.max(min, paramNumber("mathMaxClearChance", .96));
+  return Math.round(clamp(raw, min, max) * 10000) / 10000;
+}
+
+function mathWaveRewardRoll(wave) {
+  const weighted = WAVE_REWARD_TIERS.map(tier => ({
+    tier,
+    weight:Math.max(0, tier.id === "hot"
+      ? mathPoolDepthValue(paramNumber(tier.weightKey,0), paramNumber("mathPoolHotWaveDeepWeight", 8), wave)
+      : paramNumber(tier.weightKey,0)),
+    multiplier:Math.max(0,paramNumber(tier.mulKey,0)),
+  }));
+  const totalWeight = weighted.reduce((sum,item) => sum+item.weight,0) || 1;
+  const expectedMultiplier = weighted.reduce((sum,item) => sum+item.weight*item.multiplier,0)/totalWeight || 1;
+  let cursor = mathUniform(wave,4)*totalWeight;
+  let selected = weighted[0];
+  for (const item of weighted) {
+    cursor -= item.weight;
+    if (cursor <= 0) { selected = item; break; }
+  }
+  return {
+    id:selected.tier.id,label:selected.tier.label,multiplier:selected.multiplier,
+    factor:selected.multiplier/expectedMultiplier,expectedMultiplier,
+  };
+}
+
+function expectedBossAdd(rewardMul) {
+  const weights = [params.bossLowWeight,params.bossMidWeight,params.bossHighWeight].map(value => Math.max(0,Number(value)||0));
+  const mids = [(params.bossLowMin+params.bossLowMax)/2,(params.bossMidMin+params.bossMidMax)/2,(params.bossHighMin+params.bossHighMax)/2];
+  const total = weights.reduce((sum,value) => sum+value,0) || 1;
+  return weights.reduce((sum,weight,index) => sum+weight*Math.max(1,mids[index]*rewardMul),0)/total;
+}
+
+function expectedEncounterBossAdd(ordinal) {
+  const tiers = ["Small", "Medium", "Large", "Jackpot"];
+  const weights = tiers.map(tier => Math.max(0, Number(params[`encounterBoss${tier}Weight`]) || 0));
+  const total = weights.reduce((sum, weight) => sum + weight, 0) || 1;
+  const growth = Math.min(params.encounterBossDepthGrowthCap, 1 + (ordinal - 1) * params.encounterBossDepthGrowth);
+  return weights.reduce((sum, weight, index) => {
+    const tier = tiers[index];
+    const midpoint = (params[`encounterBoss${tier}Min`] + params[`encounterBoss${tier}Max`]) / 2;
+    return sum + weight * Math.max(.1, midpoint * growth);
+  }, 0) / total;
+}
+
+function createMathTicket(wave, bet, boss=false, difficulty=null) {
+  const bossOrdinal = boss ? state.bossSeen + 1 : 0;
+  const before = Math.max(0, Number(state.certifiedPayout) || 0);
+  const targetRtp = paramNumber("mathTargetRtp", .95);
+  const pricedStake = Math.max(0, Number(state.mathPendingStake) || Number(bet) || 0);
+  const entryCredit = Math.max(0, Number(state.mathPendingCredit) || pricedStake * targetRtp);
+  state.mathPendingStake = 0;
+  state.mathPendingCredit = 0;
+  const clearChance = mathClearChance(wave, boss, difficulty, bossOrdinal);
+  const attributePower = mathAttributePower();
+  const waveReward = mathWaveRewardRoll(wave);
+  let rolledAdd = 0;
+  let bossRewardFactor = 1;
+  if (boss) {
+    if (ENCOUNTER_DRAFT_PROTOTYPE) {
+      rolledAdd = rollEncounterBossAdd(bossOrdinal);
+      bossRewardFactor = rolledAdd / Math.max(.1, expectedEncounterBossAdd(bossOrdinal));
+    } else {
+      const rewardMul = state.bossSeen === 0 ? params.bossFirstRewardMul : params.bossLaterRewardMul;
+      rolledAdd = Math.round(Math.max(1,bossMultiplier()*rewardMul)*10)/10;
+      bossRewardFactor = rolledAdd/Math.max(.1,expectedBossAdd(rewardMul));
+    }
+  }
+  const rewardFactor = waveReward.factor*bossRewardFactor;
+  const roleProfile = mathRoleProfile(boss);
+  const { singleInvestment, areaInvestment, controlInvestment, singleShare, areaShare, controlShare, buildPower } = roleProfile;
+  const payoutRoleScale = mathPoolEnabled() ? 1 : Math.max(.5, 1
+    + (boss ? singleInvestment * paramNumber("mathSingleTowerPayoutShift", 0) : 0)
+    + (boss ? areaInvestment * paramNumber("mathAreaTowerPayoutShift", 0) : 0)
+    + (boss ? controlInvestment * paramNumber("mathControlTowerPayoutShift", 0) : 0)
+    + (singleShare - 1 / 3) * paramNumber("mathSingleSharePayoutSlope", 0)
+    + (areaShare - 1 / 3) * paramNumber("mathAreaSharePayoutSlope", 0)
+    + (controlShare - 1 / 3) * paramNumber("mathControlSharePayoutSlope", 0));
+  const payoutScale = mathPoolEnabled()
+    ? 1
+    : paramNumber("mathPayoutCalibration", 1) * mathPayoutBandScale(wave) * payoutRoleScale;
+  const expectedAfter = before + entryCredit * payoutScale * rewardFactor;
+  const bossPayoutChanceKey = bossOrdinal === 1
+    ? "mathBossPayoutChanceScale"
+    : wave <= 10
+      ? "mathBossPayoutChanceMidScale"
+      : wave <= 20
+        ? "mathBossPayoutChanceDeepScale"
+        : wave <= 27 ? "mathBossPayoutChanceUltraScale" : "mathBossPayoutChanceTailScale";
+  const payoutChanceScale = paramNumber(boss ? bossPayoutChanceKey : "mathMinionPayoutChanceScale", 1);
+  const pricingClearChance = clamp(clearChance * payoutChanceScale, .0001, 4);
+  const conditionalPayoutExact = expectedAfter / pricingClearChance;
+  const payoutUniform = mathUniform(wave, 1);
+  const baseUncappedTargetPayout = stochasticRound(conditionalPayoutExact, payoutUniform);
+  const bossDisplayMultiplier = Math.max(.1, 1 + state.bossAdd + rolledAdd);
+  const bossTailEligible = boss || state.bossAdd > 0;
+  const strongBossWinChance = mathPoolDepthValue(
+    paramNumber("mathPoolStrongWinChance", .55),
+    paramNumber("mathPoolStrongWinDeepChance", .95),
+    wave,
+  );
+  const strongBossPayout = bossTailEligible && mathUniform(wave, 71) < strongBossWinChance;
+  const strongHotWavePayout = !bossTailEligible && waveReward.id === "hot";
+  const totalExposureStake = Math.max(pricedStake, Number(state.mathTotalStake) || 0);
+  const strongBossFloorMul = mathPoolDepthValue(
+    paramNumber("mathPoolStrongWinEarlyFloorMul", 1.35),
+    paramNumber("mathPoolStrongWinFloorMul", 3),
+    wave,
+  );
+  const strongBossFloor = totalExposureStake * Math.max(
+    strongBossFloorMul,
+    bossDisplayMultiplier,
+  );
+  const weakBossCap = totalExposureStake * paramNumber("mathPoolWeakBossCapMul", .95);
+  const hotWaveFloorMul = mathPoolDepthValue(
+    paramNumber("mathPoolHotWaveEarlyFloorMul", 1.25),
+    paramNumber("mathPoolHotWaveFloorMul", 3),
+    wave,
+  );
+  const hotWaveFloor = totalExposureStake * hotWaveFloorMul;
+  const payoutFloor = strongBossPayout
+    ? strongBossFloor
+    : strongHotWavePayout ? hotWaveFloor : 0;
+  const uncappedTargetPayout = bossTailEligible
+    ? strongBossPayout
+      ? Math.max(baseUncappedTargetPayout, strongBossFloor)
+      : Math.min(baseUncappedTargetPayout, weakBossCap)
+    : strongHotWavePayout
+      ? Math.max(baseUncappedTargetPayout, payoutFloor)
+      : baseUncappedTargetPayout;
+  const bossReleaseRate = bossTailEligible
+    ? strongBossPayout
+      ? bossOrdinal === 1
+        ? mathPoolDepthValue(
+          paramNumber("mathPoolFirstBossReleaseRate", .38),
+          paramNumber("mathPoolLaterBossReleaseRate", .62),
+          wave,
+        )
+        : mathPoolDepthValue(
+          paramNumber("mathPoolLaterBossReleaseRate", .62),
+          paramNumber("mathPoolBossReleaseRate", 1),
+          wave,
+        )
+      : paramNumber("mathPoolWeakBossReleaseRate", .08)
+    : strongHotWavePayout
+      ? mathPoolDepthValue(
+        paramNumber("mathPoolHotWaveEarlyReleaseRate", .16),
+        paramNumber("mathPoolHotWaveReleaseRate", 1),
+        wave,
+      )
+      : null;
+  const bossBudgetEligible = boss;
+  const poolFundedTargetPayout = mathPoolEnabled()
+    ? personalPoolPayoutAmount(uncappedTargetPayout, pricedStake, bossBudgetEligible, bossReleaseRate)
+    : uncappedTargetPayout;
+  const firstBossPayoutCap = Math.max(before, totalExposureStake * paramNumber("mathPoolFirstBossOutcomeCapMul", 1.5));
+  const fundedMeanTargetPayout = bossOrdinal === 1
+    ? Math.min(poolFundedTargetPayout, firstBossPayoutCap)
+    : poolFundedTargetPayout;
+  const carryShape = mathCarryPayoutShape(fundedMeanTargetPayout, before, pricedStake, wave);
+  const targetPayout = stochasticRound(carryShape.target, mathUniform(wave, 82));
+  if (mathPoolEnabled() && fundedMeanTargetPayout < uncappedTargetPayout) recordMathPoolCapHit();
+  let bossAdd = 0;
+  if (boss) {
+    const currentMultiplier = 1 + state.bossAdd;
+    const maxAffordableAdd = state.pot > 0 ? Math.max(0, targetPayout / state.pot - currentMultiplier) : rolledAdd;
+    bossAdd = Math.round(Math.min(rolledAdd, maxAffordableAdd) * 10) / 10;
+  }
+  const targetMultiplier = Math.max(.1, 1 + state.bossAdd + bossAdd);
+  const targetPot = Math.max(0, targetPayout / targetMultiplier);
+  const ticket = {
+    id:state.mathLedger.length + 1, wave, bet, pricedStake, entryCredit, unpricedCredit:0, rerollStake:0, rerollCredits:[], boss, bossOrdinal, bossDifficulty:difficulty?.id || null,
+    buildPower, attributePower, waveAttribute:state.currentWaveAttr || "neutral", hpRatio:clamp((Number(state.hp) || 0) / Math.max(1, paramNumber("baseHp", 1000)), 0, 1), clearChance, pricingClearChance, payoutChanceScale, before, targetRtp, payoutScale, payoutRoleScale,
+    singleShare,areaShare,controlShare,
+    expectedAfter, fairValue:expectedAfter, conditionalPayoutExact, uncappedTargetPayout, targetPayout, targetPot, targetMultiplier, payoutUniform,
+    carryShapeEnabled:carryShape.enabled,carryShapeBranch:carryShape.branch,carryMeanTarget:carryShape.meanTarget,
+    carryAnchorTarget:carryShape.anchorTarget,carryAlternateTarget:carryShape.alternateTarget || carryShape.meanTarget,
+    carryAnchorChance:carryShape.anchorChance,carryUniform:carryShape.carryUniform,carryPreviousReturn:carryShape.previousReturn,
+    fundedMeanTargetPayout,
+    waveRewardTier:waveReward.id,waveRewardMultiplier:waveReward.multiplier,waveRewardFactor:waveReward.factor,
+    bossRewardFactor,rewardFactor,rolledBossAdd:rolledAdd,
+    rewardBudget:Math.max(0, targetPot - state.pot), bossAdd, bossTailEligible, strongBossPayout, strongBossWinChance, strongHotWavePayout, bossReleaseRate, payoutFloor,
+    depthReleaseProgress:mathPoolDepthProgress(wave),strongBossFloorMul,hotWaveFloorMul,firstBossPayoutCap,bossBudgetEligible,
+    identityError:Math.abs(pricingClearChance * conditionalPayoutExact - expectedAfter),
+    settled:false, result:"pending", reprices:[], displayFloorLift:0,
+  };
+  state.mathTicket = ticket;
+  state.mathLedger.push(ticket);
+  return ticket;
+}
+
+function settleMathTicket() {
+  const ticket = state.mathTicket;
+  if (!certifiedMathEnabled() || !ticket || ticket.settled) return;
+  const reservedPayout = reserveMathPayout(ticket.targetPayout, ticket.pricedStake, ticket.bossBudgetEligible);
+  state.certifiedPayout = reservedPayout;
+  const targetMultiplier = Math.max(.1, Number(ticket.targetMultiplier) || 1 + state.bossAdd + (ticket.bossAdd || 0));
+  state.pot = Math.max(0, reservedPayout / targetMultiplier);
+  ticket.settled = true;
+  ticket.result = "clear";
+  ticket.poolCapped = reservedPayout < ticket.targetPayout;
+  ticket.poolRecycled = Math.max(0, reservedPayout - Math.min(ticket.targetPayout, reservedPayout));
+  ticket.reservedPayout = reservedPayout;
+  ticket.actualPayout = payout();
+}
+
+function repriceActiveMathTicket(reason="upgrade") {
+  const ticket = state.mathTicket;
+  if (!certifiedMathEnabled() || !ticket || ticket.settled || !state.waveActive) return;
+  if (paramNumber("mathCheckpointRepriceEnabled", 1) < .5) return;
+  const oldChance = clamp(Number(ticket.pricingClearChance) || Number(ticket.clearChance) || 1, .0001, 4);
+  const fullWaveChance = mathClearChance(ticket.wave, ticket.boss, ticket.bossDifficulty ? { id:ticket.bossDifficulty } : null, ticket.bossOrdinal);
+  const roleProfile = mathRoleProfile(ticket.boss);
+  const fullWavePricingChance = clamp(fullWaveChance * (Number(ticket.payoutChanceScale) || 1), .0001, 4);
+  const remainingUnits = state.monsters.filter(monster => monster.hp > 0).length
+    + Math.max(0, Number(state.spawn?.remain) || 0)
+    + Math.max(0, Number(state.spawn?.elites) || 0)
+    + (state.spawn?.boss ? 1 : 0);
+  const initialUnits = Math.max(1, Number(ticket.initialUnits) || remainingUnits || 1);
+  const remainingFraction = clamp(remainingUnits / initialUnits, .05, 1);
+  const rawNewChance = Math.pow(fullWavePricingChance, remainingFraction);
+  const minChance = clamp(paramNumber("mathCheckpointMinChance", .05), .01, .99);
+  const newChance = clamp(rawNewChance, minChance, 4);
+  const newCredit = Math.max(0, Number(ticket.unpricedCredit) || 0);
+  const fairValueBefore = Math.max(0, Number(ticket.fundedMeanTargetPayout) || Number(ticket.targetPayout) || 0) * oldChance;
+  const fairValue = fairValueBefore + newCredit * (Number(ticket.payoutScale) || 1) * (Number(ticket.rewardFactor) || 1);
+  const exactTarget = fairValue / newChance;
+  const targetMultiplier = Math.max(.1, Number(ticket.targetMultiplier) || 1);
+  const currentDisplayFloor = Math.max(0, state.pot * targetMultiplier);
+  const roundedMeanTarget = stochasticRound(exactTarget, mathUniform(ticket.wave, 20 + ticket.reprices.length));
+  const proposedMeanTarget = Math.max(currentDisplayFloor, roundedMeanTarget, Number(ticket.payoutFloor) || 0);
+  const fundedMeanTargetPayout = mathPoolEnabled()
+    ? Math.max(0, Math.floor(Math.min(proposedMeanTarget, personalPoolPayoutCeiling(ticket.pricedStake))))
+    : proposedMeanTarget;
+  const carryShape = mathCarryPayoutShape(
+    fundedMeanTargetPayout,
+    ticket.before,
+    ticket.pricedStake,
+    ticket.wave,
+    ticket.carryUniform,
+  );
+  const proposedTarget = stochasticRound(carryShape.target, mathUniform(ticket.wave, 30 + ticket.reprices.length));
+  const targetPayout = mathPoolEnabled()
+    ? mathPoolTemporaryDeficitEnabled()
+      ? Math.max(0, Math.floor(Math.min(proposedTarget, mathPoolExposureCap(ticket.pricedStake))))
+      : Math.max(0, Math.floor(Math.min(proposedTarget, personalPoolPayoutCeiling(ticket.pricedStake))))
+    : proposedTarget;
+  if (mathPoolEnabled() && fundedMeanTargetPayout < proposedMeanTarget) recordMathPoolCapHit();
+  const targetPot = Math.max(0, targetPayout / targetMultiplier);
+  const displayTarget = targetPayout;
+  ticket.displayFloorLift += Math.max(0, fundedMeanTargetPayout - roundedMeanTarget);
+  ticket.entryCredit += newCredit;
+  ticket.unpricedCredit = 0;
+  ticket.clearChance = fullWaveChance;
+  ticket.pricingClearChance = newChance;
+  ticket.buildPower = roleProfile.buildPower;
+  ticket.singleShare = roleProfile.singleShare;
+  ticket.areaShare = roleProfile.areaShare;
+  ticket.controlShare = roleProfile.controlShare;
+  ticket.expectedAfter = fairValue;
+  ticket.fairValue = fairValue;
+  ticket.conditionalPayoutExact = exactTarget;
+  ticket.carryShapeEnabled = carryShape.enabled;
+  ticket.carryShapeBranch = carryShape.branch;
+  ticket.carryMeanTarget = carryShape.meanTarget;
+  ticket.carryAnchorTarget = carryShape.anchorTarget;
+  ticket.carryAlternateTarget = carryShape.alternateTarget || carryShape.meanTarget;
+  ticket.carryAnchorChance = carryShape.anchorChance;
+  ticket.carryUniform = carryShape.carryUniform;
+  ticket.carryPreviousReturn = carryShape.previousReturn;
+  ticket.fundedMeanTargetPayout = fundedMeanTargetPayout;
+  ticket.targetPayout = targetPayout;
+  ticket.targetPot = targetPot;
+  ticket.rewardBudget = Math.max(0, targetPot - state.pot);
+  ticket.reprices.push({ reason, oldChance, newChance, fullWaveChance, fullWavePricingChance, remainingFraction, addedCredit:newCredit, fairValue, targetPayout:displayTarget, potAtCheckpoint:state.pot });
+  if (state.waveReward) {
+    state.waveReward.budget = Math.max(state.waveReward.budget || 0, state.pot + ticket.rewardBudget);
+    state.waveReward.remaining = ticket.rewardBudget;
+  }
+}
+
+function failMathTicket() {
+  const ticket = state.mathTicket;
+  if (!ticket || ticket.settled) return;
+  releaseMathReservation();
+  state.certifiedPayout = 0;
+  ticket.settled = true;
+  ticket.result = "fail";
+  ticket.actualPayout = 0;
+}
+
+function pickParamTier(tiers, wave=null) {
+  const weights = Object.fromEntries(tiers.map(tier => [tier.id, Math.max(0,
+    wave !== null && tier.id === "hot"
+      ? mathPoolDepthValue(paramNumber(tier.weightKey, 0), paramNumber("mathPoolHotWaveDeepWeight", 8), wave)
+      : paramNumber(tier.weightKey, 0),
+  )]));
+  if (!Object.values(weights).some(weight => weight > 0)) return tiers[0];
+  const id = pickWeighted(weights);
+  return tiers.find(tier => tier.id === id) || tiers[0];
+}
+
+function waveRewardDepthMul(wave) {
+  if (wave < 11) return 1;
+  return Math.min(params.deepMoneyCap, params.deepMoneyBase + (wave - 11) * params.deepMoneyRamp);
+}
+
+function rewardFundingBet(wave) {
+  const base = BET_STEPS[state.baseBetIndex];
+  const chargedBossMul = bossBetMultiplier();
+  const fundingRate = clamp(paramNumber("postBossRewardFunding", .45), 0, 1);
+  const fundedBossMul = 1 + (chargedBossMul - 1) * fundingRate;
+  const onboardingMul = state.bossSeen === 0 ? Math.max(0, paramNumber("preBossRewardMul", 1)) : 1;
+  return base * Math.max(depthBetFloor(wave), fundedBossMul) * onboardingMul;
+}
+
+function balancedRewardRound(value) {
+  const safe = Math.max(0, Number(value) || 0);
+  const withCarry = safe + state.rewardRoundingCarry;
+  const whole = Math.floor(withCarry);
+  state.rewardRoundingCarry = withCarry - whole;
+  return whole;
+}
+
+function rollWaveReward(wave, bet) {
+  const tier = pickParamTier(WAVE_REWARD_TIERS, wave);
+  const multiplier = Math.max(0, paramNumber(tier.mulKey, 0));
+  const budget = balancedRewardRound(bet * multiplier * params.moneyMul * waveRewardDepthMul(wave));
+  return { id:tier.id, label:tier.label, multiplier, budget, remaining:budget, weightRemaining:0 };
+}
+
+function rollBossDifficulty(firstBoss=false) {
+  let tier = pickParamTier(BOSS_DIFFICULTY_TIERS);
+  if (firstBoss) {
+    const weights = {
+      easy:paramNumber("bossFirstDiffEasyWeight", 50),
+      normal:paramNumber("bossFirstDiffNormalWeight", 38),
+      hard:paramNumber("bossFirstDiffHardWeight", 10),
+      brutal:paramNumber("bossFirstDiffBrutalWeight", 2),
+    };
+    const id = Object.values(weights).some(weight => weight > 0) ? pickWeighted(weights) : "easy";
+    tier = BOSS_DIFFICULTY_TIERS.find(item => item.id === id) || BOSS_DIFFICULTY_TIERS[0];
+  }
+  const compression = firstBoss ? clamp(paramNumber("bossFirstDifficultyCompression", .65), 0, 1) : 1;
+  const compressed = value => 1 + (value - 1) * compression;
+  return {
+    id:tier.id,
+    label:tier.label,
+    marks:tier.marks,
+    hpMul:compressed(paramNumber(tier.hpKey, 1)),
+    atkMul:compressed(paramNumber(tier.atkKey, 1)),
+    speedMul:compressed(paramNumber(tier.speedKey, 1)),
+    firstBoss,
+  };
+}
+
+function normalRewardWeight(kind, band) {
+  const base = MONSTERS[kind];
+  const min = paramNumber(`monster_${kind}_moneyMin`, base.money[0]);
+  const max = paramNumber(`monster_${kind}_moneyMax`, base.money[1]);
+  const drop = clamp((band.drop[kind] || 0) * params.dropChanceMul, 0, 1);
+  return Math.max(.01, ((min + max) / 2) * drop);
+}
+
+function eliteRewardWeight(index) {
+  const base = ELITES[index];
+  const tuneId = `elite_${index + 1}`;
+  const min = paramNumber(`monster_${tuneId}_moneyMin`, base.money[0]);
+  const max = paramNumber(`monster_${tuneId}_moneyMax`, base.money[1]);
+  return Math.max(.01, ((min + max) / 2) * params.eliteMoneyMul);
+}
+
+function prepareNextBossPreview() {
+  const nextWave = state.wave + 1;
+  if (ENCOUNTER_DRAFT_PROTOTYPE) {
+    if (prototypeRunComplete() || state.nextBossWave === nextWave) return;
+    const remaining = state.biomeBossAt - state.biomeWave;
+    state.nextBoss = remaining <= 1;
+    state.nextBossWave = nextWave;
+    state.bossDanger = remaining <= 1
+      ? Number(pickWeighted({ 1:20, 2:50, 3:30 }))
+      : remaining <= 3
+        ? Number(pickWeighted({ 1:48, 2:37, 3:15 }))
+        : remaining <= 5 && fxRandom() < .42 ? Math.floor(1 + fxRandom() * 2) : 0;
+    return;
+  }
+  if (nextWave > 30 || state.nextBossWave === nextWave) return;
+  const info = waveInfoFor(nextWave);
+  state.bossDanger = rollBossDangerLevel(nextWave, info);
+  state.nextBoss = rollBossForWave(nextWave, info);
+  state.nextBossWave = nextWave;
+}
+
+function consumeBossPreview(wave, info) {
+  if (ENCOUNTER_DRAFT_PROTOTYPE) {
+    const planned = state.nextBossWave === wave ? state.nextBoss : state.biomeWave + 1 >= state.biomeBossAt;
+    state.nextBoss = false;
+    state.nextBossWave = 0;
+    state.bossDanger = 0;
+    if (planned) state.bossRolled = Math.max(state.bossRolled, state.bossSeen + 1);
+    return planned;
+  }
+  if (state.nextBossWave === wave) {
+    const planned = state.nextBoss;
+    state.nextBoss = false;
+    state.nextBossWave = 0;
+    state.bossDanger = 0;
+    return planned;
+  }
+  return rollBossForWave(wave, info);
+}
+
+function applyBiomePresentation(showTransition=false) {
+  if (HEADLESS_SIM || !state) return;
+  const biome = currentBiomeConfig();
+  artImage(`assets/ui/encounter/boss-card-${biome.attr}.png`);
+  artImage(`assets/enemies-v3/${BOSS_VARIANTS[biome.attr].sprite}`);
+  ui.phone.dataset.biome = biome.id;
+  ui.phone.style.setProperty("--biome-rgb", biome.rgb);
+  ui.phone.style.setProperty("--biome-accent", biome.accent);
+  if (ui.biomeName) ui.biomeName.textContent = biome.short;
+  if (ui.biomeAttrCanvas) renderAttributeCanvas(ui.biomeAttrCanvas, biome.attr, false);
+  if (ui.biomeRoute) {
+    ui.biomeRoute.innerHTML = state.biomeOrder.map((biomeId, index) => {
+      const status = index < state.bossSeen ? "cleared" : index === state.biomeIndex ? "current" : "locked";
+      const boss = BOSS_VARIANTS[biomeId] || BOSS_VARIANTS.neutral;
+      return `<span class="${status}" aria-hidden="true"><img src="assets/enemies-v3/${boss.sprite}" alt=""></span>`;
+    }).join("");
+    ui.biomeRoute.setAttribute("aria-label", `已擊破 ${state.bossSeen} / ${PROTOTYPE_BOSS_TOTAL} 名 BOSS`);
+  }
+  if (!showTransition || !ui.biomeTransition) return;
+  clearTimeout(biomeTransitionTimer);
+  state.biomeTransitionToken += 1;
+  if (ui.biomeTransitionName) ui.biomeTransitionName.textContent = biome.name;
+  if (ui.biomeTransitionCanvas) renderAttributeCanvas(ui.biomeTransitionCanvas, biome.attr, false);
+  ui.biomeTransition.classList.remove("hidden", "play");
+  void ui.biomeTransition.offsetWidth;
+  ui.biomeTransition.classList.add("play");
+  const token = state.biomeTransitionToken;
+  biomeTransitionTimer = setTimeout(() => {
+    if (!state || token !== state.biomeTransitionToken) return;
+    ui.biomeTransition.classList.add("hidden");
+    ui.biomeTransition.classList.remove("play");
+  }, 1700);
+}
+
+function advancePrototypeBiome() {
+  if (!ENCOUNTER_DRAFT_PROTOTYPE || prototypeRunComplete()) return false;
+  const repaired = Math.min(params.baseHp - state.hp, Math.round(params.baseHp * PROTOTYPE_BOSS_REPAIR));
+  state.hp += Math.max(0, repaired);
+  if (state.waveSummary) state.waveSummary.repair = Math.max(0, repaired);
+  state.biomeIndex = Math.min(PROTOTYPE_BOSS_TOTAL - 1, state.bossSeen);
+  state.biomeWave = 0;
+  state.biomeBossAt = rollPrototypeBossEncounter();
+  state.currentEncounter = null;
+  state.currentWaveAttr = currentBiomeConfig().attr;
+  state.nextBoss = false;
+  state.nextBossWave = 0;
+  state.bossDanger = 0;
+  applyBiomePresentation(true);
+  prepareNextBossPreview();
+  return true;
+}
+
+function bossChanceForWave(wave, info) {
+  if (state.bossRolled <= 0) {
+    const firstWave = params.bossFirstMinWave;
+    if (wave < firstWave) return 0;
+    return Math.min(
+      paramNumber("bossFirstChanceCap", 68),
+      params.bossFirstChance + Math.max(0, wave - firstWave) * params.bossFirstChanceInc,
+    );
+  }
+  if (state.bossCd > 0) return 0;
+  return Math.min(
+    params.bossChanceCap,
+    Math.max(0, info.bossBase) + (state.bossWeight + Math.max(0, info.bossInc)) * params.bossChanceMul,
+  );
+}
+
+function rollBossDangerLevel(wave, info) {
+  const chance = bossChanceForWave(wave, info) / 100;
+  const noisyRisk = chance + (fxRandom() - .5) * .22;
+  if (noisyRisk >= .62) return 3;
+  if (noisyRisk >= .43) return 2;
+  if (noisyRisk >= .22) return 1;
+  return 0;
+}
+
+function rollBossForWave(wave, info) {
+  if (state.bossRolled <= 0) {
+    const firstWave = params.bossFirstMinWave;
+    if (wave < firstWave) return false;
+    const chance = Math.min(
+      paramNumber("bossFirstChanceCap", 68),
+      params.bossFirstChance + Math.max(0, wave - firstWave) * params.bossFirstChanceInc,
+    );
+    const ok = gameplayRandom() * 100 < chance;
+    if (ok) {
+      state.bossRolled += 1;
+      state.bossWeight = 0;
+      state.bossCd = info.bossCd;
+    }
+    return ok;
+  }
+  if (state.bossCd > 0) {
+    if (state.bossCd > 0) state.bossCd -= 1;
+    return false;
+  }
+  state.bossWeight += Math.max(0, info.bossInc);
+  const chance = Math.min(
+    params.bossChanceCap,
+    Math.max(0, info.bossBase) + state.bossWeight * params.bossChanceMul,
+  );
+  const ok = gameplayRandom() * 100 < chance;
+  if (ok) {
+    state.bossRolled += 1;
+    state.bossWeight = 0;
+    state.bossCd = info.bossCd;
+  }
+  return ok;
+}
+
+function rarityLabel(rarity) {
+  return {
+    common: "普通",
+    tower: "特色",
+    core: "核心",
+    deepen: "深化",
+    synergy: "連動",
+    newTower: "新砲台",
+    hero: "角色",
+    heroUpgrade: "角色強化",
+    heroBuff: "角色 BUFF",
+  }[rarity] || "普通";
+}
+
+function choiceCardType(choice, rarity, dimension) {
+  if (rarity === "hero") return "hero-pick";
+  if (rarity === "newTower") return "new-tower";
+  if (rarity === "heroBuff") return "hero-skill";
+  if (rarity === "heroUpgrade") return "hero-upgrade";
+  if (dimension === "synergy" || rarity === "synergy") return "tower-synergy";
+  if (dimension === "core" || rarity === "core" || rarity === "deepen") return "tower-core";
+  return "tower-stat";
+}
+
+const CHOICE_CARD_TYPES = {
+  "hero-pick": { label:"角色", mark:"★" },
+  "hero-upgrade": { label:"角色升級", mark:"↑" },
+  "new-tower": { label:"新武器", mark:"＋" },
+  "tower-stat": { label:"基礎強化", mark:"▲" },
+  "tower-core": { label:"武器進化", mark:"◆" },
+  "tower-synergy": { label:"屬性連動", mark:"∞" },
+  "hero-skill": { label:"角色技能", mark:"✦" },
+};
+const TOWER_ROLE_DISPLAY = { single:"單體", area:"群攻", control:"控場", general:"泛用" };
+
+const UPGRADE_EFFECT_BADGES = [
+  [/燃燒/, "燃", "燃燒"], [/凍結|冰凍/, "冰", "凍結"], [/緩速/, "緩", "緩速"],
+  [/中毒|毒傷/, "毒", "中毒"], [/麻痺|感電/, "電", "麻痺"], [/爆炸|爆裂/, "爆", "爆炸"],
+  [/穿透/, "穿", "穿透"], [/彈跳|連鎖/, "鏈", "連鎖"], [/牽引/, "引", "牽引"],
+  [/額外|\+1/, "+", "額外"], [/範圍|區域/, "圈", "範圍"], [/持續|延長/, "時", "持續"],
+  [/攻速|Tick速度|裝填/, "速", "攻速"], [/傷害/, "傷", "傷害"],
+];
+
+function compactChoiceText(text, max=22) {
+  const clean = String(text || "")
+    .replace(/攻擊速度/g, "攻速")
+    .replace(/持續時間/g, "持續")
+    .replace(/額外投射物/g, "彈體")
+    .replace(/命中後/g, "命中")
+    .replace(/持續/g, "持續")
+    .replace(/[。；]/g, "｜")
+    .replace(/，/g, "·")
+    .replace(/\s+/g, " ")
+    .trim();
+  const parts = clean.split("｜").filter(Boolean).slice(0, 2).join(" · ");
+  return parts.length > max ? `${parts.slice(0, max - 1)}…` : parts;
+}
+
+function statUpgradeVisual(dimension, text) {
+  const source = String(text || "");
+  const value = source.match(/[+＋-]\d+(?:\.\d+)?%?/)?.[0]?.replace("＋", "+") || "UP";
+  const label = dimension === "damage" ? "傷害"
+    : dimension === "speed" ? (/Tick/.test(source) ? "Tick" : /裝填|冷卻/.test(source) ? "冷卻" : "攻速")
+    : /彈跳|連鎖/.test(source) ? "彈跳"
+    : /穿透/.test(source) ? "穿透"
+    : /陷阱/.test(source) ? "陷阱"
+    : "數量";
+  const icon = dimension === "damage" ? "✦" : dimension === "speed" ? "»" : "+";
+  return { value, label, icon };
+}
+
+function effectBadgeHtml(text, limit=2) {
+  const matches = [];
+  UPGRADE_EFFECT_BADGES.forEach(([pattern, icon, label]) => {
+    if (matches.length < limit && pattern.test(text) && !matches.some(item => item.label === label)) {
+      matches.push({ icon, label });
+    }
+  });
+  if (!matches.length) matches.push({ icon:"◆", label:"新機制" });
+  return matches.map(item => `<span class="effect-chip"><i>${item.icon}</i><b>${item.label}</b></span>`).join("");
+}
+
+function compactRequirement(text) {
+  const clean = String(text || "跨塔能力").replace(/^前置已解鎖：/, "").replace(/｜.*$/, "").trim();
+  return clean.length > 8 ? `${clean.slice(0, 7)}…` : clean;
+}
+
+function showChoices(title, hint, choices, options={}) {
+  stopChannelAudio();
+  state.choicesOpen = true;
+  state.choiceKind = options.kind || "standard";
+  state.choiceRerollUsed = !!options.rerollUsed;
+  currentChoiceOptions = options;
+  currentChoices = choices.slice();
+  if (HEADLESS_SIM) return;
+  ui.choiceTitle.textContent = title;
+  ui.choiceHint.textContent = hint;
+  ui.choiceList.innerHTML = "";
+  ui.choiceList.dataset.layout = choices.length === 5 && choices.every(choice => choice.rarity === "hero") ? "heroes" : "choices";
+  choices.forEach(choice => {
+    const btn = document.createElement("button");
+    const rarity = choice.rarity || "common";
+    const towerDef = choice.towerId ? TOWERS.find(tower => tower.id === choice.towerId) : null;
+    const attrKey = choice.attrKey || (towerDef ? towerAttr(towerDef) : "neutral");
+    const towerState = towerDef ? state.towers.find(tower => tower.id === towerDef.id) || towerDef : null;
+    const heroDef = choice.heroId ? HEROES.find(hero => hero.id === choice.heroId) : null;
+    const heroState = heroDef ? state.hero || heroDef : null;
+    const dimension = choice.dimension || (rarity === "newTower" ? "newTower" : rarity === "synergy" ? "synergy" : rarity === "core" || rarity === "deepen" ? "core" : "damage");
+    const dimensionInfo = UPGRADE_DIMENSIONS[dimension] || UPGRADE_DIMENSIONS.core;
+    const cardType = choiceCardType(choice, rarity, dimension);
+    const cardTypeInfo = CHOICE_CARD_TYPES[cardType];
+    btn.dataset.cardType = cardType;
+    const previewStage = choice.visualStage || (cardType === "new-tower" ? 1
+      : cardType === "tower-synergy" ? 3
+      : cardType === "tower-core" ? Math.max(2, towerVisualStage(towerState))
+      : cardType === "hero-skill" ? Math.min(3, heroVisualStage(heroState) + 1)
+      : towerState ? towerVisualStage(towerState) : heroVisualStage(heroState));
+    const icon = towerState ? towerSpritePath(towerState, previewStage) : heroDef ? heroSpritePath(heroDef, previewStage) : "";
+    btn.className = `choice-card rarity-${rarity} dimension-${dimension} choice-type-${cardType} attr-${attrKey}`;
+    btn.__choice = choice;
+    btn.type = "button";
+    btn.style.setProperty("--choice-color", (ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).color);
+    const iconHtml = icon ? `<span class="choice-emblem"><img src="${icon}" alt=""></span>` : "";
+    const heroBuffHtml = rarity === "hero"
+      ? `<span class="hero-buff-visual"><span class="hero-effect"><i class="hero-effect-icon attack"></i><span><small>攻擊</small><b>${choice.attackTrait}</b></span></span><span class="hero-effect"><i class="hero-effect-icon tower"></i><span><small>同屬塔</small><b>+${params.heroSameAttrBonusPct}%</b></span></span></span>`
+      : "";
+    const impact = choice.impact || choice.effect || choice.desc || "";
+    const compactImpact = cardType === "hero-upgrade"
+      ? "三維同步提升 ▲"
+      : compactChoiceText(impact, cardType === "tower-synergy" ? 18 : 22);
+    const statVisual = statUpgradeVisual(dimension, impact);
+    const statHtml = cardType === "tower-stat"
+      ? `<span class="choice-stat-readout" aria-hidden="true"><b>${statVisual.label}</b><i>▲</i></span>`
+      : "";
+    const coreHtml = cardType === "tower-core"
+      ? `<span class="choice-effect-chips" aria-hidden="true">${effectBadgeHtml(impact)}</span>`
+      : "";
+    const synergyHtml = cardType === "tower-synergy"
+      ? `<span class="synergy-route" aria-hidden="true"><span class="route-node tower-node">${(ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).label}</span><b>＋</b><span class="route-node skill-node">${compactRequirement(choice.requirementLabel)}</span><b>→</b><span class="route-result">∞</span></span>`
+      : "";
+    const categoryHtml = `<span class="choice-category"><i>${cardTypeInfo.mark}</i>${cardTypeInfo.label}</span>`;
+    const roleLabel = towerDef ? TOWER_ROLE_DISPLAY[TOWER_ROLE[towerDef.id]] || "泛用" : "";
+    const subLabel = cardType === "new-tower"
+      ? `${ATTRIBUTE_DISPLAY[attrKey]?.label || "無"}屬 · ${roleLabel}`
+      : choice.tag || choice.rarityLabel || rarityLabel(rarity);
+    const kindStampHtml = cardType === "tower-stat" ? ""
+      : `<span class="choice-kind-stamp" aria-hidden="true"><b>${cardTypeInfo.mark}</b><small>${cardTypeInfo.label}</small></span>`;
+    btn.innerHTML = `${iconHtml}<span class="choice-copy">${categoryHtml}<span class="choice-name">${choice.title}</span><span class="choice-impact">${compactImpact}</span><span class="choice-sub">${subLabel}</span>${coreHtml}${synergyHtml}${heroBuffHtml}</span>${statHtml}${kindStampHtml}`;
+    btn.setAttribute("aria-label", `${cardTypeInfo.label} ${choice.title} ${impact} ${choice.tag || ""}`.trim());
+    btn.title = choice.desc || impact;
+    btn.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (btn.disabled) return;
+      btn.disabled = true;
+      playSfx("upgrade");
+      try {
+        choice.onPick();
+      } catch (error) {
+        console.error(error);
+        btn.disabled = false;
+        state.message = `升級套用失敗：${error.message || error}`;
+        updateUi();
+      }
+    });
+    ui.choiceList.appendChild(btn);
+  });
+  const rerollable = state.choiceKind === "upgrade" && typeof options.rerollFactory === "function";
+  ui.reroll.classList.toggle("hidden", !rerollable);
+  ui.reroll.disabled = !rerollable || state.choiceRerollUsed || state.wallet < currentBet();
+  ui.reroll.classList.toggle("used", state.choiceRerollUsed);
+  ui.reroll.querySelector("b").textContent = state.choiceRerollUsed ? "已重抽" : "REROLL";
+  ui.rerollCost.textContent = state.choiceRerollUsed ? "本次升級已使用" : `BET ${currentBet()}`;
+  ui.choiceOverlay.classList.remove("hidden");
+  updateUi();
+}
+function hideChoices() {
+  const wasOpen = state.choicesOpen;
+  state.choicesOpen = false;
+  state.choiceKind = "";
+  state.choiceRerollUsed = false;
+  currentChoiceOptions = null;
+  currentChoices = [];
+  if (HEADLESS_SIM) return;
+  ui.choiceOverlay.classList.add("hidden");
+  ui.choiceList.innerHTML = "";
+  delete ui.choiceList.dataset.layout;
+  if (wasOpen) resumeChannelAudio();
+}
+
+function shuffled(values) {
+  const result = values.slice();
+  for (let index=result.length - 1; index>0; index-=1) {
+    const swapIndex = rand(0, index);
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function encounterFormationWeights(wave) {
+  if (wave <= 3) return { swarm:34, rush:24, armor:20, siege:12, elite:10 };
+  if (wave <= 10) return { swarm:25, rush:22, armor:21, siege:17, elite:15 };
+  return { swarm:20, rush:20, armor:21, siege:19, elite:20 };
+}
+
+function encounterAttributeWeights(biomeAttr, excluded=new Set()) {
+  const weights = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [attr, excluded.has(attr) ? 0 : 14]));
+  if (!excluded.has("neutral")) weights.neutral = 22;
+  if (biomeAttr && !excluded.has(biomeAttr)) weights[biomeAttr] = biomeAttr === "neutral" ? 44 : 52;
+  return weights;
+}
+
+function rollEncounterReward(threat, boss=false) {
+  const tables = boss
+    ? {
+      1:{ 2:58, 3:34, 4:8 },
+      2:{ 2:42, 3:46, 4:12 },
+      3:{ 2:20, 3:58, 4:22 },
+    }
+    : {
+      1:{ 1:68, 2:27, 3:4, 4:1 },
+      2:{ 1:12, 2:61, 3:23, 4:4 },
+      3:{ 2:24, 3:63, 4:13 },
+    };
+  return Number(pickWeighted(tables[clamp(threat, 1, 3)] || tables[2])) || 2;
+}
+
+function encounterHeroRole() {
+  if (!state.hero) return "general";
+  if (["blast", "chain", "cloud"].includes(state.hero.attackMode)) return "area";
+  if (["pierce", "burst"].includes(state.hero.attackMode)) return "single";
+  return "general";
+}
+
+function encounterAttributeReadiness(enemyAttr) {
+  const profile = enemyAttributeProfile(enemyAttr);
+  const sources = [];
+  if (state.hero) {
+    sources.push({ attr:state.hero.attrKey || "neutral", weight:1.15 + Math.min(.8, (state.hero.upgrades?.length || 0) * .1) });
+  }
+  state.towers.forEach(tower => {
+    const upgrades = tower.upgrades?.length || 0;
+    sources.push({ attr:towerAttr(tower), weight:1.25 + Math.min(1.6, upgrades * .2) });
+  });
+  if (!sources.length) return 1;
+  const totalWeight = sources.reduce((sum, source) => sum + source.weight, 0) || 1;
+  return sources.reduce((sum, source) => sum + (Number(profile[source.attr]) || 1) * source.weight, 0) / totalWeight;
+}
+
+function encounterRoleReadiness(role) {
+  const targetRole = role === "boss" ? "single" : role;
+  const investments = { single:0, area:0, control:0, general:0 };
+  if (state.hero) investments[encounterHeroRole()] += 1.15 + Math.min(.65, (state.hero.upgrades?.length || 0) * .08);
+  state.towers.forEach(tower => {
+    const towerRole = TOWER_ROLE[tower.id] || "general";
+    investments[towerRole] += 1.25 + Math.min(1.5, (tower.upgrades?.length || 0) * .2);
+  });
+  const total = Object.values(investments).reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return 1 / 3;
+  const direct = investments[targetRole] || 0;
+  const flexible = investments.general * .55;
+  return clamp((direct + flexible) / total, 0, 1);
+}
+
+const ENCOUNTER_ROLE_FIT = {
+  swarm:{ area:1.34, control:1.12, single:.68, general:1 },
+  rush:{ area:1.04, control:1.38, single:.84, general:1 },
+  armor:{ area:.58, control:.82, single:1.42, general:1 },
+  siege:{ area:.82, control:1.22, single:1.14, general:1 },
+  elite:{ area:.72, control:1.05, single:1.38, general:1 },
+};
+
+function encounterLoadoutFit(formationId, enemyAttr) {
+  const sources = [state.hero, ...state.towers].filter(Boolean);
+  if (!sources.length) return { combatFit:1, attributePower:1, rolePower:1, buildPower:1 };
+  const attrProfile = enemyAttributeProfile(enemyAttr);
+  const roleTable = ENCOUNTER_ROLE_FIT[formationId] || ENCOUNTER_ROLE_FIT.siege;
+  let totalPower = 0, effectivePower = 0, attributePower = 0, rolePower = 0, basePower = 0;
+  sources.forEach(source => {
+    const isHero = !!source.isHero;
+    const role = isHero ? encounterHeroRole() : TOWER_ROLE[source.id] || "general";
+    const damage = isHero ? heroDamage(source) : scaledDamage(source);
+    const rate = isHero ? heroParam(source, "rate", source.rate) * (source.rateMul || 1) : 1 / Math.max(.05, attackCooldown(source));
+    const extras = isHero ? source.extraShots || 0 : (source.extraShots || 0) + (source.extraProjectiles || 0) + (source.extraAreas || 0);
+    const power = Math.max(1, damage * rate * (1 + extras * .55));
+    const base = isHero
+      ? Math.max(1, (Number(source.damage) || damage) * (Number(source.rate) || rate))
+      : Math.max(1, (TOWER_BASE_PARAMS[source.id]?.damage || damage) * (TOWER_BASE_PARAMS[source.id]?.rate || rate));
+    const attrMul = Number(attrProfile[towerAttr(source)]) || 1;
+    let classMul = 1;
+    if (!isHero) {
+      const classKey = formationId === "armor" || formationId === "elite" ? "eliteMul" : "minionMul";
+      const fallback = TOWER_BASE_PARAMS[source.id]?.[classKey] ?? 1;
+      classMul = Math.max(.1, towerParam(source, classKey, fallback));
+      if (formationId === "armor") classMul *= role === "single" ? params.encounterTankSingleDamageMul : role === "area" ? params.encounterTankAreaDamageMul : 1;
+    }
+    let roleMul = roleTable[role] || 1;
+    if (formationId === "siege") roleMul *= .90 + clamp((isHero ? heroParam(source, "range", source.range) : scaledRange(source)) / 600, 0, 1.25) * .12;
+    if (["rush", "siege"].includes(formationId) && (source.slow || source.freeze || source.stun || source.root || source.pull)) roleMul *= 1.12;
+    const fit = attrMul * Math.sqrt(classMul) * roleMul;
+    totalPower += power;
+    basePower += base;
+    effectivePower += power * fit;
+    attributePower += power * attrMul;
+    rolePower += power * roleMul;
+  });
+  const upgradePower = Math.sqrt(clamp(totalPower / Math.max(1, basePower), .6, 2.8));
+  return {
+    combatFit:clamp(effectivePower / totalPower, .45, 1.85),
+    attributePower:attributePower / totalPower,
+    rolePower:rolePower / totalPower,
+    buildPower:clamp(mathBuildPower(false) * upgradePower, .25, 2.2),
+  };
+}
+
+function assessEncounterThreat({ formation, attr, role, wave, boss=false, difficulty=null }) {
+  const loadout = boss ? null : encounterLoadoutFit(formation.id, attr);
+  const attributePower = loadout?.attributePower ?? encounterAttributeReadiness(attr);
+  const roleReadiness = encounterRoleReadiness(role);
+  const rolePower = loadout?.rolePower ?? (roleReadiness >= .56 ? 1.2 : roleReadiness < .18 ? .78 : 1);
+  const hpRatio = clamp(state.hp / Math.max(1, params.baseHp), 0, 1);
+  const pressure = (formation.countMul - 1) * .72
+    + (formation.hpMul - 1) * .72
+    + (formation.atkMul - 1) * .92
+    + (formation.speedMul - 1) * .58
+    + (formation.eliteCount || 0) * .52;
+  const attributeRisk = clamp((1 - attributePower) * 1.18, -.78, .88);
+  const roleRisk = roleReadiness >= .56 ? -.48 : roleReadiness < .18 ? .56 : (.34 - roleReadiness) * 1.35;
+  const hpRisk = hpRatio < .35 ? .62 : hpRatio < .60 ? .36 : hpRatio < .80 ? .14 : 0;
+  const difficultyRisk = boss && difficulty
+    ? (Math.max(1, Number(difficulty.hpMul) || 1) - 1) * .7 + (Math.max(1, Number(difficulty.atkMul) || 1) - 1) * .8
+    : 0;
+  const depthRisk = wave >= 16 ? .18 : wave >= 8 ? .08 : 0;
+  const score = (boss ? 2.08 : 1.78) + pressure + attributeRisk + roleRisk + hpRisk + difficultyRisk + depthRisk;
+  const tier = score >= 2.50 ? 3 : score >= 1.62 ? 2 : 1;
+  return {
+    tier,
+    score,
+    attributePower,
+    roleReadiness,
+    rolePower,
+    combatFit:loadout?.combatFit ?? 1,
+    buildPower:loadout?.buildPower ?? mathBuildPower(boss),
+    hpRatio,
+    attributeState:attributePower >= 1.12 ? "good" : attributePower <= .88 ? "bad" : "even",
+    roleState:rolePower >= 1.12 ? "good" : rolePower <= .88 ? "bad" : "even",
+  };
+}
+
+function encounterArtFor(attr, formation) {
+  if (formation.id === "boss") return BOSS_VARIANTS[attr] || BOSS_VARIANTS.neutral;
+  const minions = MINION_VARIANTS[attr] || MINION_VARIANTS.neutral;
+  const elites = ELITE_VARIANTS[attr] || ELITE_VARIANTS.neutral;
+  const swarmIndex = { neutral:1, fire:1, ice:0, electric:1, poison:0 }[attr] ?? 0;
+  const rushIndex = { neutral:0, fire:0, ice:1, electric:0, poison:1 }[attr] ?? 0;
+  const specialEliteIndex = { neutral:1, fire:0, ice:0, electric:1, poison:0 }[attr] ?? 0;
+  if (formation.id === "swarm") return minions[swarmIndex] || minions[0];
+  if (formation.id === "rush") return minions[rushIndex] || minions[0];
+  if (formation.id === "armor") return minions[2] || minions[minions.length - 1];
+  if (formation.id === "siege") return minions[1] || minions[0];
+  if (formation.id === "elite") return elites[specialEliteIndex === 0 ? 1 : 0] || elites[0];
+  return minions[Math.min(minions.length - 1, formation.artIndex || 0)];
+}
+
+function bossEncounterDifficulty(threat, firstBoss=false) {
+  const tier = BOSS_DIFFICULTY_TIERS[threat >= 3 ? 2 : threat >= 2 ? 1 : 0];
+  const compression = firstBoss ? clamp(paramNumber("bossFirstDifficultyCompression", .65), 0, 1) : 1;
+  const compressed = value => 1 + (value - 1) * compression;
+  return {
+    id:tier.id, label:tier.label, marks:tier.marks,
+    hpMul:compressed(paramNumber(tier.hpKey, 1)),
+    atkMul:compressed(paramNumber(tier.atkKey, 1)),
+    speedMul:compressed(paramNumber(tier.speedKey, 1)),
+    firstBoss,
+  };
+}
+
+function rollBiomeEncounterAttribute(biomeAttr) {
+  const weights = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [attr, 7]));
+  weights.neutral = biomeAttr === "neutral" ? 60 : 12;
+  weights[biomeAttr] = 60;
+  return pickWeighted(weights);
+}
+
+function encounterFormationForLane(lane, usedFormations) {
+  const candidates = lane.formations
+    .map(id => ENCOUNTER_FORMATIONS.find(formation => formation.id === id))
+    .filter(Boolean);
+  const available = candidates.filter(formation => !usedFormations.has(formation.id));
+  const pool = available.length ? available : candidates;
+  return pick(pool);
+}
+
+function encounterPressureFactor(formation) {
+  const countMul = Math.max(.2, Number(formation.countMul) || 1);
+  const hpMul = Math.max(.2, Number(formation.hpMul) || 1);
+  const atkMul = Math.max(.2, Number(formation.atkMul) || 1);
+  const speedMul = Math.max(.2, Number(formation.speedMul) || 1);
+  const elitePressure = 1 + Math.max(0, Number(formation.eliteCount) || 0) * .18;
+  return Math.pow(countMul, .52)
+    * Math.pow(hpMul, .82)
+    * Math.pow(atkMul, .72)
+    * Math.pow(speedMul, .45)
+    * elitePressure;
+}
+
+function threatForEstimatedClear(chance) {
+  return chance >= 80 ? 1 : chance >= 60 ? 2 : 3;
+}
+
+function rewardForEstimatedClear(chance, boss=false) {
+  if (boss) return chance < 48 ? 4 : 3;
+  return chance >= 80 ? 1 : chance >= 60 ? 2 : chance >= 45 ? 3 : 4;
+}
+
+function estimateRegularEncounterDamageRisk(threat, matchup, formation="") {
+  const base = ({ 1:14, 2:36, 3:50 })[clamp(Number(threat) || 1, 1, 3)] + ({ swarm:-9, rush:16, armor:-5, siege:25, elite:17 }[formation] || 0);
+  const combatFit = Math.max(.45, Number(matchup?.combatFit) || 1);
+  const buildPower = Math.max(.25, Number(matchup?.buildPower) || 1);
+  return Math.round(clamp(base - Math.log(combatFit) * 25 - Math.log(buildPower) * 11, 3, 85));
+}
+
+function estimateRegularEncounterFatalRisk(damageRisk, threat, matchup, formation) {
+  const typicalDamage = ({ swarm:.24, rush:.20, armor:.22, siege:.17, elite:.10 })[formation] || .18;
+  const hpRatio = clamp(Number(matchup?.hpRatio) || 0, 0, 1);
+  const damageTail = 1 / (1 + Math.exp((hpRatio - typicalDamage) / (.08 + clamp(Number(threat) || 1, 1, 3) * .01)));
+  return Math.round(clamp(damageRisk * damageTail, 0, 95));
+}
+
+function encounterRewardPreview(choice) {
+  if (choice.boss) {
+    const ordinal = state.bossSeen + 1;
+    const growth = Math.min(params.encounterBossDepthGrowthCap, 1 + (ordinal - 1) * params.encounterBossDepthGrowth);
+    const tiers = ["Small", "Medium", "Large", "Jackpot"].filter(tier => params[`encounterBoss${tier}Weight`] > 0);
+    const values = tiers.flatMap(tier => [params[`encounterBoss${tier}Min`], params[`encounterBoss${tier}Max`]]);
+    const low = Math.max(.1, Math.round(Math.min(...values) * growth * 10) / 10);
+    const high = Math.max(low, Math.round(Math.max(...values) * growth * 10) / 10);
+    return { label:"擊殺可得", text:`+${low.toFixed(1)}～${high.toFixed(1)}x`, low, high, unit:"multiplier" };
+  }
+  const tier = clamp(Number(choice.reward) || 1, 1, 4);
+  const bet = betForWave(Number(choice.wave) || state.wave + 1);
+  const entryMultiplier = Math.max(1, 1 + state.bossAdd);
+  const entryPrice = Math.pow(entryMultiplier, encounterEconomyEnabled() ? params.encounterPotEntryPower : 0);
+  const scale = bet * params.moneyMul * (encounterEconomyEnabled() ? params.encounterRewardScale : 1) / entryPrice;
+  const prefix = `encounterChest${tier}`;
+  const band = encounterEconomyEnabled()
+    ? [params[`${prefix}Min`], params[`${prefix}Max`]]
+    : ENCOUNTER_REWARD_BANDS[tier];
+  const low = Math.max(0, Math.floor(Math.min(...band) * scale));
+  const high = Math.max(low, Math.ceil(Math.max(...band) * scale));
+  return { label:"通關可得", text:`+${low}～${high} POT`, low, high, unit:"pot" };
+}
+
+function encounterClearTone(chance) {
+  return chance >= 75 ? "safe" : chance > 50 ? "risk" : "danger";
+}
+
+function encounterRiskTone(chance) {
+  return chance <= 20 ? "safe" : chance <= 40 ? "risk" : "danger";
+}
+
+function encounterRewardTone(choice) {
+  return choice.boss ? "legendary" : ["normal", "advanced", "rare", "legendary"][clamp(Number(choice.reward) || 1, 1, 4) - 1];
+}
+
+function encounterContract(lane, formation) {
+  const reward = Math.min(4, lane.reward + (gameplayRandom() < params.encounterChestUpgradeChance ? 1 : 0));
+  return {
+    estimatedRisk:null,
+    threat:lane.threat,
+    reward,
+    pressureFactor:encounterPressureFactor(formation),
+    rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
+    expMul:ENCOUNTER_EXP_FACTORS[lane.threat],
+  };
+}
+
+function encounterCombatProfile(formation, lane, wave) {
+  // Fixed opening ramp, independent of player HP, loadout and previous results.
+  const opening = clamp(.85 + (wave - 1) * .05, .85, 1);
+  const ramp = value => value > 1 ? 1 + (value - 1) * opening : value;
+  const grade = clamp(lane.threat, 1, 3);
+  const depth = Math.min(params.encounterHpDepthCap, 1 + Math.max(0, wave - 1) * params.encounterHpDepthGrowth);
+  return {
+    ...formation,
+    countMul:formation.countMul * lane.countMul,
+    hpMul:formation.hpMul * ramp(lane.hpMul) * params[`encounterGrade${grade}HpMul`] * depth,
+    atkMul:formation.atkMul * ramp(lane.atkMul) * params[`encounterGrade${grade}AtkMul`],
+    speedMul:formation.speedMul * lane.speedMul,
+    eliteCount:formation.eliteCount || 0,
+    spawnGapMul:formation.spawnGapMul * lane.spawnGapMul,
+  };
+}
+
+function buildRegularEncounterChoices(wave) {
+  const biomeAttr = currentBiomeConfig().attr;
+  const band = tunedBand(bandFor(wave), wave);
+  const baseEnemyCount = rand(band.count[0], band.count[1]);
+  const usedFormations = new Set();
+  const choices = ENCOUNTER_LANES.map((lane, index) => {
+    const formation = encounterFormationForLane(lane, usedFormations) || ENCOUNTER_FORMATIONS[0];
+    const attr = rollBiomeEncounterAttribute(biomeAttr);
+    usedFormations.add(formation.id);
+    const tunedFormation = encounterCombatProfile(formation, lane, wave);
+    const matchup = assessEncounterThreat({ formation:tunedFormation, attr, role:formation.role, wave });
+    const contract = encounterContract(lane, tunedFormation, matchup);
+    const estimatedRisk = estimateRegularEncounterDamageRisk(contract.threat, matchup, formation.id);
+    const estimatedFatal = estimateRegularEncounterFatalRisk(estimatedRisk, contract.threat, matchup, formation.id);
+    const art = encounterArtFor(attr, formation);
+    const enemyCount = Math.max(4, Math.round(baseEnemyCount * tunedFormation.countMul));
+    return {
+      id:`${wave}-${lane.id}-${formation.id}-${attr}-${index}`,
+      wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
+      lane:lane.id, laneLabel:lane.label, template:formation.template, attr,
+      threat:contract.threat, reward:contract.reward, estimatedRisk, estimatedFatal,
+      countMul:tunedFormation.countMul,
+      hpMul:tunedFormation.hpMul,
+      atkMul:tunedFormation.atkMul,
+      speedMul:tunedFormation.speedMul,
+      batchSize:tunedFormation.batchSize,
+      spawnGapMul:tunedFormation.spawnGapMul,
+      range:tunedFormation.range,
+      forcedElites:tunedFormation.eliteCount,
+      enemyCount,
+      pressureFactor:contract.pressureFactor,
+      rewardFactor:contract.rewardFactor,
+      expMul:contract.expMul,
+      matchup,
+      art,
+      artCount:formation.marks,
+    };
+  });
+  return shuffled(choices);
+}
+
+function buildBehaviorPreviewChoices(wave) {
+  const attr = BEHAVIOR_PREVIEW_ATTR;
+  const previewCounts = { swarm:24, rush:12, armor:4, siege:8, elite:1 };
+  const previewIds = BEHAVIOR_PREVIEW_PAGE >= 2 ? ["siege", "elite", "swarm"] : ["swarm", "rush", "armor"];
+  return previewIds.map((formationId, index) => {
+    const formation = ENCOUNTER_FORMATIONS.find(item => item.id === formationId) || ENCOUNTER_FORMATIONS[index];
+    const matchup = assessEncounterThreat({ formation, attr, role:formation.role, wave });
+    const previewReward = CARD_ART_PREVIEW ? [1, 3, 4][index] : 1;
+    const previewThreat = CARD_ART_PREVIEW ? index + 1 : 1;
+    return {
+      id:`${wave}-behavior-preview-${formation.id}-${index}`,
+      wave, boss:false, formation:formation.id, formationLabel:formation.label, role:formation.role,
+      lane:"preview", laneLabel:"", template:formation.template, attr, threat:previewThreat, reward:previewReward,
+      estimatedRisk:estimateRegularEncounterDamageRisk(previewThreat, matchup, formation.id), estimatedFatal:0,
+      countMul:formation.countMul,
+      hpMul:formation.hpMul,
+      atkMul:formation.atkMul,
+      speedMul:formation.speedMul,
+      forcedElites:formation.eliteCount,
+      enemyCount:previewCounts[formation.id],
+      rewardFactor:ENCOUNTER_REWARD_FACTORS[previewReward],
+      expMul:ENCOUNTER_EXP_FACTORS[previewThreat],
+      matchup,
+      art:encounterArtFor(attr, formation),
+      artCount:formation.marks,
+    };
+  });
+}
+
+function compositeEncounterCardArt(choice) {
+  const attr = ["neutral", "fire", "ice", "electric", "poison"].includes(choice.attr)
+    ? choice.attr
+    : "neutral";
+  if (choice.boss) return `assets/ui/encounter/boss-card-${attr}.png`;
+  const threat = clamp(Number(choice.threat) || 1, 1, 3);
+  const reward = clamp(Number(choice.reward) || 1, 1, 4);
+  return `assets/ui/encounter/card-${attr}-risk${threat}-reward${reward}.png`;
+}
+
+function buildBossEncounterChoices(wave) {
+  const biomeAttr = currentBiomeConfig().attr;
+  const band = tunedBand(bandFor(wave), wave);
+  const rolledCount = rand(band.count[0], band.count[1]);
+  const archetype = pick(BOSS_COMBAT_ARCHETYPES);
+  const firstBoss = state.bossSeen === 0;
+  const baseDifficulty = bossEncounterDifficulty(firstBoss ? 2 : rand(2, 3), firstBoss);
+  const bossDifficulty = {
+    ...baseDifficulty,
+    id:`${baseDifficulty.id}-${archetype.id}`,
+    label:archetype.label,
+    hpMul:baseDifficulty.hpMul * archetype.hpMul,
+    atkMul:baseDifficulty.atkMul * archetype.atkMul,
+    speedMul:baseDifficulty.speedMul * archetype.speedMul,
+  };
+  const formation = { countMul:archetype.preludeMul, hpMul:bossDifficulty.hpMul, atkMul:bossDifficulty.atkMul, speedMul:bossDifficulty.speedMul, eliteCount:archetype.eliteCount };
+  const matchup = assessEncounterThreat({ formation, attr:biomeAttr, role:"boss", wave, boss:true, difficulty:bossDifficulty });
+  const attributeShift = clamp((matchup.attributePower - 1) * 18, -14, 14);
+  const roleShift = clamp((matchup.roleReadiness - .34) * 24, -8, 8);
+  const hpShift = clamp((matchup.hpRatio - .65) * 12, -9, 4);
+  const estimatedClear = Math.round(clamp(75 - state.biomeIndex * 7 + archetype.clearShift + attributeShift + roleShift + hpShift, 28, 82));
+  const threat = threatForEstimatedClear(estimatedClear);
+  const reward = 4;
+  const preludeCount = Math.max(3, Math.round(rolledCount * clamp(paramNumber("bossPreludeCountMul", .55), .1, 1) * archetype.preludeMul));
+  const art = encounterArtFor(biomeAttr, { id:"boss" });
+  return [{
+    id:`${wave}-boss-${biomeAttr}-${archetype.id}`,
+    wave, boss:true, formation:"boss", formationLabel:archetype.label, role:"boss", bossArchetype:archetype.id,
+    template:{ fire:"fast", ice:"tank", electric:"disrupt", poison:"ranged", neutral:"mixed" }[biomeAttr] || "mixed",
+    attr:biomeAttr, threat, reward, estimatedClear, countMul:archetype.preludeMul, hpMul:1, atkMul:1, speedMul:1,
+    forcedElites:archetype.eliteCount,
+    enemyCount:preludeCount,
+    bossDifficulty,
+    pressureFactor:encounterPressureFactor(formation),
+    rewardFactor:ENCOUNTER_REWARD_FACTORS[reward],
+    expMul:ENCOUNTER_EXP_FACTORS[reward],
+    matchup,
+    art,
+    artCount:1,
+  }];
+}
+
+function encounterImageHtml(choice) {
+  const src = choice.art?.sprite ? `assets/enemies-v3/${choice.art.sprite}` : enemySpritePath(choice.art || {});
+  if (choice.boss) {
+    const sparks = Array.from({ length:5 }, (_, index) => `<span class="boss-spark boss-spark-${index + 1}"></span>`).join("");
+    return `<span class="boss-presence" aria-hidden="true"><span class="boss-aura"></span><span class="boss-ground"></span><span class="boss-energy-core"></span><img class="encounter-boss-art" src="${src}" alt="" decoding="async">${sparks}</span>`;
+  }
+  const unit = (className, index=0) => `<img class="behavior-unit ${className}" style="--i:${index}" src="${src}" alt="" decoding="async">`;
+  if (choice.formation === "swarm") {
+    return `<span class="behavior-scene behavior-crowd" aria-hidden="true">${Array.from({ length:5 }, (_, index) => unit("", index)).join("")}<span class="behavior-dust"></span></span>`;
+  }
+  if (choice.formation === "rush") {
+    return `<span class="behavior-scene behavior-fast" aria-hidden="true"><span class="behavior-speed-lines"></span>${Array.from({ length:2 }, (_, index) => unit("", index)).join("")}</span>`;
+  }
+  if (choice.formation === "armor") {
+    return `<span class="behavior-scene behavior-tank" aria-hidden="true">${unit("")}<span class="behavior-projectile"></span><span class="behavior-block"></span></span>`;
+  }
+  if (choice.formation === "siege") {
+    return `<span class="behavior-scene behavior-special" aria-hidden="true">${unit("")}<span class="behavior-charge"></span><span class="behavior-beam"></span></span>`;
+  }
+  return `<span class="behavior-scene behavior-elite" aria-hidden="true"><span class="behavior-aura"></span>${unit("")}</span>`;
+}
+
+function encounterMatchupLabel(choice) {
+  const attribute = choice.matchup?.attributeState === "good" ? "屬性有利" : choice.matchup?.attributeState === "bad" ? "屬性不利" : "屬性均衡";
+  const role = choice.matchup?.roleState === "good" ? "陣型有利" : choice.matchup?.roleState === "bad" ? "陣型不利" : "陣型均衡";
+  return `${attribute}，${role}`;
+}
+
+function encounterAdvisory(choice) {
+  const attributePower = Number(choice.matchup?.attributePower) || encounterAttributeReadiness(choice.attr);
+  const roleReadiness = Number(choice.matchup?.rolePower) || 1;
+  const attrGood = attributePower >= 1.12, attrBad = attributePower <= .88;
+  const roleGood = roleReadiness >= 1.12, roleBad = roleReadiness <= .88;
+  const lowHp = state.hp < params.baseHp * .35;
+  const roleNames = { area:"群攻有利", single:"點殺有利", control:"控場有利", boss:"對王有利" };
+  const missingNames = { area:"缺少群攻", single:"缺少點殺", control:"缺少控場", boss:"對王不足" };
+  const reasons = [];
+  if (attrGood) reasons.push({kind:"good", text:"屬性克制"});
+  if (attrBad) reasons.push({kind:"bad", text:"屬性受阻"});
+  if (roleGood) reasons.push({kind:"good", text:roleNames[choice.role] || "配置適合"});
+  if (roleBad) reasons.push({kind:"bad", text:missingNames[choice.role] || "配置不足"});
+  if (lowHp) reasons.unshift({kind:"bad", text:"基地瀕危"});
+  if (!reasons.length) reasons.push({kind:"even", text:"配置均衡"});
+  const good = reasons.some(reason => reason.kind === "good"), bad = reasons.some(reason => reason.kind === "bad");
+  const tone = good && bad ? "mixed" : bad ? "danger" : good ? "advantage" : "neutral";
+  const sources = [state.hero, ...state.towers].filter(Boolean).map(tower => {
+    const attr = towerAttr(tower);
+    const role = tower.isHero ? encounterHeroRole() : TOWER_ROLE[tower.id];
+    const damageFactor = enemyAttributeProfile(choice.attr)[attr] || 1;
+    return { tower, attr, role, weight:(damageFactor - 1) * 3 + (role === (choice.role === "boss" ? "single" : choice.role) ? 1 : 0) };
+  }).filter(source => source.weight > 0).sort((a,b) => b.weight - a.weight).slice(0, 2);
+  return {tone, reasons:reasons.slice(0, 2), sources, attributePower, roleReadiness, lowHp};
+}
+
+function renderEncounterDraft(choices, boss) {
+  if (HEADLESS_SIM) return;
+  stopChannelAudio();
+  const biome = currentBiomeConfig();
+  ui.encounterWave.textContent = boss
+    ? `BOSS ${state.bossSeen + 1} / ${PROTOTYPE_BOSS_TOTAL}`
+    : `${biome.short} · WAVE ${String(state.wave + 1).padStart(2, "0")}`;
+  ui.encounterTitle.textContent = boss ? `${biome.name} BOSS` : "選擇目標";
+  ui.encounterPanel.classList.toggle("boss-draft", boss);
+  ui.encounterPanel.classList.toggle("behavior-preview", BEHAVIOR_PREVIEW && !boss);
+  ui.encounterList.innerHTML = "";
+  ui.encounterList.dataset.committed = "false";
+  choices.forEach((choice, index) => {
+    const display = ATTRIBUTE_DISPLAY[choice.attr] || ATTRIBUTE_DISPLAY.neutral;
+    const button = document.createElement("button");
+    const compositeCardArt = compositeEncounterCardArt(choice);
+    const advice = encounterAdvisory(choice);
+    const chance = choice.boss ? choice.estimatedClear : choice.estimatedRisk;
+    const chanceLabel = choice.boss ? "預估擊殺率" : "受損風險";
+    const chanceTone = choice.boss ? encounterClearTone(chance) : encounterRiskTone(chance);
+    const lethalRisk = !choice.boss && Number(choice.estimatedFatal) >= 15;
+    const rewardPreview = encounterRewardPreview(choice);
+    const option = document.createElement("div");
+    option.className = `encounter-option advice-${advice.tone}`;
+    option.style.setProperty("--deal-index", index);
+    button.type = "button";
+    button.className = `encounter-card threat-${choice.threat} reward-${choice.reward} formation-${choice.formation} lane-${choice.lane || "boss"} attr-${choice.attr} matchup-${choice.matchup?.attributeState || "even"}${choice.boss ? " boss-card" : ""}${compositeCardArt ? " composite-card" : ""}`;
+    button.style.setProperty("--encounter-color", display.color);
+    button.style.setProperty("--deal-index", index);
+    if (compositeCardArt) button.style.setProperty("--composite-card-art", `url("${compositeCardArt}")`);
+    button.dataset.lane = choice.lane || "boss";
+    button.dataset.pressureFactor = Number(choice.pressureFactor || 1).toFixed(3);
+    button.dataset.rewardFactor = Number(choice.rewardFactor || 1).toFixed(2);
+    const cardName = choice.boss ? `${display.label}屬 BOSS` : `${display.label}屬 ${choice.formationLabel}`;
+    const formationHint = choice.boss ? `${choice.art?.name || ENCOUNTER_FORMATION_HINTS.boss}，${choice.formationLabel}` : ENCOUNTER_FORMATION_HINTS[choice.formation] || choice.art?.name || "敵軍來襲";
+    const displayCount = choice.boss || (BEHAVIOR_PREVIEW && choice.formation === "elite")
+      ? 1
+      : Math.max(1, Math.round((choice.enemyCount || 0) + (choice.forcedElites || 0)));
+    const rewardArt = ["", "reward-normal", "reward-rare", "reward-epic", "reward-legendary"][clamp(choice.reward, 1, 4)];
+    button.innerHTML = `
+      <span class="encounter-emblem" aria-hidden="true">
+        <span class="encounter-art">${encounterImageHtml(choice)}</span>
+        <span class="encounter-attr">${ENCOUNTER_ATTR_MARKS[choice.attr]}</span>
+        ${choice.formation === "elite" && !choice.boss
+          ? `<span class="encounter-elite-label">菁英 ×${Math.max(1, choice.forcedElites || 1)}</span><span class="encounter-escort-count">護衛 ×${BEHAVIOR_PREVIEW ? 0 : Math.max(0, Math.round(choice.enemyCount || 0))}</span>`
+          : `<span class="encounter-count">×${displayCount}</span>`}
+        ${choice.boss ? `<span class="encounter-boss-type">${choice.formationLabel}</span>` : ""}
+      </span>
+      ${choice.boss ? "" : `<span class="encounter-loot" aria-hidden="true">
+        <img class="encounter-reward-art" src="assets/ui/encounter/${rewardArt}.webp" alt="">
+      </span>`}`;
+    button.setAttribute("aria-label", `${cardName}，${formationHint}，敵軍 ${displayCount} 隻，${chanceLabel} ${chance}%${lethalRisk ? "，有致命風險" : ""}，${rewardPreview.label} ${rewardPreview.text}`);
+    button.addEventListener("click", () => selectEncounterChoice(choice, button));
+    option.appendChild(button);
+    const footer = document.createElement("div");
+    footer.className = "encounter-advice";
+    footer.setAttribute("aria-hidden", "true");
+    footer.innerHTML = `<span class="encounter-metric encounter-clear tone-${chanceTone}${lethalRisk ? " lethal-risk" : ""}"><small>${chanceLabel}</small><strong>${chance}%</strong></span><span class="encounter-metric encounter-reward tone-${encounterRewardTone(choice)}"><small>${rewardPreview.label}</small><strong>${rewardPreview.text}</strong></span>`;
+    option.appendChild(footer);
+    ui.encounterList.appendChild(option);
+    button.disabled = true;
+    button.dataset.artReady = "loading";
+    const images = [artImage(compositeCardArt), ...button.querySelectorAll("img")].filter(Boolean);
+    Promise.all(images.map(image => image.decode())).then(() => {
+      if (!button.isConnected) return;
+      button.dataset.artReady = "ready";
+      button.disabled = ui.encounterList.dataset.committed === "true";
+    }).catch(() => {
+      button.dataset.artReady = "error";
+      button.title = "卡片圖片載入失敗，請重新整理";
+    });
+  });
+  ui.encounterOverlay.classList.remove("hidden");
+}
+
+function encounterAutoChoice(choices, policy=headlessEncounterPolicy) {
+  if (policy === "random") return pick(choices);
+  const counterAttr = attr => ATTRIBUTE_COUNTER[attr] || "neutral";
+  const towerAttrs = [state.hero?.attrKey, ...state.towers.map(towerAttr)].filter(Boolean);
+  const roleCounts = state.towers.reduce((result, tower) => {
+    result[TOWER_ROLE[tower.id]] = (result[TOWER_ROLE[tower.id]] || 0) + 1;
+    return result;
+  }, {});
+  const hpRatio = state.hp / Math.max(1, params.baseHp);
+  return choices.slice().sort((a,b) => {
+    const score = choice => {
+      const attributeMatch = towerAttrs.filter(attr => attr === counterAttr(choice.attr)).length;
+      const roleMatch = roleCounts[choice.role] || 0;
+      const pressure = Math.log2(Math.max(.1, choice.pressureFactor || 1));
+      if (policy === "safe") return -choice.threat * 12 + attributeMatch * 2 + roleMatch + choice.reward * .5 - pressure;
+      if (policy === "tactical") return -Math.abs(choice.threat - 2) * 7 + attributeMatch * 3 + roleMatch * 2 + choice.reward - pressure * 1.5;
+      if (policy === "greedy") return choice.reward * 8 + choice.threat * 2 + attributeMatch * 2 + roleMatch - pressure;
+      if (policy === "match") return attributeMatch * 8 + roleMatch * 5 + choice.reward - choice.threat - pressure * 2;
+      if (policy === "countered") return choice.threat * 5 + pressure * 3 - attributeMatch * 8 - roleMatch * 5;
+      const injuryPenalty = (choice.threat - 1) * (.9 + (1 - hpRatio) * 8);
+      return attributeMatch * 5.5 + roleMatch * 3 + choice.reward * 1.2 - pressure * 2 - injuryPenalty;
+    };
+    return score(b) - score(a);
+  })[0];
+}
+
+function prepareEncounterDraft() {
+  if (!ENCOUNTER_DRAFT_PROTOTYPE) { startWave(); return; }
+  const wave = state.wave + 1;
+  if (prototypeRunComplete()) { completeRun(); return; }
+  const info = waveInfoFor(wave);
+  const boss = consumeBossPreview(wave, info);
+  const choices = boss ? buildBossEncounterChoices(wave) : (BEHAVIOR_PREVIEW ? buildBehaviorPreviewChoices(wave) : buildRegularEncounterChoices(wave));
+  state.pendingEncounter = { wave, boss, choices };
+  state.encounterChoices = choices;
+  state.choicesOpen = true;
+  state.choiceKind = "encounter";
+  state.message = boss ? "BOSS 已鎖定戰區。" : "選擇本波敵軍。";
+  if (HEADLESS_SIM) {
+    const choice = encounterAutoChoice(choices);
+    state.choicesOpen = false;
+    state.choiceKind = "";
+    startWave(choice);
+    return;
+  }
+  playSfx(boss ? "boss" : "ui");
+  renderEncounterDraft(choices, boss);
+  updateUi();
+}
+
+function hideEncounterDraft() {
+  const wasEncounter = state?.choiceKind === "encounter";
+  if (wasEncounter) {
+    state.choicesOpen = false;
+    state.choiceKind = "";
+  }
+  if (HEADLESS_SIM || !ui.encounterOverlay) return;
+  ui.encounterOverlay.classList.add("hidden");
+  ui.encounterPanel?.classList.remove("boss-draft");
+  if (ui.encounterList) ui.encounterList.innerHTML = "";
+  if (wasEncounter) resumeChannelAudio();
+}
+
+function selectEncounterChoice(choice, selectedButton=null) {
+  const pending = state.pendingEncounter;
+  if (!pending || pending.wave !== state.wave + 1 || !pending.choices.includes(choice)) return;
+  if (HEADLESS_SIM) {
+    state.choicesOpen = false;
+    state.choiceKind = "";
+    startWave(choice);
+    return;
+  }
+  if (ui.encounterList.dataset.committed === "true") return;
+  ui.encounterList.dataset.committed = "true";
+  ui.encounterList.querySelectorAll(".encounter-card").forEach(card => {
+    card.disabled = true;
+    card.classList.toggle("selected", card === selectedButton);
+    card.classList.toggle("rejected", card !== selectedButton);
+  });
+  playSfx(choice.boss ? "boss" : "upgrade");
+  setTimeout(() => {
+    if (state.pendingEncounter !== pending || state.over) return;
+    hideEncounterDraft();
+    state.pendingWaveStart = false;
+    startWave(choice);
+  }, 460);
+}
+
+function rerollUpgradeChoices() {
+  if (!state.choicesOpen || state.choiceKind !== "upgrade" || state.choiceRerollUsed) return;
+  const factory = currentChoiceOptions?.rerollFactory;
+  const cost = currentBet();
+  if (typeof factory !== "function" || state.wallet < cost) return;
+  state.wallet -= cost;
+  state.rerollSpent += cost;
+  registerMathStake(cost, "reroll");
+  state.choiceRerollUsed = true;
+  playSfx("bet");
+  factory();
+}
+function showResult(title, body) {
+  stopChannelAudio();
+  state.over = true;
+  if (HEADLESS_SIM) return;
+  ui.resultTitle.textContent = title;
+  ui.resultBody.textContent = body;
+  ui.resultOverlay.classList.remove("hidden");
+}
+function hideResult() { ui.resultOverlay.classList.add("hidden"); }
+
+function startBet() {
+  if (state.over || state.choicesOpen || state.waveActive || state.monsters.length) return;
+  if (state.started && prototypeRunComplete()) { completeRun(); return; }
+  const bet = currentBet();
+  if (state.wallet < bet) { showResult("錢包不足", "沒有足夠餘額下注。"); return; }
+  playSfx("bet");
+  // Keep the prior offer reserved until the new ticket atomically replaces it.
+  // Its boss/general funding origin is needed to carry the already-disclosed POT forward.
+  registerMathStake(bet);
+  if (!state.started) {
+    state.wallet -= bet;
+    if (!state.hero) showHeroDraft();
+    else {
+      state.started = true;
+      prepareEncounterDraft();
+    }
+    return;
+  }
+  state.wallet -= bet;
+  if (canLevelUp()) {
+    state.pendingWaveStart = true;
+    showUpgradeChoices();
+  } else {
+    prepareEncounterDraft();
+  }
+}
+
+function showHeroDraft() {
+  const choices = HEROES.map(hero => ({
+    title:hero.name,
+    tag:`${hero.attr}屬性角色`,
+    heroId:hero.id,
+    attrKey:hero.attrKey,
+    rarity:"hero",
+    dimension:"hero",
+    desc:hero.desc,
+    impact:`${hero.attackTrait}　同屬性砲台 +${params.heroSameAttrBonusPct}%`,
+    attackTrait:hero.attackTrait,
+    onPick:() => {
+      addHero(hero);
+      hideChoices();
+      state.started = true;
+      prepareEncounterDraft();
+    }
+  }));
+  showChoices("選擇出戰角色", "選定角色後直接開始第一波。", choices);
+}
+
+function addHero(def) {
+  state.hero = {
+    ...JSON.parse(JSON.stringify(def)),
+    id:`hero_${def.id}`,
+    heroId:def.id,
+    isHero:true,
+    cd:0,
+    level:1,
+    damageMul:1,
+    rateMul:1,
+    extraShots:0,
+    sameAttrBonus:0,
+    allTowerBonus:0,
+    aimAngle:-Math.PI / 2,
+    animTime:0,
+    recoil:0,
+    muzzleFlash:0,
+    upgrades:[],
+    upgradeCounts:{},
+    triadRanks:0,
+    buffs:{},
+  };
+}
+
+function randomTowerChoices(n, excluded = new Set()) {
+  const owned = new Set(state.towers.map(t => t.id));
+  const pool = TOWERS.filter(t => !owned.has(t.id) && !excluded.has(t.id));
+  const ownedRoles = new Set(state.towers.map(t => TOWER_ROLE[t.id]));
+  const picks = [];
+  while (picks.length < n && picks.length < pool.length) {
+    const available = pool.filter(t => !picks.includes(t));
+    const weighted = available.map(t => {
+      const role = TOWER_ROLE[t.id];
+      const weight = role === "single" && !ownedRoles.has("single") ? 1.45
+        : role === "area" && !ownedRoles.has("area") ? 1.45
+        : role === "control" && !ownedRoles.has("control") ? 1.15
+        : role === "general" ? 1.05 : 1;
+      return { t, weight };
+    });
+    let roll = gameplayRandom() * weighted.reduce((sum, item) => sum + item.weight, 0);
+    let chosen = weighted[weighted.length - 1].t;
+    for (const item of weighted) {
+      roll -= item.weight;
+      if (roll <= 0) { chosen = item.t; break; }
+    }
+    picks.push(chosen);
+  }
+  return picks;
+}
+
+function towerChoice(t, onPick) {
+  return {
+    title:t.name,
+    tag:`${t.attr}屬性　${towerRoleLabel(t)}`,
+    towerId:t.id,
+    attrKey:towerAttr(t),
+    rarity:"newTower",
+    dimension:"newTower",
+    desc:t.desc,
+    impact:towerRoleLabel(t),
+    onPick,
+  };
+}
+
+function towerRoleLabel(t) {
+  return {
+    flame:"近距群攻", grenade:"範圍爆發", cryo:"單體點殺", frostbomb:"群體控場", laser:"持續單體",
+    chain:"連鎖群攻", gas:"範圍持續", needle:"毒傷點殺", blade:"泛用輸出", trap:"定點輔助"
+  }[t.id] || "戰術砲台";
+}
+
+const towerIconCache = new Map();
+const heroIconCache = new Map();
+function heroIconDataUrl(hero) {
+  if (!hero) return "";
+  const key = hero.heroId || hero.id;
+  if (heroIconCache.has(key)) return heroIconCache.get(key);
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 96;
+  iconCanvas.height = 96;
+  if (typeof iconCanvas.toDataURL !== "function") return "";
+  const g = iconCanvas.getContext("2d");
+  const attrKey = hero.attrKey || key;
+  const color = (ATTRIBUTE_DISPLAY[attrKey] || ATTRIBUTE_DISPLAY.neutral).color;
+  const bg = g.createRadialGradient(48, 28, 4, 48, 48, 54);
+  bg.addColorStop(0, color);
+  bg.addColorStop(.27, "#2c3441");
+  bg.addColorStop(1, "#07090d");
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 96, 96);
+  g.globalAlpha = .22;
+  g.fillStyle = color;
+  g.beginPath(); g.arc(48,48,36,0,Math.PI*2); g.fill();
+  g.globalAlpha = 1;
+  g.strokeStyle = color;
+  g.lineWidth = 3;
+  g.beginPath(); g.arc(48,48,40,0,Math.PI*2); g.stroke();
+
+  const skin = { fire:"#b97855", ice:"#efc7aa", electric:"#8f5b48", poison:"#cca07c", neutral:"#d5a075" }[attrKey] || "#d5a075";
+  g.fillStyle = "#111720";
+  g.beginPath(); g.moveTo(16,92); g.quadraticCurveTo(20,59,48,57); g.quadraticCurveTo(76,59,80,92); g.closePath(); g.fill();
+  g.fillStyle = color;
+  g.globalAlpha = .82;
+  g.beginPath(); g.moveTo(18,92); g.lineTo(27,66); g.lineTo(40,73); g.lineTo(48,91); g.lineTo(56,73); g.lineTo(69,66); g.lineTo(78,92); g.closePath(); g.fill();
+  g.globalAlpha = 1;
+  g.fillStyle = skin;
+  g.fillRect(42,52,12,12);
+  g.beginPath();
+  g.moveTo(32,28); g.quadraticCurveTo(33,16,48,15); g.quadraticCurveTo(64,16,65,29);
+  g.lineTo(62,47); g.quadraticCurveTo(56,57,48,58); g.quadraticCurveTo(39,57,34,47); g.closePath();
+  g.fill();
+  g.fillStyle = skin;
+  g.beginPath(); g.arc(32,37,4,0,Math.PI*2); g.arc(64,37,4,0,Math.PI*2); g.fill();
+
+  g.strokeStyle = "#171117";
+  g.lineWidth = 2;
+  g.beginPath(); g.moveTo(38,35); g.lineTo(44,34); g.moveTo(52,34); g.lineTo(58,35); g.stroke();
+  g.fillStyle = "#ecf8ff";
+  g.beginPath(); g.ellipse(41,38,3,1.5,0,0,Math.PI*2); g.ellipse(55,38,3,1.5,0,0,Math.PI*2); g.fill();
+  g.fillStyle = color;
+  g.beginPath(); g.arc(41,38,1.3,0,Math.PI*2); g.arc(55,38,1.3,0,Math.PI*2); g.fill();
+  g.strokeStyle = "rgba(80,38,32,.75)";
+  g.lineWidth = 1.4;
+  g.beginPath(); g.moveTo(48,39); g.lineTo(46,45); g.lineTo(49,46); g.moveTo(42,50); g.quadraticCurveTo(48,53,54,50); g.stroke();
+
+  g.fillStyle = attrKey === "ice" ? "#e7f5ff" : attrKey === "fire" ? "#271713" : attrKey === "electric" ? "#161421" : attrKey === "poison" ? "#17231b" : "#242018";
+  if (attrKey === "fire") {
+    g.beginPath(); g.moveTo(31,31); g.lineTo(34,16); g.lineTo(40,22); g.lineTo(47,10); g.lineTo(52,21); g.lineTo(64,15); g.lineTo(65,32); g.quadraticCurveTo(48,22,31,31); g.fill();
+  } else if (attrKey === "ice") {
+    g.beginPath(); g.moveTo(30,34); g.quadraticCurveTo(28,15,48,12); g.quadraticCurveTo(68,15,66,35); g.lineTo(61,28); g.lineTo(56,18); g.lineTo(50,29); g.lineTo(43,18); g.lineTo(36,30); g.fill();
+  } else if (attrKey === "electric") {
+    g.beginPath(); g.moveTo(31,29); g.lineTo(35,18); g.lineTo(43,21); g.lineTo(50,13); g.lineTo(57,21); g.lineTo(64,18); g.lineTo(66,31); g.quadraticCurveTo(49,24,31,29); g.fill();
+    g.strokeStyle = color; g.lineWidth = 2; g.beginPath(); g.moveTo(31,40); g.lineTo(65,40); g.stroke();
+  } else if (attrKey === "poison") {
+    g.beginPath(); g.moveTo(27,37); g.quadraticCurveTo(27,13,48,10); g.quadraticCurveTo(69,13,69,37); g.lineTo(62,29); g.quadraticCurveTo(48,19,34,29); g.closePath(); g.fill();
+    g.fillStyle = "#10171a"; g.fillRect(34,44,28,12);
+    g.strokeStyle = color; g.beginPath(); g.moveTo(38,49); g.lineTo(58,49); g.stroke();
+  } else {
+    g.beginPath(); g.moveTo(30,29); g.quadraticCurveTo(33,15,48,15); g.quadraticCurveTo(63,15,66,29); g.quadraticCurveTo(48,23,30,29); g.fill();
+    g.strokeStyle = color; g.lineWidth = 2; g.beginPath(); g.arc(66,39,7,-Math.PI/2,Math.PI/2); g.moveTo(72,44); g.lineTo(77,49); g.stroke();
+  }
+
+  g.fillStyle = "#080b10";
+  g.beginPath(); g.arc(48,78,12,0,Math.PI*2); g.fill();
+  drawAttributeGlyph(g, attrKey, 48, 78, 7, color);
+  const url = iconCanvas.toDataURL("image/png");
+  heroIconCache.set(key, url);
+  return url;
+}
+function towerIconDataUrl(tower) {
+  if (!tower) return "";
+  if (towerIconCache.has(tower.id)) return towerIconCache.get(tower.id);
+  const iconCanvas = document.createElement("canvas");
+  iconCanvas.width = 96;
+  iconCanvas.height = 96;
+  if (typeof iconCanvas.toDataURL !== "function") return "";
+  const g = iconCanvas.getContext("2d");
+  const attr = towerAttr(tower);
+  const color = (ATTRIBUTE_DISPLAY[attr] || ATTRIBUTE_DISPLAY.neutral).color;
+  const bg = g.createRadialGradient(40, 32, 4, 48, 48, 48);
+  bg.addColorStop(0, "#353941");
+  bg.addColorStop(1, "#0a0c10");
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 96, 96);
+  g.strokeStyle = color;
+  g.lineWidth = 4;
+  g.beginPath();
+  g.arc(48, 48, 38, 0, Math.PI * 2);
+  g.stroke();
+  g.globalAlpha = .22;
+  g.fillStyle = color;
+  g.beginPath();
+  g.arc(48, 48, 33, 0, Math.PI * 2);
+  g.fill();
+  g.globalAlpha = 1;
+  drawTowerGlyph(g, tower.id, color);
+  const url = iconCanvas.toDataURL("image/png");
+  towerIconCache.set(tower.id, url);
+  return url;
+}
+
+function drawTowerGlyph(g, id, color) {
+  g.save();
+  g.translate(48, 48);
+  g.strokeStyle = color;
+  g.fillStyle = color;
+  g.lineWidth = 6;
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  if (id === "flame") {
+    g.beginPath(); g.moveTo(-18,18); g.bezierCurveTo(-30,-2,-9,-24,0,-30); g.bezierCurveTo(4,-13,25,-10,16,-28); g.bezierCurveTo(34,-3,20,25,-2,29); g.bezierCurveTo(-1,15,-8,5,-18,18); g.fill();
+  } else if (id === "grenade") {
+    g.beginPath(); g.arc(0,7,21,0,Math.PI*2); g.fill(); g.fillRect(-9,-24,18,12); g.beginPath(); g.arc(13,-18,10,Math.PI,Math.PI*1.8); g.stroke();
+  } else if (id === "cryo") {
+    g.beginPath(); g.arc(0,0,20,0,Math.PI*2); g.stroke(); g.beginPath(); g.moveTo(-31,0); g.lineTo(31,0); g.moveTo(0,-31); g.lineTo(0,31); g.stroke(); g.beginPath(); g.arc(0,0,5,0,Math.PI*2); g.fill();
+  } else if (id === "frostbomb") {
+    for (let i=0;i<3;i++) { g.rotate(Math.PI/3); g.beginPath(); g.moveTo(-29,0); g.lineTo(29,0); g.moveTo(18,0); g.lineTo(10,-8); g.moveTo(18,0); g.lineTo(10,8); g.stroke(); }
+  } else if (id === "laser") {
+    g.beginPath(); g.moveTo(-28,18); g.lineTo(-6,-18); g.lineTo(8,1); g.lineTo(29,-22); g.stroke(); g.beginPath(); g.arc(-22,22,7,0,Math.PI*2); g.fill();
+  } else if (id === "chain") {
+    g.beginPath(); g.moveTo(8,-32); g.lineTo(-22,5); g.lineTo(-4,3); g.lineTo(-13,32); g.lineTo(24,-12); g.lineTo(5,-9); g.closePath(); g.fill();
+  } else if (id === "gas") {
+    [[-15,5,15],[2,-10,18],[18,9,14],[-1,18,17]].forEach(([x,y,r])=>{ g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill(); });
+  } else if (id === "needle") {
+    g.rotate(-.65); g.fillRect(-30,-4,45,8); g.beginPath(); g.moveTo(15,-11); g.lineTo(32,0); g.lineTo(15,11); g.closePath(); g.fill(); g.fillRect(-26,-14,6,28);
+  } else if (id === "blade") {
+    for (let i=0;i<3;i++) { g.rotate(Math.PI*2/3); g.beginPath(); g.moveTo(0,-5); g.quadraticCurveTo(28,-22,30,-3); g.quadraticCurveTo(18,8,0,5); g.fill(); } g.fillStyle="#0b0d11"; g.beginPath(); g.arc(0,0,7,0,Math.PI*2); g.fill();
+  } else {
+    g.beginPath(); for (let i=0;i<6;i++) { const a=-Math.PI/2+i*Math.PI/3; const x=Math.cos(a)*28,y=Math.sin(a)*28; i?g.lineTo(x,y):g.moveTo(x,y); } g.closePath(); g.stroke(); g.beginPath(); g.moveTo(0,-18); g.lineTo(17,15); g.lineTo(-17,15); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+
+function addTower(def) {
+  if (state.towers.length >= MAX_TOWER_SLOTS) return;
+  state.towers.push({
+    ...JSON.parse(JSON.stringify(def)),
+    slot: state.towers.length, x: TOWER_SLOTS[state.towers.length].x, y: TOWER_SLOTS[state.towers.length].y,
+    cd: 0, channel: null, lock: null, upgrades: [], level: 1, extraShots: 0, extraAreas: 0, dotMul: 1, slowMul: 1, stunMul: 1,
+    burnDurationMul: 1, poisonDurationMul: 1, slowDurationMul: 1, zoneDurationMul: 1, iceTrailDurationMul: 1,
+    durationMul: 1, freezeDurationMul: 1, focusMul: 1, vulnerable: 0, burnArea: false, poison: false, stun: false, freeze: false,
+  });
+}
+
+function applyEncounterRewardToTicket(ticket, encounter) {
+  if (!ticket || !encounter) return ticket;
+  const factor = Math.max(.1, Number(encounter.rewardFactor) || 1);
+  const before = Math.max(0, Number(ticket.before) || 0);
+  const scaledTarget = before + Math.max(0, Number(ticket.targetPayout) - before) * factor;
+  const scaledFundedMean = before + Math.max(0, Number(ticket.fundedMeanTargetPayout) - before) * factor;
+  ticket.encounterId = encounter.id;
+  ticket.encounterThreat = encounter.threat;
+  ticket.encounterReward = encounter.reward;
+  ticket.encounterRewardFactor = factor;
+  ticket.targetPayout = Math.max(before, Math.round(scaledTarget));
+  ticket.fundedMeanTargetPayout = Math.max(before, scaledFundedMean);
+  ticket.expectedAfter = before + Math.max(0, Number(ticket.expectedAfter) - before) * factor;
+  ticket.fairValue = ticket.expectedAfter;
+  ticket.rewardFactor *= factor;
+  ticket.targetPot = Math.max(0, ticket.targetPayout / Math.max(.1, ticket.targetMultiplier));
+  ticket.rewardBudget = Math.max(0, ticket.targetPot - state.pot);
+  return ticket;
+}
+
+function rollEncounterWaveReward(encounter, bet) {
+  const tier = clamp(Number(encounter.reward) || 1, 1, 4);
+  const prefix = encounter.boss ? "encounterBossChest" : `encounterChest${tier}`;
+  const [low, high] = encounter.boss || encounterEconomyEnabled()
+    ? [params[`${prefix}Min`], params[`${prefix}Max`]] : ENCOUNTER_REWARD_BANDS[tier];
+  const rewardUniform = gameplayRandom();
+  const shape = encounter.boss || !encounterEconomyEnabled() ? 1 : params[`encounterChest${tier}Shape`];
+  const multiplier = low + Math.pow(rewardUniform, shape) * (high - low);
+  const entryMultiplier = encounterEconomyEnabled() ? Math.max(1, 1 + state.bossAdd) : 1;
+  const entryPrice = Math.pow(entryMultiplier, encounterEconomyEnabled() ? params.encounterPotEntryPower : 0);
+  const budget = balancedRewardRound(bet * multiplier * params.moneyMul * (encounterEconomyEnabled() ? params.encounterRewardScale : 1) / entryPrice);
+  const clearBonus = encounter.boss ? 0 : Math.round(budget * .40);
+  return { id:encounter.boss ? "boss-escorts" : `chest-${tier}`, tier, multiplier, budget, remaining:budget - clearBonus,
+    clearBonus, claimedBonus:0, weightRemaining:0,
+    clearExp:Math.round(ENCOUNTER_CLEAR_EXP[tier] * params.expMul),
+    rules:economyMode(), rewardUniform };
+}
+
+function encounterNormalKind(encounter) {
+  return { swarm:"normal", rush:"fast", armor:"tank", siege:"ranged", elite:"normal" }[encounter.formation] || "normal";
+}
+
+function startWave(encounterChoice=null) {
+  if (prototypeRunComplete()) { completeRun(); return; }
+  const encounter = encounterChoice || state.pendingEncounter?.choices?.[0] || null;
+  state.pendingEncounter = null;
+  state.encounterChoices = [];
+  state.currentEncounter = encounter;
+  state.waveSummary = { startHp:state.hp, startPot:state.pot, pot:0, damage:0, damageTaken:0, damageHits:0, repair:0, clearExp:0 };
+  state.wave += 1;
+  const info = waveInfo();
+  const band = tunedBand(bandFor(state.wave), state.wave);
+  const template = encounter?.template || pickWeighted(band.templates);
+  state.selectedTemplate = template;
+  const primaryAttr = encounter?.attr || wavePrimaryAttribute(state.wave);
+  state.currentWaveAttr = primaryAttr;
+  const boss = encounter ? !!encounter.boss : consumeBossPreview(state.wave, info);
+  const bossDifficulty = boss ? encounter?.bossDifficulty || rollBossDifficulty(state.bossSeen === 0) : null;
+  let count = Number.isFinite(encounter?.enemyCount) ? Math.max(1, Math.round(encounter.enemyCount)) : 0;
+  if (!count) {
+    const rolledCount = rand(band.count[0], band.count[1]);
+    const baseCount = boss
+      ? Math.max(4, Math.round(rolledCount * clamp(paramNumber("bossPreludeCountMul", .55), .1, 1)))
+      : rolledCount;
+    count = Math.max(boss ? 3 : 6, Math.round(baseCount * Math.max(.25, encounter?.countMul || 1)));
+  }
+  const mathTicket = certifiedMathEnabled()
+    ? applyEncounterRewardToTicket(createMathTicket(state.wave, betForWave(state.wave), boss, bossDifficulty), encounter)
+    : null;
+  const rolledElites = eliteCount(info);
+  const elites = boss
+    ? Math.max(Math.min(1, rolledElites), Math.max(0, Math.round(encounter?.forcedElites || 0)))
+    : encounter ? Math.max(0, Math.round(encounter.forcedElites || 0)) : rolledElites;
+  const normalQueue = Array.from({ length:count }, () => {
+    const kind = encounter && !boss ? encounterNormalKind(encounter) : pickWaveMonster(template);
+    return { kind, rewardWeight:normalRewardWeight(kind, band) };
+  });
+  const eliteQueue = Array.from({ length:elites }, () => {
+    const variants = ELITE_VARIANTS[primaryAttr] || ELITE_VARIANTS.neutral;
+    const index = encounter?.formation === "elite" ? Math.max(0, variants.findIndex(base => base.id === encounter.art.id)) : rand(0, 1);
+    return { index, rewardWeight:eliteRewardWeight(index) };
+  });
+  const reward = mathTicket
+    ? { id:"certified", label:"驗證預算", multiplier:mathTicket.rewardBudget / Math.max(1, betForWave(state.wave)), budget:mathTicket.rewardBudget, remaining:mathTicket.rewardBudget, weightRemaining:0 }
+    : ENCOUNTER_DRAFT_PROTOTYPE && encounter
+      ? rollEncounterWaveReward(encounter, betForWave(state.wave))
+      : rollWaveReward(state.wave, rewardFundingBet(state.wave));
+  if (!mathTicket && encounter && !ENCOUNTER_DRAFT_PROTOTYPE) {
+    reward.budget = balancedRewardRound(reward.budget * encounter.rewardFactor);
+    reward.remaining = reward.budget;
+    reward.multiplier *= encounter.rewardFactor;
+  }
+  reward.weightRemaining = [...normalQueue, ...eliteQueue].reduce((sum, entry) => sum + entry.rewardWeight, 0);
+  state.waveReward = reward;
+  state.spawn = {
+    remain:normalQueue.length, normalQueue, eliteQueue, timer:0,
+    every:params.spawnInterval * Math.max(.25, Number(encounter?.spawnGapMul) || 1),
+    batchSize:Math.max(1, Math.round(Number(encounter?.batchSize) || 1)),
+    eliteFirst:encounter?.formation === "elite",
+    template, hpMul:(ENCOUNTER_DRAFT_PROTOTYPE && state.wave > 4
+      ? Math.min(5.5, 1.26 + (state.wave - 4) * .105) : info.hpMul) * Math.max(.4, encounter?.hpMul || 1), band, elites:eliteQueue.length, boss,
+    bossDifficulty, primaryAttr, wave:state.wave
+  };
+  if (mathTicket) mathTicket.initialUnits = count + elites + (boss ? 1 : 0);
+  state.waveActive = true;
+  state.message = boss ? `${encounter?.formationLabel || "BOSS"}進入戰區` : `${encounter?.formationLabel || "敵軍"}進入戰區`;
+  updateUi();
+}
+
+function shouldBoss(info) {
+  return rollBossForWave(state.wave, info);
+}
+
+function eliteCount(info) {
+  if (gameplayRandom() * 100 > info.eliteWeight) return 0;
+  const r = gameplayRandom();
+  if (r < info.e1) return 1;
+  if (r < info.e1 + info.e2) return 2;
+  return info.e3 > 0 ? 3 : 1;
+}
+
+function spawnMonster(kind, hpMul, band, primaryAttr, wave, rewardWeight=0) {
+  const enemyAttr = pickWaveAttribute(primaryAttr, wave, !!state.currentEncounter);
+  const variants = MINION_VARIANTS[enemyAttr] || MINION_VARIANTS.neutral;
+  const variantIndex = kind === "tank" ? 2 : kind === "ranged" || kind === "special" ? 1 : kind === "fast" && gameplayRandom() < .42 ? 1 : 0;
+  const encounter = state.currentEncounter;
+  const base = encounter && !encounter.boss
+    ? encounter.formation === "elite" ? variants[0] : encounterArtFor(enemyAttr, { id:encounter.formation })
+    : variants[variantIndex];
+  const lane = base.special ? rand(-68, 68) : pick([-70, -35, 0, 35, 70]) + rand(-4, 4);
+  const x = FIELD.pathX + lane;
+  const curve = base.special ? rand(30, 54) * pick([-1, 1]) : 0;
+  state.monsters.push(makeEnemy(base, hpMul, x, curve, kind, band.drop[kind], false, false, base.special ? "sway" : "straight", base.id, enemyAttr, 0, rewardWeight));
+}
+function spawnElite(hpMul, primaryAttr, wave, index=rand(0, ELITES.length - 1), rewardWeight=0) {
+  const enemyAttr = pickWaveAttribute(primaryAttr, wave, !!state.currentEncounter);
+  const variants = ELITE_VARIANTS[enemyAttr] || ELITE_VARIANTS.neutral;
+  const base = variants[index % variants.length];
+  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX + pick([-54, -18, 18, 54]) + rand(-4, 4), 0, "elite", 1, true, false, "straight", base.id, enemyAttr, 0, rewardWeight));
+}
+function spawnBoss(hpMul, primaryAttr, wave, difficulty=null) {
+  const enemyAttr = pickWaveAttribute(primaryAttr, wave, true);
+  const base = BOSS_VARIANTS[enemyAttr] || BOSS_VARIANTS.neutral;
+  if (HEADLESS_SIM) state.simBossSpawned += 1;
+  state.monsters.push(makeEnemy(base, hpMul, FIELD.pathX, 0, "boss", 0, false, true, "straight", base.id, enemyAttr, state.bossRolled, 0, difficulty));
+}
+function makeEnemy(base, hpMul, x, curve, kind, dropChance, elite=false, boss=false, pathType="straight", tuneId=kind, primaryAttr=null, bossOrdinal=0, rewardWeight=0, bossDifficulty=null) {
+  const tunedBase = {
+    ...base,
+    hp: paramNumber(`monster_${tuneId}_hp`, base.hp),
+    speed: paramNumber(`monster_${tuneId}_speed`, base.speed),
+    range: paramNumber(`monster_${tuneId}_range`, base.range),
+    atk: paramNumber(`monster_${tuneId}_atk`, base.atk),
+    interval: paramNumber(`monster_${tuneId}_interval`, base.interval),
+    exp: paramNumber(`monster_${tuneId}_exp`, base.exp || 120),
+  };
+  if (base.money) {
+    tunedBase.money = [
+      paramNumber(`monster_${tuneId}_moneyMin`, base.money[0]),
+      paramNumber(`monster_${tuneId}_moneyMax`, base.money[1]),
+    ];
+  }
+  const encounter = state.currentEncounter;
+  if (encounter && !encounter.boss && !elite && Number.isFinite(encounter.range)) {
+    tunedBase.range = encounter.range;
+  }
+  const laterBossGrowth = boss && bossOrdinal > 2
+    ? Math.pow(Math.max(1, paramNumber("bossHpPerOrdinalMul", 1.15)), bossOrdinal - 2)
+    : 1;
+  const classHpMul = boss
+    ? (bossOrdinal === 1 ? params.bossFirstHpMul : params.bossHpMul * laterBossGrowth)
+    : elite ? params.eliteHpMul : params.minionHpMul;
+  const classAtkMul = boss ? params.bossAtkMul : elite ? params.eliteAtkMul : params.minionAtkMul;
+  const classSpeedMul = boss ? params.bossSpeedMul : elite ? 1 : params.minionSpeedMul;
+  const difficultyHpMul = boss ? (bossDifficulty?.hpMul || 1) : 1;
+  const difficultyAtkMul = boss ? (bossDifficulty?.atkMul || 1) : 1;
+  const difficultySpeedMul = boss ? (bossDifficulty?.speedMul || 1) : 1;
+  const bossOrdinalAtkMul = boss && bossOrdinal === 1 ? paramNumber("bossFirstAtkMul", .72) : 1;
+  // Campaign BOSS growth must not also inherit the legacy 30-wave HP curve.
+  const prototypeBoss = ENCOUNTER_DRAFT_PROTOTYPE && boss;
+  const effectiveHpMul = prototypeBoss
+    ? PROTOTYPE_BOSS_HP[clamp(bossOrdinal - 1, 0, 4)] : hpMul * classHpMul;
+  const hp = Math.round(tunedBase.hp * effectiveHpMul * difficultyHpMul);
+  const legacyAtkMul = base.enemyAttr ? 1 : ({ normal:.25, fast:.27, tank:.28, ranged:.30, special:.33 }[kind] || .3);
+  const openingAtkMul = !elite && !boss && state.wave === 1 ? paramNumber("wave1MinionAtkMul", .55) : 1;
+  const encounterAtkMul = Math.max(.5, Number(state.currentEncounter?.atkMul) || 1);
+  const encounterSpeedMul = Math.max(.5, Number(state.currentEncounter?.speedMul) || 1);
+  const rawAtk = Math.max(1, Math.round(tunedBase.atk * legacyAtkMul * classAtkMul * difficultyAtkMul * bossOrdinalAtkMul * openingAtkMul * encounterAtkMul));
+  const atk = ENCOUNTER_DRAFT_PROTOTYPE && !boss && state.currentEncounter && !state.currentEncounter.boss
+    ? Math.min(rawAtk, params.encounterBaseHitCap) : rawAtk;
+  const legacySpeedMul = base.enemyAttr ? 1 : ({ normal:.72, fast:.76, tank:.68, ranged:.72, special:.74 }[kind] || .72);
+  const rawSpeed = tunedBase.speed * legacySpeedMul * classSpeedMul * difficultySpeedMul * encounterSpeedMul;
+  const speedCap = encounter && !encounter.boss && kind === "fast" ? params.encounterRushSpeedCap
+    : boss ? (primaryAttr === "electric" ? 34 : 30) : elite ? (primaryAttr === "electric" ? 48 : 40) : (primaryAttr === "electric" ? 54 : 46);
+  const speed = Math.max(1, Math.round(Math.min(rawSpeed, speedCap)));
+  const attributeDefaults = base.enemyAttr ? enemyAttributeProfile(base.enemyAttr) : ENEMY_ATTRIBUTE_DEFAULTS[tuneId] || {};
+  const baseAttrMultipliers = Object.fromEntries(ATTRIBUTE_KEYS.map(attr => [
+    attr,
+    paramNumber(`monster_${tuneId}_${attr}Mul`, attributeDefaults[attr] ?? 1)
+  ]));
+  const attrMultipliers = base.enemyAttr ? baseAttrMultipliers : applyWaveAttributeBias(baseAttrMultipliers, primaryAttr);
+  const bossShieldHpMax = boss ? hp * clamp(paramNumber("bossShieldHpPct", 10), 0, 100) / 100 : 0;
+  return { ...tunedBase, kind, elite, boss, pathType, x, y: FIELD.spawnY, sx:x, curve, hp, maxHp:hp, atk, speed,
+    atkCd:Math.max(.08, tunedBase.interval * (boss ? .72 + gameplayRandom() * .38 : .25 + gameplayRandom() * .65)), stopped:false,
+    tuneId, attrMultipliers, burn:0, burnTime:0, poison:0, poisonTime:0, toxicTime:0, slowTime:0, slowPct:0, stunTime:0, freezeTime:0,
+    focusMarkTime:0, electricVulnerableTime:0, electricVulnerableAmount:0, vulnerable:0, vulnerableAmount:0, dropChance, rewardWeight, bossDifficulty,
+    bossPhase:boss ? 3 : 0, bossShieldHp:bossShieldHpMax, bossShieldHpMax, bossBreakTime:0,
+    bossAttackPause:0, bossAttackWindup:0 };
+}
+
+function update(dt) {
+  const presentationDt = dt / speedMultiplier();
+  updateBetIncrease(presentationDt);
+  if (state.over || state.choicesOpen) return;
+  updateSpawn(dt);
+  updateZones(dt);
+  updateHero(dt);
+  updateTowers(dt);
+  updateProjectiles(dt);
+  updateEnemies(dt);
+  checkWaveClear();
+  if (!HEADLESS_SIM) {
+    state.effects = state.effects.map(e => ({ ...e, t:e.t-dt * (["bossReward", "encounterChest"].includes(e.type) ? 1 / speedMultiplier() : 1) })).filter(e => e.t > 0);
+    state.monsters.forEach(m => { if (m.damageTextCd > 0) m.damageTextCd -= dt; });
+  }
+  updateBossRoll(presentationDt);
+}
+
+function headlessIdleFrameSkip(maxFrames=600) {
+  if (!HEADLESS_SIM || state.over || state.choicesOpen || !state.waveActive || state.bossRoll) return 1;
+  if (state.projectiles.length || state.zones.length || state.towers.some(tower => tower.channel)) return 1;
+  if (!state.monsters.length && !state.spawn) return 1;
+
+  const origin = fireOrigin();
+  let attackRange = state.hero ? heroParam(state.hero, "range", state.hero.range) : 0;
+  for (const tower of state.towers) attackRange = Math.max(attackRange, scaledRange(tower));
+  if (attackRange <= 0) return 1;
+
+  let safeFrames = Math.max(1,Math.floor(maxFrames));
+  const fixedDt = 1 / 60;
+  const spawn = state.spawn;
+  if (spawn) {
+    if (spawn.remain <= 0 || spawn.timer <= fixedDt) return 1;
+    safeFrames = Math.min(safeFrames, Math.max(1,Math.ceil(spawn.timer / fixedDt - 1e-9) - 1));
+  }
+
+  for (const monster of state.monsters) {
+    if (monster.hp <= 0 || monster.pathType !== "straight" || monster.stopped ||
+        monster.burnTime > 0 || monster.poisonTime > 0 || monster.freezeTime > 0 || monster.stunTime > 0 ||
+        monster.slowTime > 0 || monster.toxicTime > 0 || monster.vulnerable > 0 || monster.electricVulnerableTime > 0) return 1;
+    if (distSquared(origin,monster) <= attackRange * attackRange || (FIELD.attackLineY - monster.y) <= monster.range) return 1;
+    const speed = Math.max(0,monster.speed);
+    if (!speed) return 1;
+
+    const dx = Math.abs(monster.x - origin.x);
+    if (dx < attackRange) {
+      const targetY = origin.y - Math.sqrt(Math.max(0,attackRange * attackRange - dx * dx));
+      const targetFrames = Math.floor(Math.max(0,targetY - monster.y) / speed / fixedDt + 1e-9);
+      if (targetFrames <= 1) return 1;
+      safeFrames = Math.min(safeFrames,targetFrames);
+    }
+    const baseY = FIELD.attackLineY - monster.range;
+    const baseFrames = Math.floor(Math.max(0,baseY - monster.y) / speed / fixedDt + 1e-9);
+    if (baseFrames <= 1) return 1;
+    safeFrames = Math.min(safeFrames,baseFrames);
+  }
+  return Math.max(1,safeFrames);
+}
+
+function heroParam(hero, key, fallback) {
+  const value = Number(params[`hero_${hero.heroId || hero.attrKey}_${key}`]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function heroAttackCooldown(hero) {
+  return 1 / Math.max(.05, heroParam(hero, "rate", hero.rate) * (hero.rateMul || 1));
+}
+
+function heroDamage(hero) {
+  return heroParam(hero, "damage", hero.damage) * (hero.damageMul || 1) * params.heroDamageMul;
+}
+
+function heroAttackMode(hero) {
+  return hero.attackMode || ({ fire:"blast", ice:"pierce", electric:"chain", poison:"cloud", neutral:"burst" }[hero.attrKey] || "burst");
+}
+
+function heroSecondaryMultiplier(hero) {
+  return Math.max(0, heroParam(hero, "secondaryMul", hero.secondaryMul ?? .65));
+}
+
+function heroTargetCount(hero) {
+  return Math.max(1, Math.round(heroParam(hero, "targets", hero.targets || 1)));
+}
+
+function heroChainAttack(hero, root, orderedTargets) {
+  const hit = [root];
+  const pool = orderedTargets.map(item => item.monster).filter(monster => monster !== root && monster.hp > 0);
+  while (hit.length < heroTargetCount(hero) && pool.length) {
+    const from = hit[hit.length - 1];
+    pool.sort((a,b) => dist(from, a) - dist(from, b));
+    hit.push(pool.shift());
+  }
+  hit.forEach((monster, index) => {
+    damageEnemy(monster, heroDamage(hero) * (index ? heroSecondaryMultiplier(hero) : 1), hero);
+    applyHeroProjectileStatus(hero, monster);
+  });
+  effect("chain", { ...fireOrigin(), color:hero.color }, hit[0], { chain:hit.slice(1) });
+}
+
+function updateHero(dt) {
+  const hero = state.hero;
+  if (!hero) return;
+  hero.animTime = (hero.animTime || 0) + dt;
+  hero.recoil = Math.max(0, (hero.recoil || 0) - dt * 5.5);
+  hero.muzzleFlash = Math.max(0, (hero.muzzleFlash || 0) - dt);
+  hero.cd -= dt;
+  if (hero.cd > 0) return;
+  const origin = fireOrigin();
+  const range = heroParam(hero, "range", hero.range);
+  const targets = [];
+  for (const monster of state.monsters) {
+    if (monster.hp <= 0) continue;
+    const distance2 = distSquared(origin,monster);
+    if (distance2 <= range * range) targets.push({monster,distance:Math.sqrt(distance2)});
+  }
+  targets.sort((a,b) => b.monster.y - a.monster.y);
+  if (!targets.length) return;
+  const firstTarget = targets[0].monster;
+  const shoulder = heroShoulderPosition(hero);
+  hero.aimAngle = Math.atan2(firstTarget.y - shoulder.y, firstTarget.x - shoulder.x);
+  hero.recoil = 1;
+  hero.muzzleFlash = .11;
+  const mode = heroAttackMode(hero);
+  const baseCount = mode === "burst" ? heroTargetCount(hero) : 1;
+  const count = baseCount + (hero.extraShots || 0);
+  if (mode === "chain") {
+    const roots = targets.slice(0, count).map(item => item.monster);
+    (roots.length ? roots : [firstTarget]).forEach(root => heroChainAttack(hero, root, targets));
+  } else {
+    const offsets = spreadOffsets(count, mode === "burst" ? 7 : 12);
+    offsets.forEach((offset, index) => {
+      const target = mode === "burst" ? firstTarget : (targets[index]?.monster || firstTarget);
+      launchProjectileAt(hero, target, `hero_${mode}`, mode === "burst" ? offset : 0);
+    });
+  }
+  playTowerSfx(mode === "chain" ? "chain" : mode === "pierce" ? "cryo" : mode === "cloud" ? "needle" : mode === "blast" ? "flame" : "blade");
+  hero.cd = heroAttackCooldown(hero);
+}
+
+function updateSpawn(dt) {
+  if (!state.spawn) return;
+  const s = state.spawn;
+  s.timer -= dt;
+  if (s.eliteFirst && s.elites > 0) {
+    const entry = s.eliteQueue.shift();
+    spawnElite(s.hpMul, s.primaryAttr, s.wave, entry.index, entry.rewardWeight);
+    s.elites -= 1;
+    s.eliteFirst = false;
+  }
+  if (s.timer <= 0 && s.remain > 0) {
+    const batch = Math.min(s.remain, s.batchSize || 1);
+    for (let index=0; index<batch; index+=1) {
+      const entry = s.normalQueue.shift();
+      spawnMonster(entry.kind, s.hpMul, s.band, s.primaryAttr, s.wave, entry.rewardWeight);
+      s.remain -= 1;
+    }
+    s.timer = s.every;
+  }
+  if (s.remain <= 0 && s.elites > 0) {
+    const entry = s.eliteQueue.shift();
+    spawnElite(s.hpMul, s.primaryAttr, s.wave, entry.index, entry.rewardWeight);
+    s.elites -= 1;
+  }
+  if (s.remain <= 0 && s.elites <= 0 && s.boss && state.monsters.length <= 2) {
+    spawnBoss(s.hpMul, s.primaryAttr, s.wave, s.bossDifficulty);
+    s.boss = false;
+    state.message = "BOSS 進場";
+  }
+  if (s.remain <= 0 && s.elites <= 0 && !s.boss) state.spawn = null;
+}
+
+function updateZones(dt) {
+  const zoneControls = new Map();
+  for (const z of state.zones) {
+    z.time -= dt;
+    const tick = Math.max(0.05, z.tick || 0.5);
+    z.tickTimer = (z.tickTimer ?? 0) - dt;
+    const tickCount = z.tickTimer <= 0 ? 1 + Math.floor(Math.abs(z.tickTimer) / tick) : 0;
+    for (const m of state.monsters) {
+      if (distSquared(z,m) <= z.radius * z.radius) {
+        if (tickCount > 0 && z.damage) damageEnemy(m, z.damage * tick * tickCount, z.tower);
+        if (z.slow) {
+          m.slowTime = Math.max(m.slowTime, z.slow);
+          m.slowPct = Math.max(m.slowPct || 0, z.slowPct || .45);
+        }
+        if (z.root && !z.hardControlHits.has(m)) {
+          const control = zoneControls.get(m) || { root:0, rootZones:[], pull:0, pullZone:null };
+          if (z.root > control.root) control.root = z.root;
+          control.rootZones.push(z);
+          zoneControls.set(m, control);
+        }
+        if (z.vulnerable) { m.vulnerable = Math.max(m.vulnerable, 1); m.vulnerableAmount = Math.max(m.vulnerableAmount || 0, z.vulnerable); }
+        if (z.toxic) m.toxicTime = Math.max(m.toxicTime || 0, .2);
+        if (z.pull) {
+          const control = zoneControls.get(m) || { root:0, rootZones:[], pull:0, pullZone:null };
+          if (z.pull > control.pull) {
+            control.pull = z.pull;
+            control.pullZone = z;
+          }
+          zoneControls.set(m, control);
+        }
+        if (tickCount > 0 && z.burn) applyBurn(m, z.burn, 1, z.tower);
+        if (tickCount > 0 && z.poison) applyPoison(m, z.poison, 1, z.tower, z.tower?.poisonTick || .5);
+      }
+    }
+    if (tickCount > 0) z.tickTimer += tick * tickCount;
+  }
+  zoneControls.forEach((control, m) => {
+    if (control.root > 0) {
+      applyHardControl(m, "stunTime", control.root);
+      control.rootZones.forEach(z => z.hardControlHits.add(m));
+    }
+    if (control.pull > 0 && control.pullZone) {
+      const z = control.pullZone;
+      m.x += (z.x - m.x) * control.pull * dt;
+      m.y += (z.y - m.y) * control.pull * dt;
+    }
+  });
+  let zoneWrite = 0;
+  for (let zoneRead=0; zoneRead<state.zones.length; zoneRead+=1) {
+    const zone = state.zones[zoneRead];
+    if (zone.time > 0) state.zones[zoneWrite++] = zone;
+  }
+  state.zones.length = zoneWrite;
+}
+
+function updateTowers(dt) {
+  state.towers.forEach(t => {
+    if (t.channel) {
+      updateChannel(t, dt);
+      return;
+    }
+    t.cd -= dt;
+    if (t.cd <= 0) attack(t);
+  });
+}
+
+function findTargets(t) {
+  const origin = fireOrigin();
+  const range = scaledRange(t);
+  const range2 = range * range;
+  const targets = [];
+  for (const monster of state.monsters) {
+    const distance2 = distSquared(origin,monster);
+    if (distance2 <= range2) targets.push({m:monster,d:Math.sqrt(distance2)});
+  }
+  targets.sort((a,b) => b.m.y - a.m.y);
+  return targets;
+}
+
+function attack(t) {
+  const targets = findTargets(t);
+  if (!targets.length) return;
+  const primary = targets[0].m;
+  playTowerSfx(t.mode);
+  if (t.mode === "flame" || t.mode === "laser") startChannel(t, primary);
+  else if (t.mode === "grenade") launchProjectileCluster(t, targets, "grenade", 1 + (t.extraAreas || 0), scaledSplash(t, t.splash || 54));
+  else if (t.mode === "cryo") launchProjectileSpread(t, primary, "cryo", 1 + (t.extraProjectiles || 0), 28);
+  else if (t.mode === "frostbomb") frostbomb(t, targets);
+  else if (t.mode === "laser") laser(t, primary, targets);
+  else if (t.mode === "chain") chain(t, targets);
+  else if (t.mode === "gas") gas(t, targets);
+  else if (t.mode === "needle") launchProjectileSpread(t, primary, "needle", 1 + (t.extraShots || 0), 26);
+  else if (t.mode === "blade") launchProjectileSpread(t, primary, "blade", 1 + (t.extraShots || 0), 30);
+  else if (t.mode === "trap") trap(t, targets);
+  t.cd = attackCooldown(t);
+}
+
+function towerParam(t, key, fallback) {
+  const value = Number(params[`tower_${t.id}_${key}`]);
+  return Number.isFinite(value) ? value : fallback;
+}
+function towerUpgradeRatio(t, key) {
+  const base = TOWER_BASE_PARAMS[t.id]?.[key];
+  return base ? (t[key] || base) / base : 1;
+}
+function scaledDamage(t) { return towerParam(t, "damage", t.damage) * (t.damageMul || 1) * params.towerDamageMul; }
+function towerBurnDps(t) { return (t.burnDps || 18) * (t.dotMul || 1); }
+function towerBurnTime(t) { return (t.burnTime || 2) * (t.burnDurationMul || 1); }
+function towerBurnAreaDps(t) { return (t.burnAreaDps || 30) * (t.dotMul || 1); }
+function towerBurnAreaTime(t) { return (t.burnAreaTime || 2) * (t.burnDurationMul || 1); }
+function towerPoisonDps(t) { return (t.poisonDps || 25) * (t.dotMul || 1); }
+function towerPoisonTime(t) { return (t.poisonTime || 2) * (t.poisonDurationMul || 1); }
+function towerSlowTime(t) { return (t.slowTime || 2) * (t.slowDurationMul || 1); }
+function towerFreezeTime(t) { return (t.freezeTimeValue || 1) * (t.durationMul || 1); }
+function towerStunTime(t) { return (t.stunTimeValue || .3) * (t.stunMul || 1); }
+function towerRootTime(t) { return (t.rootTimeValue || .5) * (t.stunMul || 1); }
+function attackCooldown(t) {
+  const directCooldown = towerParam(t, "cooldown", 0);
+  if (directCooldown > 0 && t.mode !== "flame" && t.mode !== "laser") return directCooldown;
+  return 1 / Math.max(0.05, towerParam(t, "rate", t.rate) * towerUpgradeRatio(t, "rate"));
+}
+function channelDuration(t) {
+  const fallback = t.mode === "flame" ? 1.5 : t.mode === "laser" ? 3.0 : 0;
+  return towerParam(t, "duration", fallback) * t.durationMul;
+}
+function channelCooldown(t) {
+  const fallback = t.mode === "flame" ? 2.0 : t.mode === "laser" ? 2.5 : attackCooldown(t);
+  return towerParam(t, "cooldown", fallback) / Math.max(.25, towerUpgradeRatio(t, "rate"));
+}
+function zoneDuration(t, fallback) {
+  return Math.max(0, towerParam(t, "duration", fallback)) * (t.zoneDurationMul || t.durationMul || 1);
+}
+function zoneTick(t) {
+  return Math.max(0.05, towerParam(t, "tick", 0.5));
+}
+function scaledRange(t) { return Math.min(towerParam(t, "range", t.range) * 0.62 * (t.rangeMul || 1), 720); }
+function scaledSplash(t, base) { return towerParam(t, "splash", base) * (t.splashMul || 1); }
+function heroVisualPosition() { return { x:FIELD.pathX, y:FIELD.baseY - 72 }; }
+function towerVisualPosition(slot) {
+  return [
+    { x:56, y:FIELD.baseY - 5 },
+    { x:FIELD.pathX, y:FIELD.baseY + 3 },
+    { x:294, y:FIELD.baseY - 5 },
+  ][slot] || { x:FIELD.pathX, y:FIELD.baseY - 5 };
+}
+function heroShoulderPosition(hero=state.hero) {
+  const position = heroVisualPosition();
+  const bob = hero ? Math.sin((hero.animTime || 0) * 3.2) * .8 : 0;
+  return { x:position.x, y:position.y - 28 + bob };
+}
+function fireOrigin() {
+  const hero = state?.hero;
+  if (!hero) return { x:FIELD.pathX, y:FIELD.h - 8 };
+  const shoulder = heroShoulderPosition(hero);
+  const angle = Number.isFinite(hero.aimAngle) ? hero.aimAngle : -Math.PI / 2;
+  const recoil = (hero.recoil || 0) * 2.5;
+  const length = 24 - recoil;
+  return { x:shoulder.x + Math.cos(angle) * length, y:shoulder.y + Math.sin(angle) * length };
+}
+
+function startChannel(t, primary) {
+  const origin = fireOrigin();
+  t.channel = {
+    time: channelDuration(t),
+    tick: 0,
+    target: primary,
+    lockElapsed: 0,
+    aimAngle: Math.atan2(primary.y - origin.y, primary.x - origin.x),
+    burstTargets: new Set(),
+    refractTarget: null,
+    refractTargets: [],
+    audioStop: startChannelAudio(t.mode)
+  };
+  t.cd = 0;
+}
+
+function updateChannel(t, dt) {
+  const c = t.channel;
+  c.time -= dt;
+  c.tick -= dt;
+  if (t.mode === "laser") {
+    const visibleTargets = findTargets(t);
+    const target = c.target && c.target.hp > 0 && dist(fireOrigin(), c.target) <= scaledRange(t)
+      ? c.target
+      : visibleTargets[0]?.m || null;
+    if (target !== c.target) {
+      c.lockElapsed = 0;
+      c.refractTarget = null;
+      c.refractTargets = [];
+    }
+    c.target = target;
+  }
+  while (c.tick <= 0 && c.time > 0) {
+    const targets = findTargets(t);
+    if (t.mode === "flame") {
+      flame(t, targets, c);
+    } else if (t.mode === "laser") {
+      if (!c.target) break;
+      laser(t, c.target, targets, c);
+      c.lockElapsed += attackCooldown(t);
+    }
+    c.tick += attackCooldown(t);
+  }
+  if (c.time <= 0) {
+    c.audioStop?.();
+    t.channel = null;
+    t.cd = channelCooldown(t);
+  }
+}
+
+function flame(t, targets, channel) {
+  const dmg = scaledDamage(t);
+  const origin = fireOrigin();
+  const reach = Math.min(scaledRange(t), 310);
+  const baseAngle = channel?.aimAngle ?? -Math.PI / 2;
+  spreadOffsets(1 + (t.extraShots || 0), Math.PI / 10).forEach(angleOffset => {
+    const angle = baseAngle + angleOffset;
+    const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+    const center = { x: origin.x + direction.x * reach, y: origin.y + direction.y * reach };
+    targets.forEach(o => {
+      const dx = o.m.x - origin.x;
+      const dy = o.m.y - origin.y;
+      const forward = dx * direction.x + dy * direction.y;
+      if (forward < 0 || forward > reach) return;
+      const width = 34 + (forward / reach) * 46;
+      const lateral = Math.abs(-dx * direction.y + dy * direction.x);
+      if (lateral <= width) {
+        const wasBurning = o.m.burnTime > 0;
+        damageEnemy(o.m, dmg, t);
+        if (wasBurning && t.conditionalExplosionPct && (o.m.flameBurstCd || 0) <= 0) {
+          synergyAreaDamage(t, o.m, dmg * t.conditionalExplosionPct / 100, t.conditionalExplosionRadius || 46, o.m);
+          o.m.flameBurstCd = .6;
+          effect("impact", t, o.m, { radius:t.conditionalExplosionRadius || 46 });
+        }
+        if (wasBurning && t.conditionalStunTime) applyHardControl(o.m, "stunTime", t.conditionalStunTime);
+        if (t.burnArea) addZone(o.m.x, o.m.y, 42, towerBurnAreaTime(t), 24*t.dotMul, t, { burn:towerBurnDps(t) });
+      }
+    });
+    effect("cone", { ...origin, color:t.color }, center, { radius:70, width:80 });
+  });
+}
+function areaHit(t, primary, type, radius, splashMul, opts={}) {
+  damageEnemy(primary, scaledDamage(t), t);
+  state.monsters.forEach(m => {
+    if (m !== primary && dist(m,primary) <= radius) damageEnemy(m, scaledDamage(t)*splashMul, t);
+    if (dist(m,primary) <= radius) {
+      if (opts.freeze) m.freezeTime = Math.max(m.freezeTime, opts.freeze*t.durationMul);
+      if (opts.slow) m.slowTime = Math.max(m.slowTime, opts.slow*t.slowMul);
+      if (opts.poison) applyPoison(m, opts.poison*t.dotMul, towerPoisonTime(t), t, t.poisonTick || .5);
+    }
+  });
+  if (t.burnArea) addZone(primary.x, primary.y, radius, towerBurnAreaTime(t), towerBurnAreaDps(t), t, { burn:towerBurnDps(t) });
+  effect(type, t, primary, { radius });
+}
+function pierce(t, targets, type, from = fireOrigin(), showEffect = true) {
+  targets.forEach((o,i) => {
+    damageEnemy(o.m, scaledDamage(t)*(i?0.72:1), t);
+    if (t.slow) {
+      o.m.slowTime = Math.max(o.m.slowTime, towerSlowTime(t));
+      o.m.slowPct = Math.max(o.m.slowPct || 0, t.slow || .25);
+    }
+    if (t.freeze && i === 0) applyHardControl(o.m, "freezeTime", towerFreezeTime(t));
+    if (t.conductiveHit && t.electricVulnerablePct) {
+      o.m.electricVulnerableAmount = Math.max(o.m.electricVulnerableAmount || 0, t.electricVulnerablePct / 100);
+      o.m.electricVulnerableTime = Math.max(o.m.electricVulnerableTime || 0, t.electricVulnerableTime || 2);
+    }
+  });
+  if (t.trailTime && targets[0]) addLineSlowZones(t, from, targets[0].m);
+  if (t.shardCount && targets[0]) scatterShards(t, targets[0].m, targets.map(o => o.m));
+  if (showEffect) effect(type, { ...from, color:t.color }, targets[0].m, { chain: targets.slice(1).map(o=>o.m) });
+}
+function laser(t, primary, targets, channel=null) {
+  const focusDelay = (t.focusDelay || 1) * (t.focusDelayMul || 1);
+  const focused = t.focus && channel && channel.lockElapsed >= focusDelay;
+  const bonus = focused ? 1 + ((t.focusDamagePct || 20) / 100)*t.focusMul : 1;
+  damageEnemy(primary, scaledDamage(t)*bonus, t);
+  if (focused) primary.focusMarkTime = Math.max(primary.focusMarkTime || 0, 2);
+  if (channel) { channel.refractTarget = null; channel.refractTargets = []; }
+  if (t.refract || (t.extraLaserTargets || 0) > 0) {
+    const secondaryTargets = targets
+      .filter(o => o.m !== primary && o.m.hp > 0)
+      .slice(0, Math.max(1, t.extraLaserTargets || 1))
+      .map(o => o.m);
+    secondaryTargets.forEach(next => {
+      const refractFocus = focused && t.refractFocusPct
+        ? 1 + ((t.focusDamagePct || 20) / 100) * t.focusMul * (t.refractFocusPct / 100)
+        : 1;
+      damageEnemy(next, scaledDamage(t)*((t.refractDamagePct || 55) / 100)*refractFocus, t);
+      if (focused && t.refractFocusPct) next.focusMarkTime = Math.max(next.focusMarkTime || 0, 2);
+      if (channel) channel.refractTargets.push(next);
+    });
+    if (channel) channel.refractTarget = channel.refractTargets[0] || null;
+  }
+  if (channel && t.focusedBurstDamagePct && channel.lockElapsed >= 1 && !channel.burstTargets.has(primary)) {
+    channel.burstTargets.add(primary);
+    synergyAreaDamage(t, primary, scaledDamage(t) * t.focusedBurstDamagePct / 100, t.focusedBurstRadius || 42, primary);
+    effect("impact", t, primary, { radius:t.focusedBurstRadius || 42 });
+  }
+  if (t.electricVulnerablePct) {
+    primary.electricVulnerableAmount = Math.max(primary.electricVulnerableAmount || 0, t.electricVulnerablePct / 100);
+    primary.electricVulnerableTime = Math.max(primary.electricVulnerableTime || 0, t.electricVulnerableTime || 2);
+  }
+}
+function chain(t, targets) {
+  const count = (t.chains || 4) + (t.extraChains || 0);
+  const casts = 1 + (t.extraChainCasts || 0);
+  const usedRoots = new Set();
+  const roots = targets.map(o => o.m).filter(m => m.hp > 0).slice(0, casts);
+  roots.forEach(root => {
+    if (usedRoots.has(root)) return;
+    usedRoots.add(root);
+    const hit = [root];
+    const pool = state.monsters.filter(m => m !== root && m.hp > 0);
+    while (hit.length < count && pool.length) {
+      const from = hit[hit.length - 1];
+      let bestIndex = 0;
+      let bestDistance = Infinity;
+      pool.forEach((m, index) => {
+        const d = dist(from, m);
+        if (d < bestDistance) {
+          bestDistance = d;
+          bestIndex = index;
+        }
+      });
+      hit.push(pool.splice(bestIndex, 1)[0]);
+    }
+    if (t.focusConduit) {
+      state.monsters
+        .filter(m => m.hp > 0 && (m.focusMarkTime || 0) > 0 && !hit.includes(m))
+        .slice(0, t.focusConduit)
+        .forEach(m => hit.push(m));
+    }
+    const extraCurrent = new Set();
+    hit.forEach((m,i) => {
+      const wasPoisoned = isPoisoned(m);
+      damageEnemy(m, scaledDamage(t)*(i?0.58:1), t);
+      if (t.stun) applyHardControl(m, "stunTime", towerStunTime(t));
+      if (wasPoisoned && t.poisonBurstDamagePct && (m.poisonBurstCd || 0) <= 0) {
+        synergyAreaDamage(t, m, scaledDamage(t) * t.poisonBurstDamagePct / 100, t.poisonBurstRadius || 40, m);
+        m.poisonBurstCd = .6;
+        effect("impact", t, m, { radius:t.poisonBurstRadius || 40 });
+      }
+      if (wasPoisoned && t.poisonChainDamagePct) {
+        const extra = state.monsters
+          .filter(other => other !== m && other.hp > 0 && !hit.includes(other) && !extraCurrent.has(other))
+          .sort((a,b) => dist(m,a)-dist(m,b))[0];
+        if (extra) {
+          extraCurrent.add(extra);
+          damageEnemy(extra, scaledDamage(t) * t.poisonChainDamagePct / 100, t);
+          effect("chain", { x:m.x, y:m.y, color:t.color }, extra);
+        }
+      }
+    });
+    if (t.pathDamage) damageChainPath(t, hit);
+    effect("chain", { ...fireOrigin(), color:t.color }, hit[0], { chain: hit.slice(1) });
+  });
+}
+function damageChainPath(t, hit) {
+  const points = [fireOrigin(), ...hit];
+  const pathWidth = 18;
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const a = points[i];
+    const b = points[i + 1];
+    enemiesNearLine(a.x, a.y, b.x, b.y, pathWidth).forEach(m => {
+      if (!hit.includes(m)) damageEnemy(m, t.pathDamage * (t.pathDamageMul || 1), t);
+    });
+  }
+}
+function gas(t, targets) {
+  const radius = scaledSplash(t, t.splash || 58);
+  areaTargetPoints(targets, 1 + (t.extraShots || 0), radius).forEach(center => {
+    addZone(center.x, center.y, radius, zoneDuration(t, t.zoneTime || 2.5), scaledDamage(t), t, {
+      poison:t.poison ? towerPoisonDps(t) : 0,
+      slow:t.zoneSlowPct ? 1 : t.slow ? towerSlowTime(t) : 0,
+      slowPct:t.zoneSlowPct ? t.zoneSlowPct / 100 : t.slow || 0,
+      vulnerable:t.vulnerable || 0,
+      toxic:t.toxicZone ? 1 : 0
+    });
+    effect("gas", t, center, { radius });
+  });
+}
+function frostbomb(t, targets) {
+  const radius = scaledSplash(t, t.splash || 62);
+  areaTargetPoints(targets, 1 + (t.extraShots || 0), radius).forEach(center => {
+    areaAtPoint(t, center, "frost", radius, scaledDamage(t), .5, {
+      freeze:(t.freeze || .6) * (t.freezeDurationMul || 1),
+      slow:ENCOUNTER_DRAFT_PROTOTYPE ? params.encounterFrostSlowTime : .25,
+      slowPct:ENCOUNTER_DRAFT_PROTOTYPE ? params.encounterFrostSlowPct : .25,
+      postFreezeSlowPct:t.postFreezeSlowPct || 0,
+      postFreezeSlowTime:t.postFreezeSlowTime || 0
+    });
+    if (t.shardCount) scatterShards(t, center, []);
+    if (t.iceTrail) addZone(center.x, center.y, radius * .85, (t.iceTrailTime || 2)*t.iceTrailDurationMul, 0, t, { slow:t.iceSlow || .15 });
+  });
+}
+function applyBladeElementalHit(t, monster) {
+  if (t.conditionalStunTime) applyHardControl(monster, "stunTime", t.conditionalStunTime);
+  if (t.burnDps && !t.burn) applyBurn(monster, t.burnDps, t.burnTime || 1, t);
+  if (t.poisonDps && !t.poison) applyPoison(monster, t.poisonDps, t.poisonTime || 1, t, t.poisonTick || .5);
+}
+function blade(t, primary) {
+  damageEnemy(primary, scaledDamage(t), t);
+  applyBladeElementalHit(t, primary);
+  state.monsters.forEach(m => {
+    if (m === primary || dist(m,primary) >= scaledSplash(t,36)) return;
+    damageEnemy(m, scaledDamage(t)*.42, t);
+    applyBladeElementalHit(t, m);
+  });
+  if (t.poison) applyPoison(primary, towerPoisonDps(t), towerPoisonTime(t), t, t.poisonTick || .5);
+  if (t.ricochet && gameplayRandom() < ((t.ricochetChancePct || 45) / 100)) {
+    const hits = state.monsters
+      .filter(m => m !== primary && m.hp > 0)
+      .sort((a,b) => dist(primary,a)-dist(primary,b))
+      .slice(0, 1 + (t.ricochetExtra || 0));
+    hits.forEach(m => {
+      damageEnemy(m, scaledDamage(t) * ((t.ricochetDamagePct || 50) / 100) * (t.ricochetMul || 1), t);
+      applyBladeElementalHit(t, m);
+      effect("blade", { x:primary.x, y:primary.y, color:t.color }, m, { radius: scaledSplash(t,24) });
+    });
+  }
+  effect("blade", t, primary, { radius: scaledSplash(t,36) });
+}
+function trap(t, targets) {
+  const radius = scaledSplash(t, t.splash || 62);
+  areaTargetPoints(targets, 1 + (t.extraShots || 0), radius).forEach(center => {
+    const duration = Math.max(zoneDuration(t, 1.25), t.burnAreaTime || 0, t.synergyZoneTime || 0, t.zonePoisonTime || 0);
+    const controlTime = Math.max(t.root ? towerRootTime(t) : 0, t.zoneStunTime || 0);
+    addZone(center.x, center.y, radius, duration, scaledDamage(t), t, {
+      root:controlTime,
+      slow:ENCOUNTER_DRAFT_PROTOTYPE ? params.encounterTrapSlowTime : 0,
+      slowPct:ENCOUNTER_DRAFT_PROTOTYPE ? params.encounterTrapSlowPct : 0,
+      pull:t.pull ? ((t.pullStrengthPct || 75) / 100)*(t.pullMul || 1) : 0,
+      burn:t.burnAreaDps || 0,
+      poison:t.zonePoisonDps || 0
+    });
+    effect("trap", t, center, { radius });
+  });
+}
+
+function synergyAreaDamage(t, center, damage, radius, excluded=null) {
+  state.monsters.forEach(m => {
+    if (m !== excluded && m.hp > 0 && dist(m, center) <= radius) damageEnemy(m, damage, t);
+  });
+}
+
+function scatterShards(t, center, excluded=[]) {
+  const excludeSet = new Set(excluded);
+  state.monsters
+    .filter(m => m.hp > 0 && !excludeSet.has(m))
+    .sort((a,b) => dist(center,a)-dist(center,b))
+    .slice(0, t.shardCount || 0)
+    .forEach(m => {
+      damageEnemy(m, scaledDamage(t) * (t.shardDamagePct || 0) / 100, t);
+      effect("spark", { x:center.x, y:center.y, color:t.color }, m, { life:.22 });
+    });
+}
+
+function addLineSlowZones(t, from, to) {
+  const count = 4;
+  for (let i = 1; i <= count; i += 1) {
+    const ratio = i / count;
+    addZone(
+      from.x + (to.x - from.x) * ratio,
+      from.y + (to.y - from.y) * ratio,
+      28,
+      t.trailTime || 1,
+      0,
+      t,
+      { slow:.3, slowPct:(t.trailSlowPct || 25) / 100 }
+    );
+  }
+}
+
+function launchProjectile(t, target, type) {
+  launchProjectileAt(t, target, type, 0);
+}
+
+function launchProjectileSpread(t, target, type, count, gap = 28) {
+  const origin = fireOrigin();
+  const distanceScale = clamp(dist(origin, target) / 220, .42, 1);
+  const offsets = spreadOffsets(count, gap * distanceScale);
+  offsets.forEach(offset => launchProjectileAt(t, target, type, offset));
+}
+
+function launchProjectileCluster(t, targets, type, count, radius = 44) {
+  areaTargetPoints(targets, count, radius).forEach(point => launchProjectileAt(t, point, type, 0));
+}
+
+function spreadOffsets(count, gap) {
+  if (count <= 1) return [0];
+  const center = (count - 1) / 2;
+  return Array.from({ length: count }, (_, i) => (i - center) * gap);
+}
+
+function clusterPoints(target, count, gap = 44) {
+  const pattern = [
+    [0, 0],
+    [0, -1],
+    [-.85, -.55],
+    [.85, -.55],
+    [0, .7],
+    [-1.1, .2],
+    [1.1, .2],
+  ];
+  return Array.from({ length: count }, (_, i) => {
+    const p = pattern[i % pattern.length];
+    return {
+      x: clamp(target.x + p[0] * gap, 12, FIELD.w - 12),
+      y: clamp(target.y + p[1] * gap, 20, FIELD.baseY - 28)
+    };
+  });
+}
+
+function areaClusterPoints(target, count, radius) {
+  if (count <= 1) return [{ x: target.x, y: target.y }];
+  const gap = Math.max(radius * 2.05, 76);
+  const pattern = [
+    [0, 0],
+    [1, 0],
+    [-1, 0],
+    [0, -.82],
+    [0, .82],
+    [1.05, -.34],
+    [-1.05, -.34],
+  ];
+  return Array.from({ length: count }, (_, i) => {
+    const p = pattern[i % pattern.length];
+    return {
+      x: clamp(target.x + p[0] * gap, 16 + radius * .35, FIELD.w - 16 - radius * .35),
+      y: clamp(target.y + p[1] * gap, 104 + radius * .35, FIELD.baseY - 54 - radius * .35)
+    };
+  });
+}
+
+function areaTargetPoints(targets, count, radius) {
+  const monsters = targets.map(o => o.m).filter(m => m && m.hp > 0);
+  if (!monsters.length) return [];
+  const picked = [];
+  const minGap = Math.max(radius * .9, 44);
+  monsters.forEach(m => {
+    if (picked.length >= count) return;
+    if (picked.every(p => dist(p, m) >= minGap)) picked.push(m);
+  });
+  monsters.forEach(m => {
+    if (picked.length >= count) return;
+    if (!picked.includes(m)) picked.push(m);
+  });
+  if (picked.length >= count) return picked.slice(0, count).map(m => ({ x: m.x, y: m.y }));
+  return areaClusterPoints(picked[0], count, radius).map((point, index) => {
+    const locked = picked[index];
+    return locked ? { x: locked.x, y: locked.y } : point;
+  });
+}
+
+function targetPoints(target, count, gap = 34) {
+  return spreadOffsets(count, gap).map(offset => ({
+    x: clamp(target.x + offset, 12, FIELD.w - 12),
+    y: target.y
+  }));
+}
+
+function launchProjectileAt(t, target, type, targetOffsetX) {
+  const origin = fireOrigin();
+  const isHeroProjectile = type.startsWith("hero_");
+  const speed = isHeroProjectile
+    ? Math.max(180, heroParam(t, "projectileSpeed", t.projectileSpeed || 900))
+    : type === "grenade" ? 520 : type === "blade" ? 760 : 900;
+  const aim = { x: clamp(target.x + targetOffsetX, 12, FIELD.w - 12), y: target.y };
+  const impactAtAim = type === "grenade" || type === "hero_blast" || type === "hero_cloud";
+  const end = impactAtAim ? aim : projectileEdgePoint(origin.x, origin.y, aim.x, aim.y);
+  const travel = clamp(dist(origin, end) / speed, .12, .72);
+  state.projectiles.push({
+    type,
+    tower: t,
+    x: origin.x,
+    y: origin.y,
+    sx: origin.x,
+    sy: origin.y,
+    tx: end.x,
+    ty: end.y,
+    fullTx: end.x,
+    fullTy: end.y,
+    hit: false,
+    offsetX: targetOffsetX,
+    time: travel,
+    total: travel,
+    spin: 0,
+  });
+}
+
+function projectileEdgePoint(x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const options = [];
+  if (dx < 0) options.push((12 - x1) / dx);
+  if (dx > 0) options.push((FIELD.w - 12 - x1) / dx);
+  if (dy < 0) options.push((12 - y1) / dy);
+  if (dy > 0) options.push((FIELD.h - 12 - y1) / dy);
+  const scale = options.filter(v => v > 1).sort((a,b) => a-b)[0] || 1.35;
+  return {
+    x: clamp(x1 + dx * scale, 12, FIELD.w - 12),
+    y: clamp(y1 + dy * scale, 12, FIELD.h - 12)
+  };
+}
+
+function projectileHit(p) {
+  const t = p.tower;
+  const center = { x: p.tx, y: p.ty };
+  if (p.type === "grenade") {
+    const radius = scaledSplash(t, t.splash || 54);
+    areaAtPoint(t, center, "grenade", radius, scaledDamage(t), .65);
+    if (t.pullStrengthPct) {
+      const pull = clamp(t.pullStrengthPct / 100, 0, .8);
+      state.monsters.forEach(m => {
+        if (dist(m, center) <= radius) {
+          m.x += (center.x - m.x) * pull;
+          m.y += (center.y - m.y) * pull;
+        }
+      });
+    }
+    if (t.zoneStunTime) addZone(center.x, center.y, radius, t.synergyZoneTime || 2, 0, t, { root:t.zoneStunTime });
+    if (t.zonePoisonDps && t.burnArea) addZone(center.x, center.y, radius, t.zonePoisonTime || 2, 0, t, { poison:t.zonePoisonDps });
+    if (t.burnArea) addZone(center.x, center.y, radius, towerBurnAreaTime(t), towerBurnAreaDps(t), t, { burn:towerBurnDps(t) });
+  } else if (p.type === "needle") {
+    areaAtPoint(t, center, "needle", scaledSplash(t, t.splash || 36), scaledDamage(t), .75, { poison:t.poison ? towerPoisonDps(t) : 0 });
+  } else if (p.type === "blade") {
+    const target = nearestEnemy(center, 36);
+    if (target) blade(t, target);
+    else effect("blade", t, center, { radius: scaledSplash(t, 36) });
+  } else if (p.type === "cryo") {
+    const lineTargets = enemiesNearLine(p.sx, p.sy, p.fullTx || p.tx, p.fullTy || p.ty, 20).sort((a,b) => b.y - a.y).slice(0, (t.pierce || 2) + (t.extraPierce || 0));
+    if (lineTargets.length) pierce(t, lineTargets.map(m => ({ m })), "cryo", { x:p.sx, y:p.sy }, false);
+    effect("spark", { x:center.x, y:center.y, color:t.color }, center, { life: .18 });
+  } else if (p.type === "hero_blast") {
+    const target = p.collided || nearestEnemy(center, 42);
+    const impact = target || center;
+    const radius = Math.max(18, heroParam(t, "splash", t.splash || 58));
+    state.monsters.filter(monster => monster.hp > 0 && dist(monster, impact) <= radius).forEach(monster => {
+      damageEnemy(monster, heroDamage(t) * (monster === target ? 1 : heroSecondaryMultiplier(t)), t);
+      applyHeroProjectileStatus(t, monster);
+    });
+    effect("impact", { x:impact.x, y:impact.y, color:t.color }, impact, { radius });
+  } else if (p.type === "hero_pierce") {
+    const lineTargets = enemiesNearLine(p.sx, p.sy, p.fullTx || p.tx, p.fullTy || p.ty, 18)
+      .sort((a,b) => dist({x:p.sx,y:p.sy}, a) - dist({x:p.sx,y:p.sy}, b))
+      .slice(0, heroTargetCount(t));
+    lineTargets.forEach((monster, index) => {
+      damageEnemy(monster, heroDamage(t) * (index ? heroSecondaryMultiplier(t) : 1), t);
+      applyHeroProjectileStatus(t, monster);
+    });
+    effect("cryo", { x:p.sx, y:p.sy, color:t.color }, lineTargets[0] || center, { chain:lineTargets.slice(1) });
+  } else if (p.type === "hero_cloud") {
+    const target = p.collided || nearestEnemy(center, 46);
+    const impact = target || center;
+    const radius = Math.max(18, heroParam(t, "splash", t.splash || 54));
+    state.monsters.filter(monster => monster.hp > 0 && dist(monster, impact) <= radius).forEach(monster => {
+      damageEnemy(monster, heroDamage(t) * (monster === target ? 1 : heroSecondaryMultiplier(t)), t);
+      applyHeroProjectileStatus(t, monster);
+    });
+    const zoneDuration = heroParam(t, "zoneDuration", t.zoneDuration || 0);
+    if (zoneDuration > 0) {
+      const zonePoison = heroParam(t, "status", t.status || 0) * .55;
+      addZone(impact.x, impact.y, radius * .88, zoneDuration, 0, t, { poison:zonePoison, toxic:true, tick:.5 });
+    }
+    effect("gas", { x:impact.x, y:impact.y, color:t.color }, impact, { radius });
+  } else if (p.type === "hero_burst") {
+    const target = p.collided || nearestEnemy(center, 28);
+    if (target) {
+      damageEnemy(target, heroDamage(t), t);
+      effect("spark", { x:center.x, y:center.y, color:t.color }, target, { life:.12 });
+    }
+  }
+}
+
+function applyHeroProjectileStatus(hero, monster) {
+  const status = heroParam(hero, "status", hero.status || 0);
+  const time = heroParam(hero, "statusTime", hero.statusTime || 0);
+  if (hero.attrKey === "fire" && status > 0) applyBurn(monster, status, time, hero);
+  else if (hero.attrKey === "ice" && status > 0) {
+    monster.slowTime = Math.max(monster.slowTime || 0, time);
+    monster.slowPct = Math.max(monster.slowPct || 0, status);
+  } else if (hero.attrKey === "electric" && status > 0) {
+    monster.electricVulnerableTime = Math.max(monster.electricVulnerableTime || 0, time);
+    monster.electricVulnerableAmount = Math.max(monster.electricVulnerableAmount || 0, status);
+  } else if (hero.attrKey === "poison" && status > 0) applyPoison(monster, status, time, hero, .5);
+}
+
+function areaAtPoint(t, center, type, radius, mainDamage, splashMul, opts={}) {
+  const targets = state.monsters.filter(m => dist(m, center) <= radius);
+  targets.forEach((m, idx) => {
+    damageEnemy(m, idx === 0 ? mainDamage : mainDamage * splashMul, t);
+    if (opts.freeze) {
+      applyHardControl(m, "freezeTime", opts.freeze*t.durationMul);
+      if (opts.postFreezeSlowTime) {
+        m.postFreezeSlowTime = Math.max(m.postFreezeSlowTime || 0, opts.postFreezeSlowTime);
+        m.postFreezeSlowPct = Math.max(m.postFreezeSlowPct || 0, (opts.postFreezeSlowPct || 0) / 100);
+      }
+    }
+    if (opts.slow) {
+      m.slowTime = Math.max(m.slowTime, opts.slow*t.slowMul);
+      m.slowPct = Math.max(m.slowPct || 0, opts.slowPct || .45);
+    }
+    if (opts.poison) applyPoison(m, opts.poison, towerPoisonTime(t), t, t.poisonTick || .5);
+  });
+  effect(type, t, center, { radius });
+}
+
+function addZone(x,y,radius,time,damage,tower,extra={}) {
+  const tick = Math.max(0.05, extra.tick || zoneTick(tower));
+  state.zones.push({
+    x,y,radius,time,maxTime:time,damage,tower,tick,tickTimer:0,
+    visualSeed:fxRandom() * Math.PI * 2,
+    hardControlHits:new Set(),...extra
+  });
+}
+function applyHardControl(m, key, time) {
+  if (m.boss) return;
+  const duration = Math.min(time, m.elite ? 0.18 : 0.28);
+  m[key] = Math.max(m[key], duration);
+}
+function damageEnemy(m, amount, t) {
+  const wasPoisoned = isPoisoned(m);
+  const dealt = resolveDamage(m, amount, t);
+  if (t.burn) applyBurn(m, towerBurnDps(t), towerBurnTime(t), t);
+  if (t.poison) applyPoison(m, towerPoisonDps(t), towerPoisonTime(t), t, t.poisonTick || .5);
+  if (t.id === "needle" && wasPoisoned && t.conditionalStunTime) applyHardControl(m, "stunTime", t.conditionalStunTime);
+  if (t.id === "needle" && wasPoisoned && t.burnDps && !t.burn) applyBurn(m, t.burnDps, t.burnTime || 2, t);
+  applyHeroTowerBuff(t, m);
+  return dealt;
+}
+function applyHeroTowerBuff(t, m) {
+  const hero = state.hero;
+  if (!hero || t.isHero || towerAttr(t) !== hero.attrKey) return;
+  if (hero.buffs?.frostInfusion) {
+    m.slowTime = Math.max(m.slowTime || 0, 1);
+    m.slowPct = Math.max(m.slowPct || 0, .08);
+  }
+  if (hero.buffs?.electricInfusion) {
+    m.electricVulnerableTime = Math.max(m.electricVulnerableTime || 0, 1.2);
+    m.electricVulnerableAmount = Math.max(m.electricVulnerableAmount || 0, .08);
+  }
+  if (hero.buffs?.burnInfusion) applyBurn(m, 10, 1.2, t);
+  if (hero.buffs?.poisonInfusion) applyPoison(m, 10, 1.5, t, .5);
+}
+function isPoisoned(m) { return (m.poisonTime || 0) > 0 || (m.toxicTime || 0) > 0; }
+function bossPhaseFromHp(m) {
+  const pct = clamp(m.hp / Math.max(1, m.maxHp), 0, 1);
+  return pct > .66 ? 3 : pct > .33 ? 2 : 1;
+}
+function triggerBossBreak(m) {
+  m.bossShieldHp = 0;
+  m.bossBreakTime = Math.max(m.bossBreakTime || 0, paramNumber("bossBreakDuration", 2.4));
+  m.bossAttackPause = Math.max(m.bossAttackPause || 0, paramNumber("bossBreakAttackPause", 1.35));
+  m.bossAttackWindup = 0;
+  effect("bossBreak", { x:m.x, y:m.y, color:"#8ff3ff" }, m, { text:"BREAK", radius:78, life:1.0 });
+  playSfx("bossBreak");
+}
+function syncBossPhase(m) {
+  if (!m.boss) return;
+  const nextPhase = bossPhaseFromHp(m);
+  if (nextPhase >= m.bossPhase) return;
+  m.bossPhase = nextPhase;
+  m.bossBreakTime = 0;
+  m.bossShieldHpMax = m.maxHp * clamp(paramNumber("bossShieldHpPct", 10), 0, 100) / 100;
+  m.bossShieldHp = m.bossShieldHpMax;
+  effect("bossArmor", { x:m.x, y:m.y, color:m.color || "#ff6659" }, m, { text:`PHASE ${4 - nextPhase}`, radius:66, life:.75 });
+}
+function resolveDamage(m, amount, t) {
+  const vuln = m.vulnerable > 0 ? 1 + (m.vulnerableAmount || 0) : 1;
+  const attrMul = attributeMultiplier(t, m);
+  const classMul = targetClassMultiplier(t, m);
+  const heroTowerMul = state.hero && !t.isHero && towerAttr(t) === state.hero.attrKey
+    ? 1 + (params.heroSameAttrBonusPct + (state.hero.sameAttrBonus || 0)) / 100
+    : 1 + (state.hero?.allTowerBonus || 0) / 100;
+  let conditionalMul = 1;
+  if (t.poisonTargetDamagePct && isPoisoned(m)) conditionalMul *= 1 + t.poisonTargetDamagePct / 100;
+  if (t.frozenTargetDamagePct && m.freezeTime > 0) conditionalMul *= 1 + t.frozenTargetDamagePct / 100;
+  if (t.burningTargetDamagePct && m.burnTime > 0) conditionalMul *= 1 + t.burningTargetDamagePct / 100;
+  if (towerAttr(t) === "electric" && m.electricVulnerableTime > 0) conditionalMul *= 1 + (m.electricVulnerableAmount || 0);
+  let dealt = amount * vuln * attrMul * classMul * conditionalMul * heroTowerMul;
+  if (m.boss) {
+    if ((m.bossShieldHp || 0) > 0) {
+      m.bossShieldHp -= dealt;
+      dealt *= clamp(paramNumber("bossShieldDamageMul", .68), 0, 2);
+      if (m.bossShieldHp <= 0) triggerBossBreak(m);
+    } else if ((m.bossBreakTime || 0) > 0) {
+      dealt *= Math.max(1, paramNumber("bossBreakDamageMul", 1.58));
+    }
+  }
+  m.hp -= dealt;
+  syncBossPhase(m);
+  const attrState = attrMul > 1.001 ? 1 : attrMul < .999 ? -1 : 0;
+  showDamageNumber(m, dealt, t, attrState);
+  return dealt;
+}
+function towerAttr(t) { return TOWER_ATTR[t.id] || t.attrKey || "neutral"; }
+function attributeMultiplier(t, m) {
+  if (t.isHero && state.hero?.adaptiveAttribute) {
+    return Math.max(1, ...Object.values(m.attrMultipliers || {}).map(value => Number(value) || 1));
+  }
+  const value = Number(m.attrMultipliers?.[towerAttr(t)]);
+  return Number.isFinite(value) ? Math.max(0, value) : 1;
+}
+function targetClassMultiplier(t, m) {
+  const armorTarget = ENCOUNTER_DRAFT_PROTOTYPE && m.kind === "tank" && TOWER_ROLE[t.id] === "single";
+  const key = m.boss ? "bossMul" : m.elite || armorTarget ? "eliteMul" : "minionMul";
+  const fallback = TOWER_BASE_PARAMS[t.id]?.[key] ?? 1;
+  const armorMul = ENCOUNTER_DRAFT_PROTOTYPE && m.kind === "tank" && !m.boss && !m.elite
+    ? TOWER_ROLE[t.id] === "single" ? params.encounterTankSingleDamageMul
+      : TOWER_ROLE[t.id] === "area" ? params.encounterTankAreaDamageMul : 1
+    : 1;
+  return Math.max(0, towerParam(t, key, fallback)) * armorMul;
+}
+function applyBurn(m,dps,time,tower=null) {
+  if (dps >= (m.burn || 0)) {
+    m.burn = dps;
+    m.burnTower = tower;
+  }
+  m.burnTime = Math.max(m.burnTime,time);
+}
+function applyPoison(m, damage, time, tower=null, tick=.5) {
+  if (damage >= (m.poison || 0)) {
+    m.poison = damage;
+    m.poisonTick = Math.max(.05, tick || .5);
+    m.poisonTower = tower;
+  }
+  m.poisonTime = Math.max(m.poisonTime, time);
+  if (!Number.isFinite(m.poisonTickTimer)) m.poisonTickTimer = m.poisonTick || .5;
+}
+
+function showDamageNumber(m, amount, t, attrState=0) {
+  if (HEADLESS_SIM) return;
+  if (!amount) return;
+  if (amount < 30) {
+    m.pendingDamageText = (m.pendingDamageText || 0) + amount;
+    if ((m.damageTextCd || 0) > 0 || m.pendingDamageText < 3) return;
+    amount = m.pendingDamageText;
+    m.pendingDamageText = 0;
+  }
+  m.damageTextCd = amount < 30 ? .28 : .08;
+  const color = attrState > 0 ? "#ffe66a" : attrState < 0 ? "#aeb8ca" : (t.color || "#fff");
+  effect("damageText", { x:m.x + rand(-8, 8), y:m.y - 8, color }, m, { life:.55, text:Math.max(1, Math.round(amount)).toString(), weak:attrState > 0, resisted:attrState < 0 });
+}
+function nearestEnemy(point, radius = Infinity) {
+  let best = null;
+  let bestD2 = radius * radius;
+  for (const m of state.monsters) {
+    const d2 = distSquared(point,m);
+    if (d2 <= bestD2) { best = m; bestD2 = d2; }
+  }
+  return best;
+}
+function enemiesNearLine(x1, y1, x2, y2, width) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx*dx + dy*dy || 1;
+  return state.monsters.filter(m => {
+    const t = clamp(((m.x-x1)*dx + (m.y-y1)*dy) / len2, 0, 1);
+    const px = x1 + dx*t;
+    const py = y1 + dy*t;
+    const offsetX = m.x - px;
+    const offsetY = m.y - py;
+    return offsetX * offsetX + offsetY * offsetY <= width * width;
+  });
+}
+
+function updateProjectiles(dt) {
+  const projectiles = state.projectiles;
+  let write = 0;
+  for (let read=0; read<projectiles.length; read+=1) {
+    const p = projectiles[read];
+    const prev = { x: p.x, y: p.y };
+    p.time -= dt;
+    if (!HEADLESS_SIM) p.spin += dt * 12;
+    const done = p.time <= 0;
+    const progress = clamp(1 - p.time / p.total, 0, 1);
+    p.x = p.sx + (p.tx - p.sx) * progress;
+    p.y = p.sy + (p.ty - p.sy) * progress;
+    if (!HEADLESS_SIM) {
+      if (p.type === "grenade") p.arc = Math.sin(progress * Math.PI) * 72;
+      else if (p.type === "hero_cloud") p.arc = Math.sin(progress * Math.PI) * 46;
+    }
+    const hit = projectileCollision(p, prev, { x:p.x, y:p.y });
+    if (hit) {
+      p.collided = hit;
+      p.hitX = hit.x;
+      p.hitY = hit.y;
+      p.tx = hit.x;
+      p.ty = hit.y;
+      projectileHit(p);
+    } else if (done) projectileHit(p);
+    else projectiles[write++] = p;
+  }
+  projectiles.length = write;
+}
+
+function projectileCollision(p, from, to) {
+  const isHeroProjectile = p.type.startsWith("hero_");
+  if (p.type !== "needle" && p.type !== "blade" && p.type !== "cryo" && !isHeroProjectile) return null;
+  const projectileRadius = p.type === "blade" ? 12
+    : p.type === "hero_blast" || p.type === "hero_cloud" ? 11
+      : isHeroProjectile ? 7 : p.type === "cryo" ? 7 : 5;
+  let hit = null;
+  let hitDistance = Infinity;
+  for (const monster of state.monsters) {
+    const collisionRadius = projectileRadius + enemyHitRadius(monster) + 2;
+    if (monster.hp <= 0 || distanceToSegmentSquared(monster,from,to) > collisionRadius * collisionRadius) continue;
+    const dx = monster.x - from.x;
+    const dy = monster.y - from.y;
+    const distance = dx * dx + dy * dy;
+    if (distance < hitDistance) {
+      hit = monster;
+      hitDistance = distance;
+    }
+  }
+  return hit;
+}
+
+function enemyHitRadius(m) {
+  const size = Math.max(12, m.size || (m.boss ? 46 : m.elite ? 30 : 14));
+  return Math.max(9, size * (m.boss ? 1.42 : m.elite ? 1.30 : 1.16));
+}
+
+function distanceToSegment(point, from, to) {
+  return Math.sqrt(distanceToSegmentSquared(point,from,to));
+}
+function distanceToSegmentSquared(point, from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len2 = dx * dx + dy * dy || 1;
+  const ratio = clamp(((point.x - from.x) * dx + (point.y - from.y) * dy) / len2, 0, 1);
+  const offsetX = point.x - (from.x + dx * ratio);
+  const offsetY = point.y - (from.y + dy * ratio);
+  return offsetX * offsetX + offsetY * offsetY;
+}
+function applyBaseDamage(m) {
+  const before = state.hp;
+  state.hp = Math.max(0, state.hp - m.atk);
+  const damage = before - state.hp;
+  if (damage > 0 && state.waveActive && state.waveSummary) {
+    state.waveSummary.damageTaken = (state.waveSummary.damageTaken || 0) + damage;
+    state.waveSummary.damageHits = (state.waveSummary.damageHits || 0) + 1;
+  }
+  const ratio = state.hp / Math.max(1, paramNumber("baseHp", 1000));
+  const warningStage = ratio <= .25 ? 2 : ratio <= .5 ? 1 : 0;
+  if (warningStage > (state.hpWarningStage || 0)) {
+    state.hpWarningStage = warningStage;
+    state.message = warningStage === 2 ? "基地危急！" : "防線受損！";
+    effect("baseCritical", { x:FIELD.pathX, y:FIELD.attackLineY, color:warningStage === 2 ? "#ff3f42" : "#ffb743" }, m, {
+      text:warningStage === 2 ? "DANGER" : "WARNING", radius:warningStage === 2 ? 88 : 64, life:.9
+    });
+    if (!HEADLESS_SIM) {
+      ui.phone?.classList.remove("base-warning-pulse");
+      void ui.phone?.offsetWidth;
+      ui.phone?.classList.add("base-warning-pulse");
+      try { navigator.vibrate?.(warningStage === 2 ? [42,32,70] : [30,25,40]); } catch {}
+    }
+  }
+  return damage;
+}
+function performEnemyBaseAttack(m, attackSpeedMul=1) {
+  applyBaseDamage(m);
+  const jitterPct = m.boss ? clamp(paramNumber("bossAttackIntervalJitterPct", 18), 0, 80) / 100 : 0;
+  const intervalJitter = 1 + (gameplayRandom() * 2 - 1) * jitterPct;
+  m.atkCd = Math.max(.08, m.interval * intervalJitter / Math.max(.1, attackSpeedMul));
+  effect("hitBase", {x:m.x,y:m.y,color:"#ff5d4f"}, {x:FIELD.pathX,y:FIELD.attackLineY});
+  playSfx("baseHit");
+  if (state.hp <= 0) {
+    defeatRun();
+    return true;
+  }
+  return false;
+}
+function updateEnemies(dt) {
+  for (const m of state.monsters) {
+    if (m.hp <= 0) continue;
+    if (m.bossBreakTime > 0) m.bossBreakTime = Math.max(0, m.bossBreakTime - dt);
+    if (m.focusMarkTime > 0) m.focusMarkTime -= dt;
+    if (m.electricVulnerableTime > 0) m.electricVulnerableTime -= dt;
+    else m.electricVulnerableAmount = 0;
+    if (m.flameBurstCd > 0) m.flameBurstCd -= dt;
+    if (m.poisonBurstCd > 0) m.poisonBurstCd -= dt;
+    if (m.burnTime > 0) {
+      resolveDamage(m, m.burn * dt, m.burnTower || { color:"#ff6b35", attrKey:"fire" });
+      m.burnTime -= dt;
+    }
+    if (m.poisonTime > 0) {
+      const tick = Math.max(.05, m.poisonTick || .5);
+      m.poisonTickTimer = (m.poisonTickTimer ?? tick) - dt;
+      while (m.poisonTickTimer <= 0 && m.poisonTime > 0) {
+        resolveDamage(m, m.poison, m.poisonTower || { color:"#41d08a", attrKey:"poison" });
+        m.poisonTickTimer += tick;
+      }
+      m.poisonTime -= dt;
+    }
+    if (m.hp <= 0) continue;
+    if (m.toxicTime > 0) m.toxicTime -= dt;
+    if (m.vulnerable > 0) m.vulnerable -= dt;
+    else m.vulnerableAmount = 0;
+    if (m.boss && m.bossAttackPause > 0) {
+      m.bossAttackPause = Math.max(0, m.bossAttackPause - dt);
+      m.stopped = true;
+    }
+    else if (m.freezeTime > 0) {
+      m.freezeTime -= dt;
+      if (m.freezeTime <= 0 && m.postFreezeSlowTime > 0) {
+        m.slowTime = Math.max(m.slowTime, m.postFreezeSlowTime);
+        m.slowPct = Math.max(m.slowPct || 0, m.postFreezeSlowPct || 0);
+        m.postFreezeSlowTime = 0;
+        m.postFreezeSlowPct = 0;
+      }
+    }
+    else if (m.stunTime > 0) { m.stunTime -= dt; }
+    else {
+      const inRange = (FIELD.attackLineY - m.y) <= m.range || m.y >= FIELD.attackLineY;
+      if (inRange) {
+        m.stopped = true;
+        const enraged = m.boss && m.hp / Math.max(1, m.maxHp) <= clamp(paramNumber("bossEnrageHpPct", 32), 0, 100) / 100;
+        const attackSpeedMul = enraged ? Math.max(1, paramNumber("bossEnrageAttackSpeedMul", 1.22)) : 1;
+        if (m.boss && m.bossAttackWindup > 0) {
+          m.bossAttackWindup -= dt;
+          if (m.bossAttackWindup <= 0 && performEnemyBaseAttack(m, attackSpeedMul)) break;
+        } else {
+          m.atkCd -= dt;
+          if (m.atkCd <= 0) {
+            if (m.boss) {
+              const windup = paramNumber("bossAttackWindup", 1) / Math.sqrt(attackSpeedMul);
+              m.bossAttackWindup = Math.max(.1, windup);
+              effect("bossCharge", {x:m.x,y:m.y,color:m.color || "#ff5d4f"}, {x:FIELD.pathX,y:FIELD.attackLineY}, {
+                text:"!", radius:74, life:m.bossAttackWindup
+              });
+            } else {
+              if (performEnemyBaseAttack(m, 1)) break;
+            }
+          }
+        }
+      } else {
+        const slow = m.slowTime > 0 ? 1 - clamp(m.slowPct || .45, 0, .9) : 1;
+        if (m.slowTime > 0) {
+          m.slowTime -= dt;
+          if (m.slowTime <= 0) m.slowPct = 0;
+        }
+        m.y += m.speed * slow * dt;
+        if (m.pathType === "sway") m.x = m.sx + Math.sin(m.y / 82) * m.curve;
+      }
+    }
+  }
+  let monsterWrite = 0;
+  for (let monsterRead=0; monsterRead<state.monsters.length; monsterRead+=1) {
+    const m = state.monsters[monsterRead];
+    if (m.hp <= 0) kill(m);
+    else state.monsters[monsterWrite++] = m;
+  }
+  state.monsters.length = monsterWrite;
+}
+
+function defeatRun() {
+  if (state.over) return;
+  state.hp = 0;
+  state.pot = 0;
+  state.certifiedPayout = 0;
+  failMathTicket();
+  stopChannelAudio();
+  playSfx("fail");
+  showResult("防線突破", "基地 HP 歸零，本局失敗，POT 歸零。");
+}
+
+function kill(m) {
+  if (state.over || m.rewardClaimed) return;
+  m.rewardClaimed = true;
+  if (m.boss) {
+    const nextWave = state.wave + 1;
+    const previousBet = betForWave(nextWave, state.bossSeen);
+    let add;
+    if (certifiedMathEnabled() && state.mathTicket?.boss) {
+      add = Math.max(0, Number(state.mathTicket.bossAdd) || 0);
+    } else if (encounterEconomyEnabled()) {
+      add = rollEncounterBossAdd(state.bossSeen + 1);
+    } else {
+      const rawAdd = bossMultiplier();
+      const rewardMul = state.bossSeen === 0 ? params.bossFirstRewardMul : params.bossLaterRewardMul;
+      add = Math.round(Math.max(1, rawAdd * rewardMul) * 10) / 10;
+    }
+    state.bossSeen += 1;
+    const nextBet = betForWave(nextWave, state.bossSeen);
+    state.exp += (m.exp || 120) * params.expMul * Math.max(.5, Number(state.currentEncounter?.expMul) || 1);
+    showBossReward(add, previousBet, nextBet);
+    return;
+  }
+  state.exp += (m.exp || 0) * params.expMul * Math.max(.5, Number(state.currentEncounter?.expMul) || 1);
+  const amount = claimWaveReward(m);
+  if (amount > 0) {
+    if (ENCOUNTER_DRAFT_PROTOTYPE && state.currentEncounter) state.waveReward.pendingPot = (state.waveReward.pendingPot || 0) + amount;
+    else {
+      state.pot += amount;
+      showMoneyReward(m, amount);
+    }
+  }
+}
+
+function claimWaveReward(m) {
+  const reward = state.waveReward;
+  const weight = Math.max(0, Number(m.rewardWeight) || 0);
+  if (!reward || reward.remaining <= 0 || weight <= 0 || reward.weightRemaining <= 0) return 0;
+  const finalShare = weight >= reward.weightRemaining - .0001;
+  const amount = finalShare
+    ? reward.remaining
+    : Math.max(0, Math.round(reward.remaining * weight / reward.weightRemaining));
+  reward.remaining = Math.max(0, reward.remaining - amount);
+  reward.weightRemaining = Math.max(0, reward.weightRemaining - weight);
+  return amount;
+}
+
+function showMoneyReward(m, amount) {
+  if (HEADLESS_SIM) return;
+  const elite = !!m.elite;
+  if (elite) showEliteDefeat(m, amount);
+  else playSfx("coin");
+  effect(elite ? "eliteCoin" : "coin", {x:m.x,y:m.y,color: elite ? "#fff1a6" : "#f0bc4f"}, m, {
+    text: `+${amount}`,
+    amount,
+    radius: elite ? 34 : 14,
+    life: elite ? 1.36 : .72
+  });
+  if (elite) pulsePotMoney();
+}
+
+function showEliteDefeat(m, amount) {
+  playSfx("elite");
+  effect("eliteDefeat", {x:m.x,y:m.y,color:"#ffd85c"}, m, { text:`菁英擊破 +${amount}`, amount, radius:72, life:1.28 });
+  for (let i = 0; i < 8; i += 1) {
+    const angle = i * Math.PI / 4 + fxRandom() * .22;
+    const distance = 42 + fxRandom() * 34;
+    effect("eliteShard", {x:m.x,y:m.y,color:i % 2 ? "#fff1a6" : "#ff9f43"}, {
+      x:m.x + Math.cos(angle) * distance,
+      y:m.y + Math.sin(angle) * distance
+    }, { life:.62 + fxRandom() * .28 });
+  }
+  ui.phone?.classList.remove("elite-flash");
+  void ui.phone?.offsetWidth;
+  ui.phone?.classList.add("elite-flash");
+  try { navigator.vibrate?.([24, 24, 52]); } catch {}
+}
+
+function pulsePotMoney() {
+  ui.potChip.classList.remove("money-pop");
+  ui.potChip.classList.remove("elite-pop");
+  void ui.potChip.offsetWidth;
+  ui.potChip.classList.add("money-pop");
+  ui.potChip.classList.add("elite-pop");
+}
+
+function showBossReward(add, previousBet, nextBet) {
+  if (HEADLESS_SIM) {
+    state.bossAdd += add;
+    state.bossRoll = null;
+    return;
+  }
+  playSfx("boss");
+  const from = 1 + state.bossAdd;
+  const to = 1 + state.bossAdd + add;
+  const duration = clamp(paramNumber("bossRollDuration", 4.8), 2.5, 8);
+  const highThreshold = Math.max(1, paramNumber("bossRollHighThreshold", 2.5));
+  const jackpotThreshold = Math.max(highThreshold, paramNumber("bossRollJackpotThreshold", 3.8));
+  const tier = add >= jackpotThreshold ? "jackpot" : add >= highThreshold ? "high" : "normal";
+  const visualSeed = ((state.wave * 2654435761) ^ Math.round(to * 1000) ^ (state.bossSeen * 2246822519)) >>> 0;
+  state.bossRoll = { time:0, duration, add, from, to, value:from, nextFlip:0, settleFrom:null, visualSeed, previousBet, nextBet, tier, stage:0, flipCount:0 };
+  effect("bossReward", {x:FIELD.w / 2,y:88,color:"#f0bc4f"}, {x:FIELD.w / 2,y:154}, { text:`x${to.toFixed(1)}`, life:duration + .65, tier });
+  ui.phone?.classList.remove("boss-result-high", "boss-result-jackpot", "boss-roll-high", "boss-roll-jackpot");
+  ui.phone?.classList.add("boss-roll-active");
+  if (tier === "high") ui.phone?.classList.add("boss-roll-high");
+  if (tier === "jackpot") ui.phone?.classList.add("boss-roll-jackpot");
+  ui.potChip.classList.remove("boss-high-pop", "boss-jackpot-pop");
+  ui.potChip.classList.remove("boss-pop");
+  void ui.potChip.offsetWidth;
+  ui.potChip.classList.add("boss-pop");
+}
+
+function updateBossRoll(dt) {
+  const roll = state.bossRoll;
+  if (!roll) return;
+  roll.time += dt;
+  const t = clamp(roll.time / roll.duration, 0, 1);
+  const fastEnd = .56;
+  const suspenseEnd = .82;
+  if (t < suspenseEnd) {
+    const suspense = t <= fastEnd ? 0 : (t - fastEnd) / (suspenseEnd - fastEnd);
+    const spread = 3.5 - suspense * 2.2;
+    const min = Math.max(2, roll.to - spread);
+    const max = Math.min(10, roll.to + spread);
+    if (roll.time >= roll.nextFlip) {
+      roll.visualSeed = (Math.imul(roll.visualSeed, 1664525) + 1013904223) >>> 0;
+      const visualRandom = roll.visualSeed / 4294967296;
+      roll.value = Math.round((min + visualRandom * (max - min)) * 10) / 10;
+      roll.flipCount += 1;
+      playBossRollTick(t, roll.tier);
+      roll.nextFlip = roll.time + (t <= fastEnd ? .055 + Math.pow(t / fastEnd, 2) * .09 : .14 + suspense * suspense * .30);
+    }
+    if (t >= fastEnd && roll.stage < 1) {
+      roll.stage = 1;
+      soundTone("boss-roll-hold", 150, .42, "sawtooth", .055, 78);
+    }
+  } else {
+    if (roll.settleFrom === null) roll.settleFrom = roll.value;
+    if (roll.stage < 2) {
+      roll.stage = 2;
+      soundTone("boss-roll-lock", 310, .32, "triangle", .065, 680);
+    }
+    const settle = clamp((t - suspenseEnd) / (1 - suspenseEnd), 0, 1);
+    const eased = 1 - Math.pow(1 - settle, 3);
+    const bounce = Math.sin(settle * Math.PI * 3) * (1 - settle) * (roll.tier === "normal" ? .18 : .34);
+    roll.value = Math.round((roll.settleFrom + (roll.to - roll.settleFrom) * eased + bounce) * 10) / 10;
+  }
+  if (t >= 1) {
+    state.bossAdd += roll.add;
+    state.bossRoll = null;
+    ui.phone?.classList.remove("boss-roll-active", "boss-roll-high", "boss-roll-jackpot");
+    if (roll.tier === "high") ui.phone?.classList.add("boss-result-high");
+    if (roll.tier === "jackpot") ui.phone?.classList.add("boss-result-jackpot");
+    ui.potChip.classList.remove("boss-pop");
+    void ui.potChip.offsetWidth;
+    ui.potChip.classList.add("boss-pop");
+    if (roll.tier === "high") ui.potChip.classList.add("boss-high-pop");
+    if (roll.tier === "jackpot") ui.potChip.classList.add("boss-jackpot-pop");
+    playBossRollResult(roll.tier);
+    try {
+      navigator.vibrate?.(roll.tier === "jackpot" ? [80,40,120,35,180] : roll.tier === "high" ? [60,35,110] : [35,30,55]);
+    } catch {}
+    if (!prototypeRunComplete() && roll.nextBet > roll.previousBet) showBetIncrease(roll.previousBet, roll.nextBet);
+  }
+}
+
+function showBetIncrease(from, to) {
+  if (!ui.betRaise || to <= from) return;
+  state.betRaise = { time:0, duration:2.2, from, to };
+  ui.betRaiseFrom.textContent = from;
+  ui.betRaiseTo.textContent = to;
+  ui.betRaise.classList.remove("hidden", "play");
+  void ui.betRaise.offsetWidth;
+  ui.betRaise.classList.add("play");
+  ui.waveDecision?.classList.remove("bet-increased");
+  void ui.waveDecision?.offsetWidth;
+  ui.waveDecision?.classList.add("bet-increased");
+  playSfx("betUp");
+  try { navigator.vibrate?.([35, 35, 65]); } catch {}
+}
+
+function updateBetIncrease(dt) {
+  if (!state.betRaise) return;
+  state.betRaise.time += dt;
+  if (state.betRaise.time < state.betRaise.duration) return;
+  state.betRaise = null;
+  ui.betRaise?.classList.add("hidden");
+  ui.betRaise?.classList.remove("play");
+  ui.waveDecision?.classList.remove("bet-increased");
+}
+function bossMultiplier() {
+  const weights = [
+    Math.max(0, params.bossLowWeight),
+    Math.max(0, params.bossMidWeight),
+    Math.max(0, params.bossHighWeight)
+  ];
+  const total = weights.reduce((sum, value) => sum + value, 0) || 1;
+  let r = gameplayRandom() * total;
+  let min = params.bossLowMin;
+  let max = params.bossLowMax;
+  if ((r -= weights[0]) > 0) {
+    min = params.bossMidMin;
+    max = params.bossMidMax;
+    if ((r -= weights[1]) > 0) {
+      min = params.bossHighMin;
+      max = params.bossHighMax;
+    }
+  }
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  const v = lo + gameplayRandom() * (hi - lo);
+  return Math.round(clamp(v, 0, 20) * 10) / 10;
+}
+function rollEncounterBossAdd(ordinal) {
+  const tiers = ["Small", "Medium", "Large", "Jackpot"];
+  const weights = tiers.map(tier => Math.max(0, params[`encounterBoss${tier}Weight`]));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  if (total <= 0) throw new Error("BOSS increment weights must have a positive total");
+  let roll = gameplayRandom() * total;
+  let tier = tiers[tiers.length - 1];
+  for (let index=0; index<tiers.length; index++) {
+    roll -= weights[index];
+    if (roll < 0) { tier = tiers[index]; break; }
+  }
+  const low = params[`encounterBoss${tier}Min`], high = params[`encounterBoss${tier}Max`];
+  const growth = Math.min(params.encounterBossDepthGrowthCap, 1 + (ordinal - 1) * params.encounterBossDepthGrowth);
+  return Math.max(.1, Math.round((low + gameplayRandom() * (high - low)) * growth * 10) / 10);
+}
+
+function checkWaveClear() {
+  if (state.over || state.bossRoll) return;
+  if (!state.spawn && !state.monsters.length && state.waveActive) {
+    const clearedEncounter = state.currentEncounter;
+    const pendingPot = Math.max(0, state.waveReward?.pendingPot || 0);
+    const clearBonus = Math.max(0, state.waveReward?.clearBonus || 0);
+    const wavePotAward = pendingPot + clearBonus;
+    if (wavePotAward > 0) {
+      state.waveReward.pendingPot = 0;
+      state.waveReward.clearBonus = 0;
+      state.waveReward.claimedBonus = clearBonus;
+      state.pot += wavePotAward;
+      if (!HEADLESS_SIM) {
+        const tier = state.waveReward.tier;
+        const color = ["", "#badce5", "#59bbff", "#d591ff", "#ffd76e"][tier];
+        if (!clearedEncounter?.boss) effect("encounterChest", {x:FIELD.w/2,y:FIELD.h*.30,color}, {x:FIELD.w/2,y:FIELD.h*.30}, {
+          amount:wavePotAward, tier, boss:false, life:2.1
+        });
+        playSfx(tier >= 3 ? "elite" : "coin");
+        pulsePotMoney();
+      }
+    }
+    settleMathTicket();
+    if (state.waveSummary) {
+      state.waveSummary.pot = Math.max(0, state.pot - state.waveSummary.startPot);
+      state.waveSummary.damage = Math.max(0, state.waveSummary.startHp - state.hp);
+      state.waveSummary.clearExp = Math.max(0, state.waveReward?.clearExp || 0);
+      state.exp += state.waveSummary.clearExp;
+      if (state.waveReward) state.waveReward.clearExp = 0;
+    }
+    state.waveActive = false;
+    if (ENCOUNTER_DRAFT_PROTOTYPE) state.biomeWave += 1;
+    playSfx("waveClear");
+    effect("waveClear", {x:FIELD.w/2,y:FIELD.h*.42,color:"#89e4ff"}, {x:FIELD.w/2,y:FIELD.h*.42}, {
+      text:clearedEncounter?.boss && wavePotAward > 0 ? `護衛戰利品 +${wavePotAward} POT` : "波次完成", life:.9
+    });
+    if (ENCOUNTER_DRAFT_PROTOTYPE && clearedEncounter?.boss) {
+      applyBiomePresentation(false);
+      if (prototypeRunComplete()) completeRun();
+      else {
+        advancePrototypeBiome();
+        state.message = `${currentBiomeConfig().name}開啟，可以 Collect 或繼續 BET。`;
+      }
+    } else {
+      prepareNextBossPreview();
+      state.message = "場上無怪，可以 Collect 或繼續 BET。";
+    }
+  } else if (state.waveActive && canLevelUp() && !state.choicesOpen) {
+    showUpgradeChoices();
+  }
+}
+function expRequired(level) { return paramNumber(`exp_${level}`, EXP_TABLE[level - 1] || 999999); }
+function canLevelUp() { return state.exp >= expRequired(state.level); }
+function showUpgradeChoices() {
+  decayUpgradeRepeatLocks();
+  decayHeroUpgradeRepeatLocks();
+  state.exp -= expRequired(state.level);
+  state.level += 1;
+  openUpgradeChoices(3, false);
+}
+
+function finishUpgradeSelection(applySelection) {
+  applySelection();
+  hideChoices();
+  repriceActiveMathTicket("upgrade");
+  if (!state.pendingWaveStart) return;
+  if (canLevelUp()) {
+    showUpgradeChoices();
+    return;
+  }
+  state.pendingWaveStart = false;
+  prepareEncounterDraft();
+}
+
+function openUpgradeChoices(choiceCount, rerollUsed) {
+  const choices = buildUpgradeChoices(choiceCount);
+  const rerollFactory = () => openUpgradeChoices(4, true);
+  showChoices(
+    rerollUsed ? "四選一" : "三選一",
+    rerollUsed ? "已支付一個 BET，從四張新卡擇一。" : "看圖示選擇這次強化。",
+    choices,
+    { kind:"upgrade", rerollUsed, rerollFactory }
+  );
+}
+
+function buildUpgradeChoices(choiceCount) {
+  const choices = [];
+  const newTowerIds = new Set();
+  const addNewTowerChoices = (count) => {
+    const openSlots = Math.max(0, MAX_TOWER_SLOTS - state.towers.length - newTowerIds.size);
+    randomTowerChoices(Math.min(count, openSlots), newTowerIds).forEach(t => {
+      newTowerIds.add(t.id);
+      choices.push(towerChoice(t, () => finishUpgradeSelection(() => addTower(t))));
+    });
+  };
+  const guaranteeNewTower = state.towers.length < NEW_TOWER_GUARANTEE_LIMIT;
+  if (guaranteeNewTower) addNewTowerChoices(1);
+  const candidates = [...collectUpgradeCandidates(), ...collectHeroUpgradeCandidates()];
+  const pickedCandidates = selectUpgradeCandidates(candidates, choices, choiceCount - choices.length);
+  if (guaranteeNewTower && pickedCandidates.length < choiceCount - choices.length) {
+    const openTowerSlots = MAX_TOWER_SLOTS - state.towers.length - newTowerIds.size;
+    const openChoiceSlots = choiceCount - choices.length - pickedCandidates.length;
+    addNewTowerChoices(Math.min(openTowerSlots, openChoiceSlots));
+  }
+  state.lastUpgradeDebug = {
+    guaranteeNewTower,
+    hero: state.hero ? { name:state.hero.name, upgrades:state.hero.upgrades.slice() } : null,
+    towers: state.towers.map(t => ({ name:t.name, upgrades:t.upgrades.slice() })),
+    candidates: candidates.map(c => ({ source:candidateSourceName(c), name:c.up.name, dimension:c.dimension, taken:c.takenCount, lock:c.lock || 0, weight:Math.round(c.weight) })),
+    picked: pickedCandidates.map(c => ({ source:candidateSourceName(c), name:c.up.name, dimension:c.dimension, taken:c.takenCount }))
+  };
+  pickedCandidates.forEach(picked => {
+    const required = picked.tower ? UPGRADE_REQUIREMENTS[picked.up.name] : null;
+    const requirementNote = required ? `前置已解鎖：${upgradeRequirementLabel(required)}｜` : "";
+    choices.push({
+      title: picked.up.name,
+      tag: candidateSourceName(picked),
+      towerId: picked.tower?.id,
+      heroId: picked.hero?.heroId,
+      attrKey: picked.tower ? towerAttr(picked.tower) : picked.hero.attrKey,
+      rarity: picked.rarity,
+      dimension: picked.dimension,
+      requirementLabel: required ? upgradeRequirementLabel(required) : "跨塔能力",
+      visualStage: picked.hero && picked.up.milestoneLevel
+        ? (picked.up.milestoneLevel >= HERO_SKILL_LEVELS[2] ? 3 : 2)
+        : undefined,
+      repeatTaken: picked.takenCount > 0,
+      desc: `${requirementNote}${picked.up.desc}｜${picked.up.effect}`,
+      impact: picked.up.effect,
+      onPick: () => {
+        if (picked.tower && !upgradeAvailable(picked.tower, picked.up)) {
+          state.message = "此連動升級的前置條件尚未完整解鎖。";
+          updateUi();
+          return;
+        }
+        finishUpgradeSelection(() => {
+          if (picked.hero) applyHeroUpgrade(picked.hero, picked.up);
+          else applyUpgrade(picked.tower, picked.up);
+        });
+      }
+    });
+  });
+  if (choices.length < choiceCount && guaranteeNewTower) addNewTowerChoices(choiceCount - choices.length);
+  return choices.slice(0, choiceCount);
+}
+function nextUpgrade(tower, offset = 0) {
+  const idx = TOWERS.findIndex(t => t.id === tower.id);
+  const taken = tower.upgrades.length + offset;
+  const row = UPGRADE_ROWS[taken % UPGRADE_ROWS.length];
+  const data = row[idx];
+  if (!data) return null;
+  const up = { name:data[0], desc:data[1], effect:data[2], dimension:data[3], rowIndex:taken };
+  if (!upgradeAvailable(tower, up)) return null;
+  return up;
+}
+function collectUpgradeCandidates() {
+  const candidates = [];
+  state.towers.forEach(tower => {
+    const idx = TOWERS.findIndex(t => t.id === tower.id);
+    const normalDepth = tower.upgrades.length + 3;
+    UPGRADE_ROWS.forEach((row, rowIndex) => {
+      const data = row[idx];
+      if (!data) return;
+      const up = { name:data[0], desc:data[1], effect:data[2], dimension:data[3], rowIndex };
+      const hasRequirement = !!UPGRADE_REQUIREMENTS[up.name];
+      if (rowIndex > normalDepth && !hasRequirement) return;
+      if (!upgradeAvailable(tower, up)) return;
+      const rarity = upgradeRarity(up);
+      const repeat = upgradeRepeatability(tower, up);
+      const takenCount = upgradeTakenCount(tower, up.name);
+      const lock = upgradeRepeatLock(tower, up.name);
+      const dimension = towerUpgradeDimension(up);
+      candidates.push({ tower, up, rarity, dimension, repeat, takenCount, lock, weight: upgradeChoiceWeight(rarity, repeat, takenCount, rowIndex, lock) });
+    });
+  });
+  return candidates.sort((a,b) => b.weight - a.weight || a.up.rowIndex - b.up.rowIndex);
+}
+function collectHeroUpgradeCandidates() {
+  const hero = state.hero;
+  if (!hero) return [];
+  const nextLevel = hero.level + 1;
+  const milestone = heroMilestoneSkill(hero, nextLevel);
+  if (milestone) {
+    return [{
+      hero,
+      up:{ ...milestone, rowIndex:nextLevel, milestoneLevel:nextLevel },
+      rarity:"heroBuff",
+      dimension:"buff",
+      repeat:{repeatable:false,limit:1},
+      takenCount:0,
+      lock:0,
+      weight:150 + nextLevel * 2,
+    }];
+  }
+  const every = Math.max(1, params.heroQuantityEveryLevels || 3);
+  const nextRank = (hero.triadRanks || 0) + 1;
+  const firstQuantity = nextRank === 1 ? Math.max(0, params.heroFirstUpgradeQuantity || 0) : 0;
+  const periodicQuantity = nextRank % every === 0 ? Math.max(0, params.heroQuantityUpgrade || 0) : 0;
+  const quantityGain = firstQuantity + periodicQuantity;
+  const quantityText = quantityGain > 0
+    ? `彈體+${quantityGain}`
+    : `彈體進度 ${nextRank % every}/${every}`;
+  const upgrade = {
+    name:`角色升等 Lv.${nextLevel}`,
+    desc:"角色三維同步提升",
+    effect:quantityGain > 0 ? `傷害 ▲　攻速 ▲　彈體 +${quantityGain}` : "傷害 ▲　攻速 ▲",
+    detail:`傷害+${params.heroDamageUpgradePct}%｜攻速+${params.heroRateUpgradePct}%｜${quantityText}`,
+    key:"triad",
+    dimension:"hero",
+    rowIndex:nextLevel,
+  };
+  return [{
+    hero,
+    up:upgrade,
+    rarity:"heroUpgrade",
+    dimension:"hero",
+    repeat:{repeatable:true,limit:99},
+    takenCount:0,
+    lock:0,
+    weight:104 + Math.min(24, state.level * 1.5),
+  }];
+}
+
+function heroMilestoneSkill(hero, level) {
+  const buffByAttr = {
+    fire:{ name:"霜火轉化", desc:"火屬性砲塔附帶輕微冰緩", effect:"同屬性塔命中時短暫緩速", key:"frostInfusion" },
+    ice:{ name:"導電冰晶", desc:"冰屬性砲塔附帶感電弱點", effect:"同屬性塔命中時留下感電易傷", key:"electricInfusion" },
+    electric:{ name:"熱能電弧", desc:"電屬性砲塔附帶短暫燃燒", effect:"同屬性塔命中時附加燃燒", key:"burnInfusion" },
+    poison:{ name:"寒毒配方", desc:"毒屬性砲塔附帶輕微冰緩", effect:"同屬性塔命中時短暫緩速", key:"frostInfusion" },
+    neutral:{ name:"戰術解析", desc:"角色自動鎖定敵人弱點", effect:"角色攻擊自動採用有效屬性", key:"adaptiveAttribute" },
+  };
+  if (level === HERO_SKILL_LEVELS[0]) {
+    return { name:"屬性共鳴", desc:`強化${hero.attr}屬性砲台`, effect:`同屬性砲台傷害+${params.heroResonanceBonusPct}%`, key:"resonance" };
+  }
+  if (level === HERO_SKILL_LEVELS[1]) return buffByAttr[hero.attrKey];
+  if (level === HERO_SKILL_LEVELS[2]) {
+    return {
+      name:"終極同步",
+      desc:"角色與整組砲台進入完成型",
+      effect:`角色傷害/攻速強化｜所有砲台傷害+${params.heroAllTowerBonusPct}%`,
+      key:"ultimateSync",
+    };
+  }
+  return null;
+}
+function towerUpgradeDimension(up) {
+  if (up.dimension) return up.dimension;
+  if (UPGRADE_REQUIREMENTS[up.name] || up.rowIndex >= 7) return "synergy";
+  if (up.rowIndex >= 4) return "core";
+  const text = upgradeText(up);
+  if (/額外|\+1|彈跳目標|穿透敵人/.test(text)) return "quantity";
+  if (/攻速|Tick速度|裝填|部署/.test(text)) return "speed";
+  if (/傷害/.test(text)) return "damage";
+  return "core";
+}
+function upgradeRarity(up) {
+  if (up.dimension === "synergy") return "synergy";
+  if (up.dimension === "core") return "core";
+  if (CORE_UPGRADE_NAMES.has(up.name)) return "core";
+  if (up.rowIndex === 5 || up.rowIndex === 6) return "deepen";
+  if (UPGRADE_REQUIREMENTS[up.name]) return "synergy";
+  if (up.rowIndex >= 7) return "synergy";
+  return "common";
+}
+function rarityPriority(rarity) {
+  return { synergy:4, heroBuff:4, core:3, deepen:2, heroUpgrade:2, tower:1, common:0, newTower:0 }[rarity] || 0;
+}
+function upgradeChoiceWeight(rarity, repeat, takenCount, rowIndex, recentLock = 0) {
+  const base = { synergy:140, heroBuff:118, core:110, deepen:112, heroUpgrade:96, tower:106, common:92, newTower:90 }[rarity] || 90;
+  const depthBonus = Math.max(0, 5 - Math.abs(rowIndex - Math.min(state.level, 6))) * 3;
+  const corePity = rarity === "core" && takenCount <= 0 ? Math.max(0, state.level - 4) * 7 : 0;
+  let weight = base + depthBonus + corePity;
+  if (repeat.repeatable && takenCount > 0) weight *= Math.pow(0.22, takenCount);
+  if (recentLock > 0) weight *= Math.pow(0.35, recentLock);
+  const floor = takenCount > 0 ? 3 : 12;
+  return Math.max(floor, weight);
+}
+function weightedUpgradeCandidateIndex(candidates, choices) {
+  const hasRepeatChoice = choices.some(choice => choice.repeatTaken);
+  const hasFreshCandidate = candidates.some(c => c.takenCount <= 0 && !choices.some(choice => choice.title === c.up.name && choice.tag === candidateSourceName(c)));
+  const representedTowers = new Set(choices.map(choice => choice.tag));
+  const pool = candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .filter(item => !choices.some(choice => choice.title === item.candidate.up.name && choice.tag === candidateSourceName(item.candidate)))
+    .filter(item => !(hasFreshCandidate && item.candidate.takenCount > 0));
+  const diversePool = pool.filter(item => !representedTowers.has(candidateSourceName(item.candidate)));
+  const usable = diversePool.length ? diversePool : pool.length ? pool : candidates.map((candidate, index) => ({ candidate, index }));
+  const total = usable.reduce((sum, item) => sum + Math.max(1, item.candidate.weight || 1), 0);
+  let roll = gameplayRandom() * total;
+  for (const item of usable) {
+    roll -= Math.max(1, item.candidate.weight || 1);
+    if (roll <= 0) return item.index;
+  }
+  return usable[usable.length - 1]?.index || 0;
+}
+function selectUpgradeCandidates(candidates, existingChoices, slots) {
+  const selected = [];
+  const usedKeys = new Set(existingChoices.map(choice => `${choice.tag}:${choice.title}`));
+  const representedTowers = new Set(existingChoices.map(choice => choice.tag));
+  pickUpgradeCandidatesFromPool(candidates, selected, usedKeys, representedTowers, slots);
+  return selected;
+}
+function pickUpgradeCandidatesFromPool(pool, selected, usedKeys, representedTowers, slots) {
+  while (selected.length < slots) {
+    const usable = pool.filter(candidate => {
+      const key = `${candidateSourceName(candidate)}:${candidate.up.name}`;
+      if (usedKeys.has(key)) return false;
+      return true;
+    });
+    if (!usable.length) return;
+    const weightedUsable = usable.map(candidate => ({
+      ...candidate,
+      weight: candidate.weight * (representedTowers.has(candidateSourceName(candidate)) ? 0.82 : 1)
+    }));
+    const picked = weightedPickCandidate(weightedUsable);
+    const sourceName = candidateSourceName(picked);
+    const key = `${sourceName}:${picked.up.name}`;
+    usedKeys.add(key);
+    representedTowers.add(sourceName);
+    selected.push(picked);
+  }
+}
+function candidateSourceName(candidate) {
+  return candidate.tower?.name || candidate.hero?.name || "角色";
+}
+function weightedPickCandidate(pool) {
+  const total = pool.reduce((sum, candidate) => sum + Math.max(1, candidate.weight || 1), 0);
+  let roll = gameplayRandom() * total;
+  for (const candidate of pool) {
+    roll -= Math.max(1, candidate.weight || 1);
+    if (roll <= 0) return candidate;
+  }
+  return pool[pool.length - 1];
+}
+function upgradeText(up) {
+  return `${up.name || ""} ${up.desc || ""} ${up.effect || ""}`;
+}
+const REPEATABLE_UPGRADE_KEYS = new Set([
+  "damagePct", "ratePct", "rangePct", "durationPct",
+  "burnDurationPct", "poisonDurationPct", "slowDurationPct", "zoneDurationPct", "iceTrailDurationPct", "stunDurationPct", "rootDurationPct",
+  "dotDamagePct", "pathDamagePct", "focusDamageBonusPct", "focusDelayReducePct", "vulnerableBonusPct", "iceTrailSlowBonusPct", "ricochetDamageBonusPct",
+  "extraShots", "extraAreas", "extraProjectiles", "extraPierce", "extraChainCasts", "extraChains", "extraLaserTargets", "ricochetExtra"
+]);
+const ONE_TIME_UPGRADE_KEYS = new Set([
+  "burnDps", "burnTime", "burnAreaDps", "burnAreaTime",
+  "poisonTick", "poisonDps", "poisonTime",
+  "slowPct", "slowTime", "freezeTime", "iceTrailSlowPct", "iceTrailTime",
+  "stunTime", "rootTime", "pullStrengthPct",
+  "focusDelay", "focusDamagePct", "refractDamagePct",
+  "ricochetChancePct", "ricochetDamagePct",
+  "pathDamage", "vulnerablePct",
+  "conditionalExplosionPct", "conditionalExplosionRadius", "conditionalStunTime", "poisonTargetDamagePct",
+  "zoneStunTime", "zoneTime", "zonePoisonDps", "zonePoisonTime", "trailSlowPct", "trailTime",
+  "shardCount", "shardDamagePct", "freezeDurationPct", "postFreezeSlowPct", "postFreezeSlowTime",
+  "refractFocusPct", "focusedBurstDamagePct", "focusedBurstRadius", "electricVulnerablePct", "electricVulnerableTime",
+  "focusConduit", "poisonBurstDamagePct", "poisonBurstRadius", "poisonChainDamagePct", "burningTargetDamagePct",
+  "zoneSlowPct", "frozenTargetDamagePct"
+]);
+function upgradeTakenCount(tower, name) {
+  return tower.upgrades.filter(item => item === name).length;
+}
+function upgradeChoiceKey(tower, name) {
+  return `${tower.id}:${name}`;
+}
+function upgradeRepeatLock(tower, name) {
+  return state.upgradeRepeatLocks?.[upgradeChoiceKey(tower, name)] || 0;
+}
+function decayUpgradeRepeatLocks() {
+  if (!state.upgradeRepeatLocks) state.upgradeRepeatLocks = {};
+  Object.keys(state.upgradeRepeatLocks).forEach(key => {
+    state.upgradeRepeatLocks[key] -= 1;
+    if (state.upgradeRepeatLocks[key] <= 0) delete state.upgradeRepeatLocks[key];
+  });
+}
+function decayHeroUpgradeRepeatLocks() {
+  if (!state.heroUpgradeRepeatLocks) state.heroUpgradeRepeatLocks = {};
+  Object.keys(state.heroUpgradeRepeatLocks).forEach(key => {
+    state.heroUpgradeRepeatLocks[key] -= 1;
+    if (state.heroUpgradeRepeatLocks[key] <= 0) delete state.heroUpgradeRepeatLocks[key];
+  });
+}
+function applyHeroUpgrade(hero, up) {
+  const visualStageBefore = heroVisualStage(hero);
+  hero.upgrades.push(up.name);
+  hero.level += 1;
+  if (!hero.upgradeCounts) hero.upgradeCounts = {};
+  if (!hero.buffs) hero.buffs = {};
+  if (up.key === "triad") {
+    hero.triadRanks = (hero.triadRanks || 0) + 1;
+    hero.damageMul *= 1 + params.heroDamageUpgradePct / 100;
+    hero.rateMul *= 1 + params.heroRateUpgradePct / 100;
+    if (hero.triadRanks === 1) {
+      hero.extraShots += Math.max(0, Math.round(params.heroFirstUpgradeQuantity || 0));
+    }
+    if (hero.triadRanks % Math.max(1, params.heroQuantityEveryLevels || 3) === 0) {
+      hero.extraShots += params.heroQuantityUpgrade;
+    }
+  } else if (up.key === "resonance") {
+    hero.sameAttrBonus += params.heroResonanceBonusPct;
+    hero.buffs.resonance = true;
+  } else if (up.key === "ultimateSync") {
+    hero.damageMul *= 1 + params.heroDamageUpgradePct * 2 / 100;
+    hero.rateMul *= 1 + params.heroRateUpgradePct * 2 / 100;
+    hero.sameAttrBonus += params.heroAllTowerBonusPct;
+    hero.allTowerBonus += params.heroAllTowerBonusPct;
+    hero.buffs.ultimateSync = true;
+  } else if (up.key === "adaptiveAttribute") {
+    hero.adaptiveAttribute = true;
+    hero.buffs.adaptiveAttribute = true;
+  } else if (up.key) hero.buffs[up.key] = true;
+  hero.upgradeCounts[up.key] = (hero.upgradeCounts[up.key] || 0) + 1;
+  const position = heroVisualPosition();
+  effect("upgradeBurst", {x:position.x,y:position.y - 30,color:hero.color}, position, {
+    life: heroVisualStage(hero) > visualStageBefore ? 1.2 : .72,
+    text: heroVisualStage(hero) > visualStageBefore ? `STAGE ${heroVisualStage(hero)}` : "LEVEL UP"
+  });
+}
+function markUpgradeRepeatLock(tower, up) {
+  if (!state.upgradeRepeatLocks) state.upgradeRepeatLocks = {};
+  state.upgradeRepeatLocks[upgradeChoiceKey(tower, up.name)] = 3;
+}
+function upgradeRepeatability(tower, up) {
+  if (up.dimension === "core" || up.dimension === "synergy") return { repeatable:false, limit:1, label:"一次性" };
+  const specs = upgradeEffectSpecs(tower.id, up.rowIndex || 0);
+  if (specs.some(spec => ONE_TIME_UPGRADE_KEYS.has(spec.key))) return { repeatable:false, limit:1, label:"一次性" };
+  if (specs.length && specs.every(spec => REPEATABLE_UPGRADE_KEYS.has(spec.key))) return { repeatable:true, limit:99, label:"可重複" };
+  return { repeatable: up.rowIndex <= 3, limit: up.rowIndex <= 3 ? 99 : 1, label: up.rowIndex <= 3 ? "可重複" : "一次性" };
+}
+function isRepeatableUpgrade(tower, up) {
+  return upgradeRepeatability(tower, up).repeatable;
+}
+function upgradeAvailable(tower, up) {
+  const repeat = upgradeRepeatability(tower, up);
+  if (upgradeTakenCount(tower, up.name) >= repeat.limit) return false;
+  const required = UPGRADE_REQUIREMENTS[up.name];
+  if (required && !upgradeRequirementSatisfied(required)) return false;
+  const text = upgradeText(up);
+  if (text.includes("路徑傷害+") && !hasOwnedUpgrade("傳導增幅")) return false;
+  return true;
+}
+function upgradeRequirementSatisfied(required) {
+  if (typeof required === "string") return hasOwnedUpgrade(required);
+  const all = Array.isArray(required?.all) ? required.all : [];
+  const any = Array.isArray(required?.any) ? required.any : [];
+  return all.every(hasOwnedUpgrade) && (!any.length || any.some(hasOwnedUpgrade));
+}
+function upgradeRequirementLabel(required) {
+  if (typeof required === "string") return required;
+  const labels = [...(required?.all || [])];
+  if (required?.any?.length) labels.push(required.anyLabel || `任一：${required.any.join("／")}`);
+  return labels.join("＋");
+}
+function hasOwnedUpgrade(name) {
+  return state.towers.some(tower => tower.upgrades.includes(name));
+}
+function applyUpgrade(t, up) {
+  t.upgrades.push(up.name);
+  markUpgradeRepeatLock(t, up);
+  t.level += 1;
+  const s = upgradeText(up);
+  if (up.rowIndex === 0 && s.includes("傷害+40")) t.damageMul = (t.damageMul || 1) * 1.4;
+  else if (up.rowIndex === 0 && (s.includes("傷害+35") || s.includes("每段傷害+35"))) t.damageMul = (t.damageMul || 1) * 1.35;
+  else if (up.rowIndex === 0 && (s.includes("傷害+30") || s.includes("每段傷害+30"))) t.damageMul = (t.damageMul || 1) * 1.3;
+  if (s.includes("攻速+25") || s.includes("Tick速度+25")) t.rate *= 1.25;
+  if (s.includes("攻速+20") || s.includes("布置速度+20")) t.rate *= 1.2;
+  if (s.includes("範圍+25") || s.includes("攻擊範圍+25") || s.includes("爆炸範圍+25")) { t.rangeMul = (t.rangeMul || 1) * 1.25; t.splashMul = (t.splashMul || 1) * 1.25; }
+  if (s.includes("持續時間+50")) t.durationMul *= 1.5;
+  if (s.includes("額外子彈")) t.extraProjectiles = (t.extraProjectiles || 0) + 1;
+  if (s.includes("額外火焰") || s.includes("額外炸彈") || s.includes("額外毒霧") || s.includes("額外毒氣彈") || s.includes("額外毒針") || s.includes("額外斬擊") || s.includes("額外陷阱")) t.extraShots += 1;
+  if (s.includes("爆點+1")) t.extraAreas = (t.extraAreas || 0) + 1;
+  if (s.includes("穿透敵人+1")) t.extraPierce = (t.extraPierce || 0) + 1;
+  if (s.includes("額外閃電鏈+1")) t.extraChainCasts = (t.extraChainCasts || 0) + 1;
+  if (s.includes("彈跳目標+") || s.includes("彈掉目標+3")) t.extraChains = (t.extraChains || 0) + 3;
+  if (s.includes("對聯鎖路徑上敵人造成50傷害")) t.pathDamage = 50;
+  if (s.includes("路徑上造成的傷害+100")) t.pathDamageMul = (t.pathDamageMul || 1) * 2;
+  if (s.includes("解鎖燃燒") || s.includes("命中後每秒造成燃燒傷害")) t.burn = true;
+  if (s.includes("命中後造成中毒")) t.poison = true;
+  if (up.name === "寒氣附著") t.slow = Math.max(t.slow || 0, .25);
+  if (up.name === "極凍禁制") t.freeze = true;
+  if (up.name === "冰痕") t.iceTrail = true;
+  if (s.includes("冰痕緩速效果+15")) t.iceSlow = (t.iceSlow || .15) + .15;
+  if (up.name === "電磁殘留") t.stun = true;
+  if (up.name === "戰術封鎖") t.root = true;
+  if (up.name === "過載聚焦") t.focus = true;
+  if (s.includes("加成效果提升50")) t.focusMul *= 1.5;
+  if (s.includes("持續照射需要時間-50")) t.focusDelayMul = (t.focusDelayMul || 1) * .5;
+  if (s.includes("折射")) t.refract = true;
+  if (s.includes("受到傷害+15")) t.vulnerable = (t.vulnerable || 0) + .15;
+  if (s.includes("增傷效果+50")) t.vulnerable = (t.vulnerable || .15) * 1.5;
+  if (s.includes("燃燒區域")) t.burnArea = true;
+  if (s.includes("毒霧")) t.poisonArea = true;
+  if (up.name === "腐蝕毒霧") t.toxicZone = true;
+  if (s.includes("迴旋飛刃")) t.ricochet = true;
+  if (s.includes("飛刃傷害+100")) t.ricochetMul = (t.ricochetMul || 1) * 2;
+  if (s.includes("額外迴旋刃+1")) t.ricochetExtra = (t.ricochetExtra || 0) + 1;
+  if (up.name === "牽引模組") t.pull = true;
+  if (s.includes("牽引強度+")) t.pullMul = (t.pullMul || 1) * 1.5;
+  if (s.includes("燃燒傷害+100") || s.includes("中毒傷害+100")) t.dotMul *= 2;
+  if (s.includes("燃燒持續時間+50")) t.burnDurationMul *= 1.5;
+  if (s.includes("毒霧持續時間+50")) t.zoneDurationMul *= 1.5;
+  if (s.includes("中毒持續時間+50")) t.poisonDurationMul *= 1.5;
+  if (s.includes("冰痕持續時間+50")) t.iceTrailDurationMul *= 1.5;
+  if (s.includes("緩速時間+50")) t.slowDurationMul *= 1.5;
+  if (s.includes("凍結持續時間+50") || s.includes("麻痺時間+50") || s.includes("定身時間+50")) t.stunMul *= 1.5;
+  applyFiveDimensionUpgradeFlags(t, up);
+}
+
+function applyFiveDimensionUpgradeFlags(t, up) {
+  if (up.dimension === "quantity" && t.id === "laser") t.refract = true;
+  if (up.dimension === "core") {
+    if (t.id === "flame") { t.burn = true; t.burnArea = true; }
+    else if (t.id === "grenade") t.burnArea = true;
+    else if (t.id === "cryo") { t.slow = Math.max(t.slow || 0, .25); t.freeze = true; }
+    else if (t.id === "frostbomb") t.iceTrail = true;
+    else if (t.id === "laser") t.focus = true;
+    else if (t.id === "chain") t.stun = true;
+    else if (t.id === "gas") { t.poison = true; t.toxicZone = true; }
+    else if (t.id === "needle") t.poison = true;
+    else if (t.id === "blade") t.ricochet = true;
+    else if (t.id === "trap") { t.root = true; t.pull = true; }
+  }
+  if (up.dimension === "synergy") {
+    if (t.id === "grenade") t.poisonArea = true;
+    else if (t.id === "cryo") t.conductiveHit = true;
+    else if (t.id === "blade") t.poison = true;
+  }
+}
+
+const applyUpgradeBase = applyUpgrade;
+applyUpgrade = function(t, up) {
+  const visualStageBefore = towerVisualStage(t);
+  const before = snapshotUpgradeStats(t);
+  applyUpgradeBase(t, up);
+  tuneAppliedUpgrade(t, before);
+  tuneUpgradeEffectValues(t, up, before);
+  const position = towerVisualPosition(t.slot);
+  effect("upgradeBurst", {x:position.x,y:position.y - 12,color:t.color}, position, {
+    life: towerVisualStage(t) > visualStageBefore ? 1.2 : .72,
+    text: towerVisualStage(t) > visualStageBefore ? `STAGE ${towerVisualStage(t)}` : "POWER UP"
+  });
+};
+
+function snapshotUpgradeStats(t) {
+  return {
+    damageMul: t.damageMul || 1,
+    rate: t.rate,
+    rangeMul: t.rangeMul || 1,
+    splashMul: t.splashMul || 1,
+    durationMul: t.durationMul || 1,
+    burnDurationMul: t.burnDurationMul || 1,
+    poisonDurationMul: t.poisonDurationMul || 1,
+    slowDurationMul: t.slowDurationMul || 1,
+    zoneDurationMul: t.zoneDurationMul || 1,
+    iceTrailDurationMul: t.iceTrailDurationMul || 1,
+    stunMul: t.stunMul || 1,
+    dotMul: t.dotMul || 1,
+    focusMul: t.focusMul || 1,
+    focusDelayMul: t.focusDelayMul || 1,
+    pathDamageMul: t.pathDamageMul || 1,
+    ricochetMul: t.ricochetMul || 1,
+    pullMul: t.pullMul || 1,
+    iceSlow: t.iceSlow || 0,
+    extraProjectiles: t.extraProjectiles || 0,
+    extraShots: t.extraShots || 0,
+    extraAreas: t.extraAreas || 0,
+    extraPierce: t.extraPierce || 0,
+    extraChainCasts: t.extraChainCasts || 0,
+    extraChains: t.extraChains || 0,
+    extraLaserTargets: t.extraLaserTargets || 0,
+    ricochetExtra: t.ricochetExtra || 0,
+    pathDamage: t.pathDamage || 0,
+    vulnerable: t.vulnerable || 0,
+    slow: t.slow || 0,
+  };
+}
+
+function tuneAppliedUpgrade(t, before) {
+  tuneRatio(t, "damageMul", before.damageMul, 1.4, params.upgradeDamage40);
+  tuneRatio(t, "damageMul", before.damageMul, 1.35, params.upgradeDamage35);
+  tuneRatio(t, "damageMul", before.damageMul, 1.3, params.upgradeDamage30);
+  tuneRatio(t, "rate", before.rate, 1.25, params.upgradeRate25);
+  tuneRatio(t, "rate", before.rate, 1.2, params.upgradeRate20);
+  tuneRatio(t, "rangeMul", before.rangeMul, 1.25, params.upgradeRange25);
+  tuneRatio(t, "splashMul", before.splashMul, 1.25, params.upgradeRange25);
+  ["durationMul","burnDurationMul","poisonDurationMul","slowDurationMul","zoneDurationMul","iceTrailDurationMul","stunMul"].forEach(key => {
+    tuneRatio(t, key, before[key], 1.5, params.upgradeDuration50);
+  });
+  tuneRatio(t, "dotMul", before.dotMul, 2, params.upgradeDotDamage100);
+  if ((t.extraChains || 0) - before.extraChains === 3) t.extraChains = before.extraChains + params.upgradeExtraChain;
+  if ((t.pathDamage || 0) === 50 && before.pathDamage !== 50) t.pathDamage = params.upgradePathDamage;
+  if (Math.abs((t.vulnerable || 0) - before.vulnerable - .15) < 0.001) t.vulnerable = before.vulnerable + params.upgradeVulnerable15;
+  if ((t.slow || 0) === .25 && before.slow !== .25) t.slow = params.upgradeSlow25;
+}
+
+function tuneSingleUpgradeOption(t, up, before) {
+  const scale = upgradeOptionScale(t.id, up.rowIndex || 0);
+  if (Math.abs(scale - 1) < 0.001) return;
+  const discrete = new Set(["extraProjectiles","extraShots","extraAreas","extraPierce","extraChainCasts","extraChains","extraLaserTargets","ricochetExtra"]);
+  [
+    "damageMul","rate","rangeMul","splashMul","durationMul","burnDurationMul","poisonDurationMul","slowDurationMul",
+    "zoneDurationMul","iceTrailDurationMul","stunMul","dotMul","focusMul","focusDelayMul","pathDamageMul","ricochetMul",
+    "pullMul","iceSlow","extraProjectiles","extraShots","extraAreas","extraPierce","extraChainCasts","extraChains","extraLaserTargets",
+    "ricochetExtra","pathDamage","vulnerable","slow"
+  ].forEach(key => tuneDelta(t, key, before[key], scale, discrete.has(key)));
+
+  const text = upgradeText(up);
+  if ((text.includes("燃燒") || text.includes("中毒")) && Math.abs((t.dotMul || 1) - before.dotMul) < 0.0001) {
+    t.dotMul = Math.max(0, (t.dotMul || 1) * scale);
+  }
+  if ((text.includes("麻痺") || text.includes("凍結") || text.includes("定身")) && Math.abs((t.stunMul || 1) - before.stunMul) < 0.0001) {
+    t.stunMul = Math.max(0, (t.stunMul || 1) * scale);
+  }
+  if (text.includes("牽引") && Math.abs((t.pullMul || 1) - before.pullMul) < 0.0001) {
+    t.pullMul = Math.max(0, (t.pullMul || 1) * scale);
+  }
+}
+
+function upgradeOptionScale(towerId, rowIndex) {
+  const value = Number(params[upgradeOptionParamKey(towerId, rowIndex)]);
+  return Number.isFinite(value) ? Math.max(0, value) : 1;
+}
+
+function tuneDelta(target, key, beforeValue, scale, discrete=false) {
+  const afterValue = target[key];
+  if (!Number.isFinite(afterValue) || !Number.isFinite(beforeValue)) return;
+  const delta = afterValue - beforeValue;
+  if (Math.abs(delta) < 0.0001) return;
+  const tuned = beforeValue + delta * scale;
+  target[key] = discrete ? Math.max(0, Math.round(tuned)) : tuned;
+}
+
+function tuneUpgradeEffectValues(t, up, before) {
+  const rowIndex = up.rowIndex || 0;
+  const specs = upgradeEffectSpecs(t.id, rowIndex);
+  if (!specs.length) return;
+  const has = key => specs.some(spec => spec.key === key);
+  const val = key => {
+    const spec = specs.find(item => item.key === key);
+    return upgradeEffectValue(t.id, rowIndex, key, spec ? spec.value : 0);
+  };
+  const pctRatio = key => 1 + Math.max(0, val(key)) / 100;
+
+  if (has("damagePct")) t.damageMul = before.damageMul * pctRatio("damagePct");
+  if (has("ratePct")) t.rate = before.rate * pctRatio("ratePct");
+  if (has("rangePct")) {
+    t.rangeMul = before.rangeMul * pctRatio("rangePct");
+    t.splashMul = before.splashMul * pctRatio("rangePct");
+  }
+  if (has("durationPct")) t.durationMul = before.durationMul * pctRatio("durationPct");
+  if (has("burnDurationPct")) t.burnDurationMul = before.burnDurationMul * pctRatio("burnDurationPct");
+  if (has("poisonDurationPct")) t.poisonDurationMul = before.poisonDurationMul * pctRatio("poisonDurationPct");
+  if (has("slowDurationPct")) t.slowDurationMul = before.slowDurationMul * pctRatio("slowDurationPct");
+  if (has("zoneDurationPct")) t.zoneDurationMul = before.zoneDurationMul * pctRatio("zoneDurationPct");
+  if (has("iceTrailDurationPct")) t.iceTrailDurationMul = before.iceTrailDurationMul * pctRatio("iceTrailDurationPct");
+  if (has("stunDurationPct") || has("rootDurationPct")) t.stunMul = before.stunMul * (has("stunDurationPct") ? pctRatio("stunDurationPct") : pctRatio("rootDurationPct"));
+  if (has("dotDamagePct")) t.dotMul = before.dotMul * pctRatio("dotDamagePct");
+  if (has("pathDamagePct")) t.pathDamageMul = before.pathDamageMul * pctRatio("pathDamagePct");
+  if (has("focusDamageBonusPct")) t.focusMul = before.focusMul * pctRatio("focusDamageBonusPct");
+  if (has("focusDelayReducePct")) t.focusDelayMul = before.focusDelayMul * Math.max(0, 1 - val("focusDelayReducePct") / 100);
+  if (has("vulnerableBonusPct")) t.vulnerable = before.vulnerable * pctRatio("vulnerableBonusPct");
+  if (has("iceTrailSlowBonusPct")) t.iceSlow = before.iceSlow + val("iceTrailSlowBonusPct") / 100;
+  if (has("ricochetDamageBonusPct")) t.ricochetMul = before.ricochetMul * pctRatio("ricochetDamageBonusPct");
+
+  if (has("extraShots")) t.extraShots = before.extraShots + Math.max(0, Math.round(val("extraShots")));
+  if (has("extraAreas")) t.extraAreas = before.extraAreas + Math.max(0, Math.round(val("extraAreas")));
+  if (has("extraProjectiles")) t.extraProjectiles = before.extraProjectiles + Math.max(0, Math.round(val("extraProjectiles")));
+  if (has("extraPierce")) t.extraPierce = before.extraPierce + Math.max(0, Math.round(val("extraPierce")));
+  if (has("extraChainCasts")) t.extraChainCasts = before.extraChainCasts + Math.max(0, Math.round(val("extraChainCasts")));
+  if (has("extraChains")) t.extraChains = before.extraChains + Math.max(0, Math.round(val("extraChains")));
+  if (has("extraLaserTargets")) t.extraLaserTargets = before.extraLaserTargets + Math.max(0, Math.round(val("extraLaserTargets")));
+  if (has("ricochetExtra")) t.ricochetExtra = before.ricochetExtra + Math.max(0, Math.round(val("ricochetExtra")));
+
+  if (has("pathDamage")) t.pathDamage = val("pathDamage");
+  if (has("vulnerablePct")) t.vulnerable = before.vulnerable + val("vulnerablePct") / 100;
+  if (has("slowPct")) t.slow = val("slowPct") / 100;
+  if (has("burnDps")) t.burnDps = val("burnDps");
+  if (has("burnTime")) t.burnTime = val("burnTime");
+  if (has("burnAreaDps")) t.burnAreaDps = val("burnAreaDps");
+  if (has("burnAreaTime")) t.burnAreaTime = val("burnAreaTime");
+  if (has("poisonTick")) t.poisonTick = val("poisonTick");
+  if (has("poisonDps")) t.poisonDps = val("poisonDps");
+  if (has("poisonTime")) t.poisonTime = val("poisonTime");
+  if (has("slowTime")) t.slowTime = val("slowTime");
+  if (has("freezeTime")) t.freezeTimeValue = val("freezeTime");
+  if (has("iceTrailTime")) t.iceTrailTime = val("iceTrailTime");
+  if (has("iceTrailSlowPct")) t.iceSlow = val("iceTrailSlowPct") / 100;
+  if (has("stunTime")) t.stunTimeValue = val("stunTime");
+  if (has("rootTime")) t.rootTimeValue = val("rootTime");
+  if (has("pullStrengthPct")) t.pullStrengthPct = val("pullStrengthPct");
+  if (has("focusDelay")) t.focusDelay = val("focusDelay");
+  if (has("focusDamagePct")) t.focusDamagePct = val("focusDamagePct");
+  if (has("refractDamagePct")) t.refractDamagePct = val("refractDamagePct");
+  if (has("ricochetChancePct")) t.ricochetChancePct = val("ricochetChancePct");
+  if (has("ricochetDamagePct")) t.ricochetDamagePct = val("ricochetDamagePct");
+  if (has("conditionalExplosionPct")) t.conditionalExplosionPct = val("conditionalExplosionPct");
+  if (has("conditionalExplosionRadius")) t.conditionalExplosionRadius = val("conditionalExplosionRadius");
+  if (has("conditionalStunTime")) t.conditionalStunTime = val("conditionalStunTime");
+  if (has("poisonTargetDamagePct")) t.poisonTargetDamagePct = val("poisonTargetDamagePct");
+  if (has("zoneStunTime")) t.zoneStunTime = val("zoneStunTime");
+  if (has("zoneTime")) t.synergyZoneTime = val("zoneTime");
+  if (has("zonePoisonDps")) t.zonePoisonDps = val("zonePoisonDps");
+  if (has("zonePoisonTime")) t.zonePoisonTime = val("zonePoisonTime");
+  if (has("trailSlowPct")) t.trailSlowPct = val("trailSlowPct");
+  if (has("trailTime")) t.trailTime = val("trailTime");
+  if (has("shardCount")) t.shardCount = Math.max(0, Math.round(val("shardCount")));
+  if (has("shardDamagePct")) t.shardDamagePct = val("shardDamagePct");
+  if (has("freezeDurationPct")) t.freezeDurationMul = 1 + val("freezeDurationPct") / 100;
+  if (has("postFreezeSlowPct")) t.postFreezeSlowPct = val("postFreezeSlowPct");
+  if (has("postFreezeSlowTime")) t.postFreezeSlowTime = val("postFreezeSlowTime");
+  if (has("refractFocusPct")) t.refractFocusPct = val("refractFocusPct");
+  if (has("focusedBurstDamagePct")) t.focusedBurstDamagePct = val("focusedBurstDamagePct");
+  if (has("focusedBurstRadius")) t.focusedBurstRadius = val("focusedBurstRadius");
+  if (has("electricVulnerablePct")) t.electricVulnerablePct = val("electricVulnerablePct");
+  if (has("electricVulnerableTime")) t.electricVulnerableTime = val("electricVulnerableTime");
+  if (has("focusConduit")) t.focusConduit = Math.max(0, Math.round(val("focusConduit")));
+  if (has("poisonBurstDamagePct")) t.poisonBurstDamagePct = val("poisonBurstDamagePct");
+  if (has("poisonBurstRadius")) t.poisonBurstRadius = val("poisonBurstRadius");
+  if (has("poisonChainDamagePct")) t.poisonChainDamagePct = val("poisonChainDamagePct");
+  if (has("burningTargetDamagePct")) t.burningTargetDamagePct = val("burningTargetDamagePct");
+  if (has("zoneSlowPct")) t.zoneSlowPct = val("zoneSlowPct");
+  if (has("frozenTargetDamagePct")) t.frozenTargetDamagePct = val("frozenTargetDamagePct");
+}
+
+function tuneRatio(target, key, beforeValue, defaultRatio, tunedRatio) {
+  const afterValue = target[key];
+  if (!Number.isFinite(afterValue) || !Number.isFinite(beforeValue) || beforeValue === 0) return;
+  if (Math.abs(afterValue / beforeValue - defaultRatio) < 0.001) target[key] = beforeValue * tunedRatio;
+}
+
+function collect() {
+  if (!canCollect()) return;
+  playSfx("collect");
+  const win = payout();
+  payMathReservation();
+  state.wallet += win;
+  showResult("Collect", `帶走 ${win}。錢包餘額 ${state.wallet}。`);
+}
+
+function completeRun() {
+  if (state.over) return;
+  const win = payout();
+  payMathReservation();
+  state.wallet += win;
+  playSfx("collect");
+  showResult(ENCOUNTER_DRAFT_PROTOTYPE ? "五戰區制霸" : "30 波通關", `通關結算 ${win}。錢包餘額 ${state.wallet}。`);
+}
+function canCollect() { return state.started && !state.over && !state.waveActive && !state.monsters.length && !state.spawn && !state.choicesOpen && state.pot > 0; }
+
+function effect(type, from, to, opts={}) {
+  if (HEADLESS_SIM) return;
+  const visualLife = {
+    cone:.24, chain:.25, spark:.24, grenade:.42, frost:.46,
+    gas:.4, trap:.42, needle:.28, blade:.32, impact:.34, hitBase:.4
+  };
+  const areaFlashLife = visualLife[type] || .35;
+  const life = opts.life || areaFlashLife;
+  if (state.effects.length >= MAX_EFFECTS) {
+    state.effects.splice(0, state.effects.length - MAX_EFFECTS + 1);
+  }
+  state.effects.push({ type, x:from.x, y:from.y, tx:to.x, ty:to.y, color:from.color || "#fff", t:life, life, radius:opts.radius || 0, width:opts.width || 40, amount:opts.amount || 0, tier:opts.tier, boss:!!opts.boss, weak:!!opts.weak, chain: opts.chain ? opts.chain.map(m => ({x:m.x,y:m.y})) : [], text: opts.text });
+}
+function dist(a,b) {
+  return Math.sqrt(distSquared(a,b));
+}
+function distSquared(a,b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawField();
+  drawHero();
+  drawDefenseStage();
+  state.zones.forEach(drawZone);
+  state.projectiles.forEach(drawProjectile);
+  drawActiveChannels();
+  state.effects.forEach(drawEffect);
+  state.monsters.forEach(drawEnemy);
+}
+
+function drawHero() {
+  const hero = state.hero;
+  if (!hero) return;
+  const position = heroVisualPosition();
+  const bob = Math.sin((hero.animTime || 0) * 3.2) * .8;
+  const x = position.x;
+  const y = position.y + bob;
+  const color = hero.color || (ATTRIBUTE_DISPLAY[hero.attrKey] || ATTRIBUTE_DISPLAY.neutral).color;
+  const angle = Number.isFinite(hero.aimAngle) ? hero.aimAngle : -Math.PI / 2;
+  const facing = Math.cos(angle) < 0 ? -1 : 1;
+  const pulse = .55 + Math.sin((hero.animTime || 0) * 4.4) * .12;
+  const visualStage = heroVisualStage(hero);
+  const sprite = artImage(heroSpritePath(hero, visualStage));
+  if (sprite?.complete && sprite.naturalWidth) {
+    const drawSize = visualStage === 3 ? 142 : visualStage === 2 ? 130 : 118;
+    ctx.save();
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "rgba(0,0,0,.44)";
+    ctx.beginPath();
+    ctx.ellipse(x, y + 8, drawSize * .31, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = visualStage === 3 ? .30 : .18;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(x, y + 5, drawSize * (.38 + pulse * .03), 10 + pulse * 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    if (visualStage >= 2) {
+      ctx.globalAlpha = visualStage === 3 ? .78 : .42;
+      ctx.strokeStyle = visualStage === 3 ? "#fff0ae" : color;
+      ctx.lineWidth = visualStage === 3 ? 3 : 2;
+      ctx.beginPath();
+      ctx.arc(x, y - 26, drawSize * .43 + Math.sin((hero.animTime || 0) * 3) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.translate(x, y + bob - drawSize * .34);
+    ctx.scale(facing, 1);
+    ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+    ctx.restore();
+    if ((hero.muzzleFlash || 0) > 0) {
+      const origin = fireOrigin();
+      const flash = clamp(hero.muzzleFlash / .11, 0, 1);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = flash;
+      ctx.fillStyle = "#fff5a8";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(origin.x, origin.y, 5 + flash * 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    return;
+  }
+  ctx.save();
+
+  ctx.globalAlpha = .28 + pulse * .12;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(x, y + 7, 27, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = .8;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(x, y + 6, 23 + pulse * 2, 6.5 + pulse, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  drawHeroGear(hero, x, y, color, facing);
+
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#141820";
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y - 7); ctx.lineTo(x - 10, y + 8);
+  ctx.moveTo(x + 7, y - 7); ctx.lineTo(x + 10, y + 8);
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y - 5); ctx.lineTo(x - 10, y + 8);
+  ctx.moveTo(x + 7, y - 5); ctx.lineTo(x + 10, y + 8);
+  ctx.stroke();
+  ctx.fillStyle = "#080a0e";
+  ctx.fillRect(x - 17, y + 6, 14, 5);
+  ctx.fillRect(x + 3, y + 6, 14, 5);
+
+  const torso = ctx.createLinearGradient(x, y - 29, x, y - 5);
+  torso.addColorStop(0, color);
+  torso.addColorStop(.26, "#313946");
+  torso.addColorStop(1, "#10141b");
+  ctx.fillStyle = torso;
+  ctx.strokeStyle = "#030507";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 15, y - 26);
+  ctx.lineTo(x + 15, y - 26);
+  ctx.lineTo(x + 12, y - 5);
+  ctx.lineTo(x - 12, y - 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(4,7,10,.86)";
+  ctx.fillRect(x - 4, y - 24, 8, 17);
+  drawAttributeGlyph(ctx, hero.attrKey, x, y - 16, 6, color);
+
+  ctx.fillStyle = "#d9b390";
+  ctx.strokeStyle = "#090b0f";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y - 36, 9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#171b22";
+  ctx.beginPath();
+  ctx.arc(x, y - 38, 9.5, Math.PI, Math.PI * 2);
+  ctx.lineTo(x + 9, y - 35);
+  ctx.lineTo(x - 9, y - 35);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.fillRect(x - 8, y - 38, 16, 3);
+  ctx.fillStyle = "#dff8ff";
+  ctx.fillRect(x + facing * 1, y - 35, facing * 6, 2);
+
+  const shoulder = { x, y:y - 28 };
+  ctx.strokeStyle = "#242b35";
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(x - facing * 9, y - 23);
+  ctx.lineTo(shoulder.x + Math.cos(angle) * 11, shoulder.y + Math.sin(angle) * 11);
+  ctx.stroke();
+
+  ctx.translate(shoulder.x, shoulder.y);
+  ctx.rotate(angle);
+  const recoil = (hero.recoil || 0) * 2.5;
+  ctx.translate(-recoil, 0);
+  ctx.fillStyle = "#11151c";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.fillRect(-5, -5, 23, 10);
+  ctx.strokeRect(-5, -5, 23, 10);
+  ctx.fillStyle = "#dce7f4";
+  ctx.fillRect(14, -2, 10, 4);
+  ctx.fillStyle = color;
+  ctx.fillRect(1, -3, 7, 6);
+  ctx.fillStyle = "#090b0f";
+  ctx.fillRect(4, 5, 5, 7);
+  if ((hero.muzzleFlash || 0) > 0) {
+    const flash = clamp(hero.muzzleFlash / .11, 0, 1);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = flash;
+    ctx.fillStyle = "#fff7b0";
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(32, -7);
+    ctx.lineTo(29, 0);
+    ctx.lineTo(32, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(24, 0, 5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawHeroGear(hero, x, y, color, facing) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 2;
+  if (hero.attrKey === "fire") {
+    ctx.globalAlpha = .9;
+    ctx.fillRect(x - 20, y - 28, 7, 21);
+    ctx.fillRect(x + 13, y - 28, 7, 21);
+    [[x-16,y-31],[x+16,y-31]].forEach(([fx,fy]) => {
+      ctx.beginPath();
+      ctx.moveTo(fx, fy + 6); ctx.quadraticCurveTo(fx - 6, fy, fx, fy - 9); ctx.quadraticCurveTo(fx + 7, fy, fx, fy + 6); ctx.fill();
+    });
+  } else if (hero.attrKey === "ice") {
+    ctx.globalAlpha = .75;
+    ctx.beginPath();
+    ctx.moveTo(x - 15, y - 27); ctx.lineTo(x - 23, y + 3); ctx.lineTo(x - 7, y - 5); ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + 15, y - 27); ctx.lineTo(x + 23, y + 3); ctx.lineTo(x + 7, y - 5); ctx.closePath();
+    ctx.fill();
+  } else if (hero.attrKey === "electric") {
+    ctx.globalAlpha = .9;
+    ctx.beginPath(); ctx.arc(x - 18, y - 18, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x + 18, y - 18, 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - 22, y - 31); ctx.lineTo(x - 14, y - 37); ctx.lineTo(x - 18, y - 27);
+    ctx.moveTo(x + 22, y - 31); ctx.lineTo(x + 14, y - 37); ctx.lineTo(x + 18, y - 27);
+    ctx.stroke();
+  } else if (hero.attrKey === "poison") {
+    ctx.globalAlpha = .84;
+    ctx.beginPath(); ctx.arc(x - 18, y - 13, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 18, y - 13, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#10151b";
+    ctx.beginPath(); ctx.arc(x - 18, y - 13, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 18, y - 13, 3, 0, Math.PI * 2); ctx.fill();
+  } else {
+    ctx.globalAlpha = .9;
+    ctx.fillRect(x - 20, y - 27, 8, 12);
+    ctx.fillRect(x + 12, y - 27, 8, 12);
+    ctx.fillStyle = "#111720";
+    ctx.fillRect(x - 18, y - 24, 4, 6);
+    ctx.fillRect(x + 14, y - 24, 4, 6);
+  }
+  ctx.restore();
+}
+
+function drawActiveChannels() {
+  const origin = fireOrigin();
+  state.towers.forEach(tower => {
+    if (tower.mode !== "laser" || !tower.channel) return;
+    const channel = tower.channel;
+    const target = channel.target;
+    if (!target || target.hp <= 0) return;
+    const focusDelay = (tower.focusDelay || 1) * (tower.focusDelayMul || 1);
+    const focused = !!tower.focus && channel.lockElapsed >= focusDelay;
+    drawPersistentLaser(origin, target, tower.color, focused, false);
+    const refractTargets = channel.refractTargets?.length ? channel.refractTargets : channel.refractTarget ? [channel.refractTarget] : [];
+    refractTargets.filter(refractTarget => refractTarget?.hp > 0).forEach(refractTarget => {
+      drawPersistentLaser(target, refractTarget, tower.color, focused && !!tower.refractFocusPct, true);
+    });
+  });
+}
+
+function drawPersistentLaser(from, to, color, focused=false, secondary=false) {
+  const phase = performance.now() / 160;
+  const pulse = .96 + Math.sin(phase) * .04;
+  const coreWidth = secondary ? 1.25 : focused ? 2.35 : 1.75;
+  const beamWidth = secondary ? 7 : focused ? 14 : 11;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  ctx.shadowColor = color;
+  ctx.shadowBlur = focused ? 18 : 13;
+  ctx.globalAlpha = (secondary ? .15 : .22) * pulse;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = beamWidth;
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+  ctx.globalAlpha = secondary ? .7 : .88;
+  ctx.lineWidth = secondary ? 2.4 : focused ? 5 : 3.8;
+  ctx.stroke();
+  ctx.shadowBlur = 5;
+  ctx.globalAlpha = secondary ? .82 : .96;
+  ctx.strokeStyle = "#fff9ce";
+  ctx.lineWidth = coreWidth;
+  ctx.stroke();
+  const travel = (performance.now() / (secondary ? 540 : 420)) % 1;
+  const sparkX = from.x + (to.x - from.x) * travel;
+  const sparkY = from.y + (to.y - from.y) * travel;
+  ctx.fillStyle = "#fff";
+  ctx.globalAlpha = .85;
+  ctx.beginPath();
+  ctx.arc(sparkX, sparkY, secondary ? 1.5 : 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = .75;
+  ctx.lineWidth = secondary ? 1.3 : 2;
+  ctx.beginPath();
+  ctx.arc(to.x, to.y, secondary ? 4 : 6 + Math.sin(phase) * .5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+let fieldLayer = null;
+const battlefieldArt = artImage("assets/backgrounds/battlefield-v1.webp");
+const biomeBattlefieldArt = Object.fromEntries(PROTOTYPE_BIOMES.map(biome => [
+  biome.id,
+  artImage(`assets/backgrounds/biome-${biome.id}-v1.webp`),
+]));
+
+function drawArtCover(image, x, y, width, height) {
+  const sourceRatio = image.naturalWidth / image.naturalHeight;
+  const targetRatio = width / height;
+  let sx = 0, sy = 0, sw = image.naturalWidth, sh = image.naturalHeight;
+  if (sourceRatio > targetRatio) {
+    sw = image.naturalHeight * targetRatio;
+    sx = (image.naturalWidth - sw) / 2;
+  } else {
+    sh = image.naturalWidth / targetRatio;
+    sy = (image.naturalHeight - sh) / 2;
+  }
+  ctx.drawImage(image, sx, sy, sw, sh, x, y, width, height);
+}
+
+function drawField() {
+  const biomeArt = ENCOUNTER_DRAFT_PROTOTYPE ? biomeBattlefieldArt[currentBiomeConfig().id] : null;
+  const activeArt = biomeArt?.complete && biomeArt.naturalWidth ? biomeArt : battlefieldArt;
+  if (activeArt?.complete && activeArt.naturalWidth) {
+    drawArtCover(activeArt, 0, 0, canvas.width, canvas.height);
+    const shade = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    shade.addColorStop(0, "rgba(3,8,16,.10)");
+    shade.addColorStop(.58, "rgba(2,5,10,.03)");
+    shade.addColorStop(1, "rgba(2,4,8,.20)");
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    if (!fieldLayer) fieldLayer = buildFieldLayer();
+    ctx.drawImage(fieldLayer, 0, 0);
+  }
+  drawBiomeFieldOverlay();
+}
+
+function drawBiomeFieldOverlay() {
+  if (!ENCOUNTER_DRAFT_PROTOTYPE || !state?.biomeOrder?.length) return;
+  const biome = currentBiomeConfig();
+  const time = performance.now() / 1000;
+  const pressure = biomeBossPressure();
+  const intensity = .28 + pressure * 1.22;
+  ctx.save();
+  ctx.fillStyle = `rgba(${biome.rgb},${(.025 + pressure * .105).toFixed(3)})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = "screen";
+  ctx.strokeStyle = `rgba(${biome.rgb},${(.13 + pressure * .31).toFixed(3)})`;
+  ctx.lineWidth = 1 + pressure * 1.3;
+  if (biome.id === "fire") {
+    const count = 4 + Math.round(12 * pressure);
+    for (let index=0; index<count; index+=1) {
+      const x = (index * 71 + 29) % canvas.width;
+      const y = canvas.height - ((time * (22 + intensity * 18 + index % 4 * 8) + index * 93) % canvas.height);
+      ctx.beginPath();
+      ctx.moveTo(x, y + 9);
+      ctx.lineTo(x + Math.sin(time + index) * 3, y);
+      ctx.stroke();
+    }
+  } else if (biome.id === "ice") {
+    const count = 5 + Math.round(14 * pressure);
+    for (let index=0; index<count; index+=1) {
+      const x = (index * 83 + time * (7 + index % 3)) % (canvas.width + 30) - 15;
+      const y = (index * 61 + time * (15 + intensity * 13 + index % 4 * 4)) % canvas.height;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 4, y + 8);
+      ctx.stroke();
+    }
+  } else if (biome.id === "electric" && Math.floor(time * (1.8 + pressure * 4.6)) % Math.max(2, 8 - Math.round(pressure * 5)) === 0) {
+    const x = 44 + (Math.floor(time * 5) * 67) % 250;
+    ctx.lineWidth = 1.4 + pressure * 2.2;
+    ctx.beginPath();
+    ctx.moveTo(x, 70);
+    ctx.lineTo(x - 12, 126);
+    ctx.lineTo(x + 5, 166);
+    ctx.lineTo(x - 8, 222);
+    ctx.stroke();
+  } else if (biome.id === "poison") {
+    ctx.lineWidth = 2.8 + pressure * 4;
+    const count = 3 + Math.round(8 * pressure);
+    for (let index=0; index<count; index+=1) {
+      const y = 90 + index * 88 + Math.sin(time * .7 + index) * 18;
+      ctx.beginPath();
+      ctx.moveTo(-20, y);
+      ctx.bezierCurveTo(80, y - 18, 230, y + 22, 370, y - 8);
+      ctx.stroke();
+    }
+  } else if (biome.id === "neutral") {
+    ctx.globalAlpha = .22 + pressure * .5;
+    const spacing = 96 - Math.round(pressure * 36);
+    for (let y=86; y<canvas.height; y+=spacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawDefenseStage() {
+  state.towers.forEach((tower, index) => {
+    const position = towerVisualPosition(index);
+    if (!position) return;
+    const ready = cooldownProgress(tower);
+    const color = tower.color || (ATTRIBUTE_DISPLAY[towerAttr(tower)] || ATTRIBUTE_DISPLAY.neutral).color;
+    const visualStage = towerVisualStage(tower);
+    const sprite = artImage(towerSpritePath(tower, visualStage));
+    ctx.save();
+    ctx.translate(position.x, position.y);
+    if (sprite?.complete && sprite.naturalWidth) {
+      const bob = Math.sin(performance.now() / 420 + index * 1.7) * 1.2;
+      const drawSize = visualStage === 3 ? 116 : visualStage === 2 ? 106 : 96;
+      ctx.fillStyle = "rgba(0,0,0,.42)";
+      ctx.beginPath();
+      ctx.ellipse(0, 12, drawSize * .34, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = .045 + ready * .055;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.ellipse(0, 8, drawSize * .36, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+      ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2 - 12 + bob, drawSize, drawSize);
+      ctx.strokeStyle = visualStage === 3 ? "#fff0ae" : color;
+      ctx.lineWidth = visualStage === 3 ? 2.5 : 1.5;
+      ctx.globalAlpha = .24 + ready * .42;
+      ctx.beginPath();
+      ctx.ellipse(0, 9, drawSize * .34, 7, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    ctx.fillStyle = "rgba(5,8,12,.88)";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 10, 25, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.globalAlpha = .18 + ready * .26;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = "rgba(255,255,255,.25)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ready);
+    ctx.stroke();
+    ctx.translate(-14, -14);
+    ctx.scale(.29, .29);
+    drawTowerGlyph(ctx, tower.id, color);
+    ctx.restore();
+  });
+}
+
+function buildFieldLayer() {
+  const layer = document.createElement("canvas");
+  layer.width = canvas.width;
+  layer.height = canvas.height;
+  const g = layer.getContext("2d", { alpha: false });
+  const ground = g.createLinearGradient(0, 0, 0, layer.height);
+  ground.addColorStop(0, "#10141a");
+  ground.addColorStop(.5, "#17171a");
+  ground.addColorStop(1, "#080a0e");
+  g.fillStyle = ground;
+  g.fillRect(0, 0, layer.width, layer.height);
+
+  const topRoadHalf = 106;
+  const bottomRoadHalf = 174;
+  const topInnerHalf = 94;
+  const bottomInnerHalf = 160;
+  const road = g.createLinearGradient(0, 0, layer.width, 0);
+  road.addColorStop(0, "#302722");
+  road.addColorStop(.09, "#15181d");
+  road.addColorStop(.5, "#282a30");
+  road.addColorStop(.91, "#15181d");
+  road.addColorStop(1, "#302722");
+  g.fillStyle = road;
+  g.beginPath();
+  g.moveTo(FIELD.pathX - topRoadHalf, 0);
+  g.lineTo(FIELD.pathX + topRoadHalf, 0);
+  g.lineTo(FIELD.pathX + bottomRoadHalf, FIELD.baseY + 12);
+  g.lineTo(FIELD.pathX - bottomRoadHalf, FIELD.baseY + 12);
+  g.closePath();
+  g.fill();
+
+  const innerRoad = g.createLinearGradient(0, 0, layer.width, 0);
+  innerRoad.addColorStop(0, "#181b20");
+  innerRoad.addColorStop(.5, "#303138");
+  innerRoad.addColorStop(1, "#181b20");
+  g.fillStyle = innerRoad;
+  g.beginPath();
+  g.moveTo(FIELD.pathX - topInnerHalf, 0);
+  g.lineTo(FIELD.pathX + topInnerHalf, 0);
+  g.lineTo(FIELD.pathX + bottomInnerHalf, FIELD.baseY + 12);
+  g.lineTo(FIELD.pathX - bottomInnerHalf, FIELD.baseY + 12);
+  g.closePath();
+  g.fill();
+
+  g.strokeStyle = "rgba(126, 220, 255, .22)";
+  g.lineWidth = 2;
+  [-.66, -.33, .33, .66].forEach(ratio => {
+    g.beginPath();
+    g.moveTo(FIELD.pathX + topInnerHalf * ratio, 0);
+    g.lineTo(FIELD.pathX + bottomInnerHalf * ratio, FIELD.baseY - 24);
+    g.stroke();
+  });
+
+  for (let step = 1; step < 11; step += 1) {
+    const t = step / 11;
+    const y = Math.pow(t, 1.45) * (FIELD.baseY - 46);
+    const half = topInnerHalf + (bottomInnerHalf - topInnerHalf) * (y / FIELD.baseY);
+    g.strokeStyle = step % 2 ? "rgba(255,255,255,.035)" : "rgba(255,138,68,.055)";
+    g.lineWidth = 1 + t * 1.5;
+    g.beginPath();
+    g.moveTo(FIELD.pathX - half, y);
+    g.lineTo(FIELD.pathX + half, y);
+    g.stroke();
+    g.strokeStyle = "rgba(137, 228, 255, .2)";
+    g.lineWidth = 2 + t;
+    g.beginPath();
+    g.moveTo(FIELD.pathX - 5 - t * 7, y + 18 + t * 9);
+    g.lineTo(FIELD.pathX + 5 + t * 7, y + 15 + t * 8);
+    g.stroke();
+  }
+
+  for (let step = 0; step < 13; step += 1) {
+    const t = step / 12;
+    const y = Math.pow(t, 1.35) * (FIELD.baseY - 30);
+    const sideX = topRoadHalf + (bottomRoadHalf - topRoadHalf) * (y / FIELD.baseY);
+    g.fillStyle = step % 2 ? "#c98228" : "#282c32";
+    g.save();
+    g.translate(FIELD.pathX - sideX - 5, y);
+    g.rotate(-.42);
+    g.fillRect(-8, -4, 20 + t * 8, 7 + t * 3);
+    g.restore();
+    g.save();
+    g.translate(FIELD.pathX + sideX + 5, y);
+    g.rotate(.42);
+    g.fillRect(-12 - t * 8, -4, 20 + t * 8, 7 + t * 3);
+    g.restore();
+  }
+
+  const portalGlow = g.createRadialGradient(FIELD.pathX, 2, 0, FIELD.pathX, 2, 92);
+  portalGlow.addColorStop(0, "rgba(120, 225, 255, .34)");
+  portalGlow.addColorStop(1, "rgba(120, 225, 255, 0)");
+  g.fillStyle = portalGlow;
+  g.fillRect(72, 0, 206, 96);
+  g.fillStyle = "#0a0d12";
+  g.fillRect(112, 0, 126, 20);
+  g.strokeStyle = "#78dfff";
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(116, 18);
+  g.quadraticCurveTo(FIELD.pathX, 42, 234, 18);
+  g.stroke();
+
+  g.fillStyle = "#11161d";
+  g.fillRect(22, FIELD.baseY - 18, 306, 56);
+  g.fillStyle = "#242933";
+  g.fillRect(34, FIELD.baseY - 10, 282, 20);
+  g.strokeStyle = "rgba(255,255,255,.35)";
+  g.lineWidth = 2;
+  g.strokeRect(22, FIELD.baseY - 18, 306, 56);
+  g.fillStyle = "#080c12";
+  for (let x = 44; x <= 306; x += 29) g.fillRect(x, FIELD.baseY - 14, 13, 8);
+  g.strokeStyle = "#7ee6ff";
+  g.shadowColor = "#7ee6ff";
+  g.shadowBlur = 14;
+  g.lineWidth = 4;
+  g.beginPath();
+  g.moveTo(38, FIELD.baseY - 21);
+  g.lineTo(312, FIELD.baseY - 21);
+  g.stroke();
+  return layer;
+}
+function drawBaseHpBar() {
+  const maxHp = Math.max(1, Math.round(params.baseHp));
+  const pct = clamp(state.hp / maxHp, 0, 1);
+  const x = 42;
+  const y = FIELD.baseY + 20;
+  const w = 266;
+  const cleanH = 16;
+  const cleanHpLabel = `HP ${Math.ceil(state.hp)} / ${maxHp}`;
+  ctx.save();
+  ctx.fillStyle = "rgba(6, 9, 14, .92)";
+  ctx.fillRect(x, y, w, cleanH);
+  ctx.strokeStyle = "rgba(255,255,255,.62)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x, y, w, cleanH);
+  ctx.fillStyle = pct > .45 ? "#39d06d" : pct > .2 ? "#ffd45a" : "#ff554d";
+  ctx.fillRect(x + 2, y + 2, Math.max(0, (w - 4) * pct), cleanH - 4);
+  ctx.font = "bold 11px Microsoft JhengHei";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(0,0,0,.82)";
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeText(cleanHpLabel, x + w / 2, y + cleanH / 2 + .5);
+  ctx.fillText(cleanHpLabel, x + w / 2, y + cleanH / 2 + .5);
+  ctx.restore();
+}
+function enemyPolygon(x, y, radius, sides, rotation=-Math.PI/2) {
+  ctx.beginPath();
+  for (let i = 0; i < sides; i += 1) {
+    const angle = rotation + i * Math.PI * 2 / sides;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function drawMinionBody(m, size) {
+  ctx.fillStyle = m.color;
+  ctx.strokeStyle = "rgba(224,236,255,.66)";
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = m.color;
+  ctx.shadowBlur = 3;
+  ctx.beginPath();
+  if (m.shape === "triangle") {
+    ctx.moveTo(m.x,m.y-size/2); ctx.lineTo(m.x+size/2,m.y+size/2); ctx.lineTo(m.x-size/2,m.y+size/2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (m.shape === "diamond") {
+    ctx.moveTo(m.x,m.y-size/2); ctx.lineTo(m.x+size/2,m.y); ctx.lineTo(m.x,m.y+size/2); ctx.lineTo(m.x-size/2,m.y); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else {
+    ctx.fillRect(m.x-size/2,m.y-size/2,size,size);
+    ctx.strokeRect(m.x-size/2,m.y-size/2,size,size);
+  }
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(255,255,255,.72)";
+  ctx.beginPath();
+  ctx.arc(m.x - size*.14, m.y - size*.08, Math.max(1.5,size*.07), 0, Math.PI*2);
+  ctx.arc(m.x + size*.14, m.y - size*.08, Math.max(1.5,size*.07), 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(8,12,18,.78)";
+  ctx.fillRect(m.x-size*.22,m.y+size*.15,size*.44,Math.max(2,size*.08));
+}
+
+function drawEliteBody(m, size) {
+  const spin = performance.now() / 850;
+  ctx.shadowColor = "#ffd85c";
+  ctx.shadowBlur = 14;
+  ctx.strokeStyle = "rgba(255,216,92,.88)";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, size * .72, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  for (let i = 0; i < 4; i += 1) {
+    const angle = spin + i * Math.PI / 2;
+    ctx.save();
+    ctx.translate(m.x + Math.cos(angle) * size * .78, m.y + Math.sin(angle) * size * .78);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = i % 2 ? "#fff1a6" : m.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -6); ctx.lineTo(6, 5); ctx.lineTo(-6, 5); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = "#17130d";
+  ctx.strokeStyle = "#fff1a6";
+  ctx.lineWidth = 3;
+  ctx.shadowColor = m.color;
+  ctx.shadowBlur = 10;
+  enemyPolygon(m.x, m.y, size * .55, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = .9;
+  ctx.fillStyle = m.color;
+  enemyPolygon(m.x, m.y + 1, size * .37, 6, Math.PI / 6);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#fff6cf";
+  ctx.beginPath();
+  ctx.moveTo(m.x - 10, m.y - 10); ctx.lineTo(m.x - 5, m.y - 18); ctx.lineTo(m.x, m.y - 11); ctx.lineTo(m.x + 6, m.y - 18); ctx.lineTo(m.x + 11, m.y - 9); ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#15100a";
+  ctx.fillRect(m.x - 9, m.y + 6, 18, 4);
+}
+
+function drawBossBody(m, size) {
+  const spin = performance.now() / 1300;
+  ctx.shadowColor = m.color;
+  ctx.shadowBlur = 22;
+  ctx.strokeStyle = "rgba(255,91,77,.82)";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, size * .68, spin, spin + Math.PI * 1.45);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, size * .78, -spin, -spin + Math.PI * 1.12);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  for (let i = 0; i < 8; i += 1) {
+    const angle = spin + i * Math.PI / 4;
+    ctx.save();
+    ctx.translate(m.x + Math.cos(angle) * size * .65, m.y + Math.sin(angle) * size * .65);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = i % 2 ? "#ffd0c8" : m.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -8); ctx.lineTo(7, 5); ctx.lineTo(-7, 5); ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = "#160d10";
+  ctx.strokeStyle = "#ffd4cf";
+  ctx.lineWidth = 3.5;
+  ctx.shadowColor = m.color;
+  ctx.shadowBlur = 14;
+  enemyPolygon(m.x, m.y, size * .54, 8, Math.PI / 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#2a171b";
+  ctx.fillRect(m.x - size * .72, m.y - 9, size * .22, 18);
+  ctx.fillRect(m.x + size * .5, m.y - 9, size * .22, 18);
+  ctx.strokeStyle = "#ffb9ae";
+  ctx.strokeRect(m.x - size * .72, m.y - 9, size * .22, 18);
+  ctx.strokeRect(m.x + size * .5, m.y - 9, size * .22, 18);
+  const core = ctx.createRadialGradient(m.x - 3, m.y - 4, 2, m.x, m.y, size * .35);
+  core.addColorStop(0, "#fff4cf");
+  core.addColorStop(.28, m.color);
+  core.addColorStop(1, "#3b0710");
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.arc(m.x, m.y, size * .31, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,.7)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = "#13060a";
+  ctx.beginPath();
+  ctx.arc(m.x - 8, m.y - 3, 3.5, 0, Math.PI * 2);
+  ctx.arc(m.x + 8, m.y - 3, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(m.x - 10, m.y + 9, 20, 4);
+}
+
+function drawEnemy(m) {
+  const baseSize = Math.max(12, m.size || (m.boss ? 46 : m.elite ? 30 : 15));
+  const depth = clamp((m.y + 18) / (FIELD.baseY + 18), 0, 1);
+  const perspective = .76 + depth * .24;
+  const size = baseSize * perspective;
+  const spriteFactor = m.boss ? 3.70 : m.elite ? 3.55 : 3.55;
+  const spriteSize = size * spriteFactor;
+  const hpPct = Math.max(0, m.hp / m.maxHp);
+  ctx.save();
+  ctx.fillStyle = `rgba(0,0,0,${.16 + depth * .22})`;
+  ctx.beginPath();
+  ctx.ellipse(m.x, m.y + spriteSize * .34, spriteSize * .32, spriteSize * .10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const sprite = artImage(enemySpritePath(m));
+  if (sprite?.complete && sprite.naturalWidth) {
+    const stride = Math.sin(performance.now() / (m.kind === "fast" ? 80 : 135) + (m.x || 0) * .08) * (m.boss ? 1.2 : 1.8) * perspective;
+    ctx.globalAlpha = m.stunTime > 0 || m.freezeTime > 0 ? .86 : 1;
+    ctx.shadowColor = m.color || "rgba(255,255,255,.35)";
+    ctx.shadowBlur = m.boss ? 12 : m.elite ? 8 : 5;
+    ctx.drawImage(sprite, m.x - spriteSize / 2, m.y - spriteSize / 2 + stride, spriteSize, spriteSize);
+    ctx.shadowBlur = 0;
+    if (m.elite || m.boss) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = m.boss ? .26 : .18;
+      ctx.strokeStyle = m.boss ? "#ff574c" : "#ffd85c";
+      ctx.lineWidth = m.boss ? 4 : 2;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, spriteSize * .40 + Math.sin(performance.now() / 180) * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (m.boss && m.bossBreakTime > 0) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = .55 + Math.sin(performance.now() / 70) * .18;
+      ctx.strokeStyle = "#9df8ff";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, spriteSize * .44, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (m.boss && m.bossAttackWindup > 0) {
+      const windupMax = Math.max(.1, paramNumber("bossAttackWindup", 1));
+      const charge = 1 - clamp(m.bossAttackWindup / windupMax, 0, 1);
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = .35 + charge * .5;
+      ctx.strokeStyle = charge > .68 ? "#fff0a3" : "#ff6b54";
+      ctx.lineWidth = 3 + charge * 4;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, spriteSize * (.48 + charge * .12), -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * charge);
+      ctx.stroke();
+    }
+  } else if (m.boss) drawBossBody(m, size);
+  else if (m.elite) drawEliteBody(m, size);
+  else drawMinionBody(m, size);
+  ctx.restore();
+  const bw = (m.boss ? 58 : m.elite ? 46 : 32) * (.72 + perspective * .28);
+  const visualHalf = spriteSize * .44;
+  if (m.boss) {
+    const barW = 92;
+    const barH = 7;
+    const barX = m.x - barW / 2;
+    const barY = Math.max(20, m.y - visualHalf - 15);
+    const hpLabel = `${Math.ceil(m.hp)} / ${Math.ceil(m.maxHp)}`;
+    ctx.save();
+    ctx.fillStyle = "rgba(8, 10, 16, .82)";
+    ctx.fillRect(barX - 3, barY - 18, barW + 6, 29);
+    ctx.strokeStyle = "rgba(255,255,255,.42)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX - 3, barY - 18, barW + 6, 29);
+    ctx.fillStyle = "#fff";
+    ctx.font = "900 10px Arial";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,.72)";
+    ctx.strokeText(`BOSS ${hpLabel}`, m.x, barY - 6);
+    ctx.fillText(`BOSS ${hpLabel}`, m.x, barY - 6);
+    ctx.fillStyle = "#281015";
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = m.bossBreakTime > 0 ? "#7cecff" : hpPct <= .32 ? "#ff9a3d" : "#ff4d42";
+    ctx.fillRect(barX, barY, barW * hpPct, barH);
+    ctx.strokeStyle = "#ffd4cf";
+    ctx.strokeRect(barX, barY, barW, barH);
+    ctx.strokeStyle = "rgba(255,255,255,.68)";
+    [1,2].forEach(segment => {
+      const sx = barX + barW * segment / 3;
+      ctx.beginPath(); ctx.moveTo(sx, barY); ctx.lineTo(sx, barY + barH); ctx.stroke();
+    });
+    const shieldPct = clamp((m.bossShieldHp || 0) / Math.max(1, m.bossShieldHpMax || 1), 0, 1);
+    if (shieldPct > 0 || m.bossBreakTime > 0) {
+      ctx.fillStyle = "rgba(5,15,24,.92)";
+      ctx.fillRect(barX, barY + 10, barW, 4);
+      ctx.fillStyle = m.bossBreakTime > 0 ? "#b8fbff" : "#65b9ff";
+      ctx.fillRect(barX, barY + 10, barW * (m.bossBreakTime > 0 ? clamp(m.bossBreakTime / Math.max(.1, paramNumber("bossBreakDuration", 2.4)), 0, 1) : shieldPct), 4);
+      ctx.font = "900 8px Arial";
+      ctx.fillStyle = m.bossBreakTime > 0 ? "#b8fbff" : "#9dcfff";
+      ctx.fillText(m.bossBreakTime > 0 ? "BREAK" : "ARMOR", m.x, barY + 22);
+    }
+    ctx.restore();
+    return;
+  }
+  ctx.fillStyle = "rgba(5,8,12,.82)"; ctx.fillRect(m.x-bw/2-1,m.y-visualHalf-11,bw+2,6);
+  ctx.fillStyle = m.elite ? "#ffd85c" : "#41d47a";
+  ctx.fillRect(m.x-bw/2,m.y-visualHalf-10,bw*hpPct,4);
+  if (m.elite) {
+    ctx.fillStyle = "#fff4c6";
+    ctx.font = "900 9px Microsoft JhengHei";
+    ctx.textAlign = "center";
+    ctx.fillText("ELITE", m.x, m.y-visualHalf-15);
+  }
+}
+
+function drawAttributeGlyph(g, attr, x, y, size, color) {
+  g.save();
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.lineWidth = Math.max(1.4, size * .16);
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  if (attr === "fire") {
+    g.beginPath();
+    g.moveTo(x, y + size * .78);
+    g.bezierCurveTo(x - size * .68, y + size * .36, x - size * .48, y - size * .18, x - size * .12, y - size * .82);
+    g.bezierCurveTo(x - size * .08, y - size * .30, x + size * .56, y - size * .20, x + size * .42, y - size * .72);
+    g.bezierCurveTo(x + size * .98, y - size * .08, x + size * .62, y + size * .62, x, y + size * .78);
+    g.closePath();
+    g.fill();
+  } else if (attr === "ice") {
+    for (let i = 0; i < 3; i += 1) {
+      const a = i * Math.PI / 3;
+      const dx = Math.cos(a), dy = Math.sin(a);
+      g.beginPath();
+      g.moveTo(x - dx * size * .82, y - dy * size * .82);
+      g.lineTo(x + dx * size * .82, y + dy * size * .82);
+      g.stroke();
+      for (const side of [-1, 1]) {
+        const bx = x + dx * size * .52 * side;
+        const by = y + dy * size * .52 * side;
+        const branch = a + (side > 0 ? Math.PI : 0);
+        for (const turn of [-.62, .62]) {
+          g.beginPath();
+          g.moveTo(bx, by);
+          g.lineTo(bx + Math.cos(branch + turn) * size * .28, by + Math.sin(branch + turn) * size * .28);
+          g.stroke();
+        }
+      }
+    }
+  } else if (attr === "electric") {
+    g.beginPath();
+    g.moveTo(x + size * .14, y - size * .90);
+    g.lineTo(x - size * .62, y + size * .08);
+    g.lineTo(x - size * .12, y + size * .02);
+    g.lineTo(x - size * .32, y + size * .92);
+    g.lineTo(x + size * .68, y - size * .22);
+    g.lineTo(x + size * .16, y - size * .12);
+    g.closePath();
+    g.fill();
+  } else if (attr === "poison") {
+    g.beginPath();
+    g.moveTo(x - size * .18, y - size * .84);
+    g.bezierCurveTo(x - size * .72, y - size * .10, x - size * .70, y + size * .62, x, y + size * .78);
+    g.bezierCurveTo(x + size * .70, y + size * .62, x + size * .72, y - size * .10, x + size * .18, y - size * .84);
+    g.bezierCurveTo(x + size * .08, y - size * .98, x - size * .08, y - size * .98, x - size * .18, y - size * .84);
+    g.closePath();
+    g.fill();
+    g.beginPath(); g.arc(x + size * .54, y - size * .55, size * .18, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(x + size * .76, y - size * .12, size * .11, 0, Math.PI * 2); g.fill();
+  } else {
+    g.beginPath();
+    for (let i = 0; i < 16; i += 1) {
+      const a = -Math.PI / 2 + i * Math.PI / 8;
+      const r = i % 2 ? size * .38 : size * .88;
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.fill();
+    g.fillStyle = "rgba(7,10,16,.82)";
+    g.beginPath(); g.arc(x, y, size * .20, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
+function renderAttributeCanvas(canvasEl, attr, boss=false) {
+  if (!canvasEl?.getContext) return;
+  const cacheKey = `${attr}:${boss}`;
+  if (canvasEl._attrCache === cacheKey) return;
+  canvasEl._attrCache = cacheKey;
+  const g = canvasEl.getContext("2d");
+  const w = canvasEl.width, h = canvasEl.height;
+  const display = ATTRIBUTE_DISPLAY[attr] || ATTRIBUTE_DISPLAY.neutral;
+  g.clearRect(0, 0, w, h);
+  g.fillStyle = "rgba(7,10,16,.92)";
+  g.strokeStyle = boss ? "#ff5b52" : display.color;
+  g.lineWidth = boss ? 3 : 2;
+  g.beginPath(); g.arc(w / 2, h / 2, Math.min(w, h) * .42, 0, Math.PI * 2); g.fill(); g.stroke();
+  drawAttributeGlyph(g, attr, w / 2, h / 2, Math.min(w, h) * .25, display.color);
+}
+
+function drawEnemyAttributeMarker(m, size) {
+  const attr = m.enemyAttr || m.primaryAttr || "neutral";
+  if (attr === "neutral") return;
+  const display = ATTRIBUTE_DISPLAY[attr] || ATTRIBUTE_DISPLAY.neutral;
+  const baseSize = Math.max(12, m.size || (m.boss ? 46 : m.elite ? 30 : 14));
+  const scale = clamp(size / Math.max(1, baseSize), .55, 1);
+  const radius = (m.boss ? 12 : m.elite ? 10 : 8.5) * scale;
+  const visualFactor = m.boss ? 3.10 : m.elite ? 3.04 : 3.12;
+  const x = m.x - size * visualFactor * .42 - radius * .35;
+  const y = m.y;
+  ctx.save();
+  ctx.fillStyle = "rgba(8, 12, 18, .88)";
+  ctx.strokeStyle = display.color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  drawAttributeGlyph(ctx, attr, x, y, radius * .58, display.color);
+  ctx.restore();
+}
+
+function drawProjectile(p) {
+  const y = p.y - (p.arc || 0);
+  const angle = Math.atan2(p.ty - p.sy, p.tx - p.sx);
+  const motion = Math.max(0, Math.min(1, 1 - p.time / Math.max(.01, p.total || 1)));
+  ctx.save();
+  if (p.type === "grenade") {
+    ctx.globalAlpha = .25;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + 3, 9, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = .34;
+    ctx.strokeStyle = p.tower.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    const trailX = p.x - Math.cos(angle) * 17;
+    const trailY = y - Math.sin(angle) * 17;
+    ctx.moveTo(trailX, trailY);
+    ctx.lineTo(p.x, y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.translate(p.x, y);
+    ctx.rotate(angle + motion * Math.PI * 4);
+    ctx.shadowColor = "#ff8a2d";
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = "#282b31";
+    ctx.strokeStyle = "#ff9f3f";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#ffe1a1";
+    ctx.fillRect(-2, -8, 4, 16);
+    ctx.fillStyle = "#ff5b24";
+    ctx.beginPath(); ctx.arc(-7, -7, 2.4, 0, Math.PI * 2); ctx.fill();
+  } else if (p.type === "hero_blast") {
+    ctx.translate(p.x, y);
+    ctx.rotate(angle);
+    ctx.shadowColor = "#ff5a24";
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = "rgba(255,78,28,.34)";
+    ctx.beginPath(); ctx.moveTo(-34,0); ctx.lineTo(-9,-10); ctx.lineTo(-4,10); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#ff6a27";
+    ctx.strokeStyle = "#ffd36a";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#fff3b0";
+    ctx.beginPath(); ctx.arc(2,-2,4,0,Math.PI*2); ctx.fill();
+  } else if (p.type === "hero_pierce") {
+    ctx.translate(p.x, y);
+    ctx.rotate(angle);
+    ctx.shadowColor = "#8eeaff";
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = "rgba(114,212,255,.30)";
+    ctx.beginPath(); ctx.moveTo(-36,0); ctx.lineTo(-8,-8); ctx.lineTo(-2,8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#dffbff";
+    ctx.strokeStyle = "#45bff5";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(16,0); ctx.lineTo(-6,-6); ctx.lineTo(-18,0); ctx.lineTo(-6,6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (p.type === "hero_cloud") {
+    ctx.translate(p.x, y);
+    ctx.rotate(motion * Math.PI * 3);
+    ctx.shadowColor = "#67ef73";
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = "#223328";
+    ctx.strokeStyle = "#7cf074";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#b7ff64";
+    ctx.beginPath(); ctx.arc(-3,-2,3.5,0,Math.PI*2); ctx.arc(4,2,2.5,0,Math.PI*2); ctx.fill();
+  } else if (p.type === "hero_burst") {
+    ctx.translate(p.x, y);
+    ctx.rotate(angle);
+    ctx.shadowColor = "#fff0a8";
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = "#fff7ce";
+    ctx.strokeStyle = "#d7b85e";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(-7,-2.5,14,5,2.5); ctx.fill(); ctx.stroke();
+  } else if (p.type === "cryo") {
+    ctx.translate(p.x, y);
+    ctx.rotate(angle);
+    ctx.shadowColor = "#83e9ff";
+    ctx.shadowBlur = 10;
+    ctx.globalAlpha = .26;
+    ctx.fillStyle = p.tower.color;
+    ctx.beginPath();
+    ctx.moveTo(-27, 0); ctx.lineTo(-5, -7); ctx.lineTo(7, 0); ctx.lineTo(-5, 7); ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#d9f7ff";
+    ctx.strokeStyle = p.tower.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(12, 0); ctx.lineTo(-3, -6); ctx.lineTo(-10, 0); ctx.lineTo(-3, 6); ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#92eaff";
+    ctx.beginPath(); ctx.moveTo(-2,-5); ctx.lineTo(-8,-12); ctx.lineTo(4,-5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-2,5); ctx.lineTo(-8,12); ctx.lineTo(4,5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.ellipse(5, -1, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (p.type === "needle") {
+    ctx.translate(p.x, y);
+    ctx.rotate(angle);
+    ctx.shadowColor = "#65ff83";
+    ctx.shadowBlur = 7;
+    ctx.strokeStyle = "rgba(89,255,127,.4)";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-25,0); ctx.lineTo(-5,0); ctx.stroke();
+    ctx.fillStyle = "#d7ffd8";
+    ctx.strokeStyle = p.tower.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(13, 0);
+    ctx.lineTo(-6, -4);
+    ctx.lineTo(-3, 0);
+    ctx.lineTo(-6, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#60e879";
+    ctx.fillRect(-9, -2, 7, 4);
+  } else if (p.type === "blade") {
+    ctx.translate(p.x, y);
+    ctx.rotate(p.spin);
+    ctx.shadowColor = p.tower.color;
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = "rgba(220,246,255,.5)";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = p.tower.color;
+    for (let i = 0; i < 3; i += 1) {
+      ctx.rotate(Math.PI * 2 / 3);
+      ctx.beginPath();
+      ctx.moveTo(1, -2); ctx.quadraticCurveTo(13, -8, 16, 1); ctx.quadraticCurveTo(8, 4, 1, 2); ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = "#effbff";
+    ctx.beginPath(); ctx.arc(0,0,3.5,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawZone(z) {
+  const life = clamp(z.time / Math.max(.01, z.maxTime || z.time), 0, 1);
+  const age = 1 - life;
+  const fade = Math.min(1, age * 8) * Math.min(1, life * 5);
+  const pulse = .5 + .5 * Math.sin(age * 18 + (z.visualSeed || 0));
+  const mode = z.tower?.mode || "";
+  const trap = mode === "trap" || z.root || z.pull;
+  const fire = !trap && (z.burn > 0 || mode === "flame");
+  const poison = !trap && !fire && (mode === "gas" || z.poison > 0);
+  const frost = !trap && !fire && !poison && (mode === "frostbomb" || mode === "cryo" || z.slow > 0);
+  ctx.save();
+  ctx.translate(z.x, z.y);
+  ctx.globalAlpha = Math.max(.08, fade);
+
+  if (fire) {
+    const glow = ctx.createRadialGradient(0,0,z.radius*.12,0,0,z.radius);
+    glow.addColorStop(0, "rgba(255,202,74,.34)");
+    glow.addColorStop(.5, "rgba(255,82,24,.22)");
+    glow.addColorStop(1, "rgba(50,8,3,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0,0,z.radius,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = "rgba(34,12,8,.72)";
+    ctx.beginPath(); ctx.arc(0,0,z.radius*.72,0,Math.PI*2); ctx.fill();
+    for (let i=0;i<8;i+=1) {
+      const a = (z.visualSeed || 0) + i * Math.PI / 4 + age * .35;
+      const rr = z.radius * (.18 + (i%3)*.16);
+      const h = 8 + (i%3)*4 + pulse*5;
+      ctx.fillStyle = i%2 ? "rgba(255,91,24,.78)" : "rgba(255,190,54,.82)";
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*rr-4, Math.sin(a)*rr+4);
+      ctx.quadraticCurveTo(Math.cos(a)*rr, Math.sin(a)*rr-h, Math.cos(a)*rr+4, Math.sin(a)*rr+4);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = `rgba(255,143,42,${.42 + pulse*.25})`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7,5]);
+    ctx.beginPath(); ctx.arc(0,0,z.radius*.88,0,Math.PI*2); ctx.stroke();
+  } else if (poison) {
+    const mist = ctx.createRadialGradient(0,0,0,0,0,z.radius);
+    mist.addColorStop(0,"rgba(121,255,104,.25)");
+    mist.addColorStop(.62,"rgba(50,182,74,.2)");
+    mist.addColorStop(1,"rgba(12,70,34,0)");
+    ctx.fillStyle = mist;
+    ctx.beginPath(); ctx.arc(0,0,z.radius,0,Math.PI*2); ctx.fill();
+    for (let i=0;i<7;i+=1) {
+      const a = (z.visualSeed || 0) + i*2.17 + age*(i%2 ? .7 : -.55);
+      const rr = z.radius * (.16 + (i%4)*.16);
+      const bubble = 5 + (i%3)*3 + pulse*2;
+      ctx.fillStyle = i%2 ? "rgba(100,235,102,.24)" : "rgba(181,255,116,.18)";
+      ctx.beginPath(); ctx.arc(Math.cos(a)*rr,Math.sin(a)*rr,bubble,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle = "rgba(188,255,150,.42)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.strokeStyle = `rgba(104,236,112,${.42 + pulse*.2})`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([3,7]);
+    ctx.beginPath(); ctx.arc(0,0,z.radius*.9,0,Math.PI*2); ctx.stroke();
+  } else if (frost) {
+    const ice = ctx.createRadialGradient(0,0,0,0,0,z.radius);
+    ice.addColorStop(0,"rgba(211,250,255,.28)");
+    ice.addColorStop(.6,"rgba(102,216,255,.17)");
+    ice.addColorStop(1,"rgba(77,155,255,0)");
+    ctx.fillStyle = ice;
+    ctx.beginPath(); ctx.arc(0,0,z.radius,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = "rgba(202,248,255,.58)";
+    ctx.lineWidth = 1.5;
+    for (let i=0;i<8;i+=1) {
+      const a = i*Math.PI/4 + (z.visualSeed || 0)*.2;
+      const inner = z.radius*.18;
+      const outer = z.radius*(.62 + (i%2)*.16);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*inner,Math.sin(a)*inner);
+      ctx.lineTo(Math.cos(a)*outer,Math.sin(a)*outer);
+      ctx.stroke();
+      const bx = Math.cos(a)*outer*.7;
+      const by = Math.sin(a)*outer*.7;
+      ctx.beginPath();
+      ctx.moveTo(bx,by);
+      ctx.lineTo(bx+Math.cos(a+.7)*8,by+Math.sin(a+.7)*8);
+      ctx.moveTo(bx,by);
+      ctx.lineTo(bx+Math.cos(a-.7)*8,by+Math.sin(a-.7)*8);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = `rgba(139,230,255,${.48 + pulse*.2})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0,0,z.radius*.9,0,Math.PI*2); ctx.stroke();
+  } else if (trap) {
+    ctx.fillStyle = "rgba(15,24,31,.62)";
+    ctx.beginPath(); ctx.arc(0,0,z.radius*.92,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = z.root ? "rgba(174,116,255,.8)" : "rgba(100,224,255,.72)";
+    ctx.lineWidth = 2;
+    for (const scale of [.38,.68,.92]) {
+      ctx.beginPath(); ctx.arc(0,0,z.radius*scale,age*1.4,age*1.4+Math.PI*1.55); ctx.stroke();
+    }
+    ctx.rotate(age * (z.pull ? 1.8 : .6));
+    for (let i=0;i<8;i+=1) {
+      const a=i*Math.PI/4;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*z.radius*.28,Math.sin(a)*z.radius*.28);
+      ctx.lineTo(Math.cos(a)*z.radius*.78,Math.sin(a)*z.radius*.78);
+      ctx.stroke();
+      if (z.pull) {
+        const rr=z.radius*.58;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);
+        ctx.lineTo(Math.cos(a+.18)*(rr-10),Math.sin(a+.18)*(rr-10));
+        ctx.lineTo(Math.cos(a-.18)*(rr-10),Math.sin(a-.18)*(rr-10));
+        ctx.closePath(); ctx.fillStyle="rgba(138,237,255,.55)"; ctx.fill();
+      }
+    }
+  } else {
+    ctx.fillStyle = `${z.tower.color}33`;
+    ctx.beginPath(); ctx.arc(0,0,z.radius,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = z.tower.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0,0,z.radius*.9,0,Math.PI*2); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+}
+
+function drawEffect(e) {
+  const p = Math.max(0, e.t/e.life);
+  ctx.save(); ctx.globalAlpha = Math.max(.15,p); ctx.strokeStyle=e.color; ctx.fillStyle=e.color;
+  if (e.type === "encounterChest") {
+    const age = e.life - e.t;
+    const tier = clamp(Number(e.tier) || 1, 1, 4);
+    const name = e.boss ? "boss-card-neutral.png" : `${["", "reward-normal", "reward-rare", "reward-epic", "reward-legendary"][tier]}.webp`;
+    const chest = artImage(`assets/ui/encounter/${name}`);
+    const size = 62 + tier * 8;
+    const pop = Math.min(1, age * 7);
+    ctx.globalAlpha = Math.min(1, p * 5) * pop;
+    ctx.translate(e.tx, e.ty - Math.min(14, age * 7));
+    ctx.shadowColor = e.color;
+    ctx.shadowBlur = 10 + tier * 5;
+    for (let index=0; index<6 + tier * 3; index+=1) {
+      const angle = index * Math.PI * 2 / (6 + tier * 3) + .2;
+      const radius = size * .55 + Math.min(age, .7) * 38;
+      ctx.fillStyle = e.color;
+      ctx.fillRect(Math.cos(angle) * radius, Math.sin(angle) * radius, 2 + tier, 2 + tier);
+    }
+    if (chest?.complete && chest.naturalWidth) {
+      // The BOSS chest is part of its integrated card, not a regular reward asset.
+      const sx = e.boss ? chest.naturalWidth * .64 : 0;
+      const sy = e.boss ? chest.naturalHeight * .03 : 0;
+      const sw = e.boss ? chest.naturalWidth * .30 : chest.naturalWidth;
+      const sh = e.boss ? chest.naturalHeight * .32 : chest.naturalHeight;
+      const scale = size * pop / Math.max(sw, sh);
+      const w = sw * scale, h = sh * scale;
+      ctx.drawImage(chest, sx, sy, sw, sh, -w/2, -h/2, w, h);
+    }
+    ctx.shadowBlur = 0;
+    ctx.textAlign = "center";
+    ctx.font = "900 25px Arial";
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#071014";
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeText(`+${e.amount} POT`, 0, size * .65 + 22);
+    ctx.fillText(`+${e.amount} POT`, 0, size * .65 + 22);
+  }
+  else if (e.type==="bossReward") {
+    const roll = state.bossRoll;
+    const progress = roll ? clamp(roll.time / roll.duration, 0, 1) : 1;
+    const tier = roll?.tier || e.tier || "normal";
+    const high = tier === "high" || tier === "jackpot";
+    const jackpot = tier === "jackpot";
+    const reveal = roll ? clamp(progress / .08, 0, 1) : Math.min(1, p * 2.4);
+    const settleFlash = roll ? clamp((progress - .82) / .18, 0, 1) : 1 - p;
+    const pulse = roll ? Math.sin(roll.time * (progress < .56 ? 16 : 8)) : 0;
+    const grow = 1 + (high ? .055 : .025) * pulse + settleFlash * (jackpot ? .13 : high ? .09 : .04);
+    const y = e.ty - (1 - reveal) * 36;
+    const rollText = roll ? `x${roll.value.toFixed(1)}` : e.text;
+    const labelText = !roll ? (jackpot ? "JACKPOT" : high ? "HIGH MULTIPLIER" : "BOSS BONUS")
+      : progress < .56 ? "MULTIPLIER ROLL" : progress < .82 ? "HOLD" : "LOCKING";
+    ctx.globalAlpha = roll ? reveal : Math.min(1, p * 2.2);
+    ctx.translate(e.tx + (roll && high && progress > .82 ? Math.sin(roll.time * 46) * (1 - settleFlash) * 2.5 : 0), y);
+    ctx.scale(grow, grow);
+    const cardGradient = ctx.createLinearGradient(0, -50, 0, 48);
+    cardGradient.addColorStop(0, jackpot ? "rgba(78,42,4,.96)" : high ? "rgba(48,31,8,.94)" : "rgba(10,12,18,.92)");
+    cardGradient.addColorStop(1, "rgba(8,9,13,.94)");
+    ctx.fillStyle = cardGradient;
+    ctx.strokeStyle = jackpot ? "#fff3a3" : high ? "#ffd55f" : "#f0bc4f";
+    ctx.lineWidth = jackpot ? 5 : high ? 4 : 3;
+    roundRect(-98, -49, 196, 92, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = jackpot ? "#fff" : "#fff4c6";
+    ctx.font = "900 12px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(labelText, 0, -22);
+    ctx.fillStyle = jackpot ? "#fffbd1" : high ? "#ffd85f" : "#f0bc4f";
+    ctx.font = `900 ${jackpot ? 50 : high ? 46 : 42}px Arial`;
+    ctx.lineWidth = high ? 7 : 5;
+    ctx.strokeStyle = "rgba(0,0,0,.72)";
+    ctx.strokeText(rollText, 0, 28);
+    ctx.fillText(rollText, 0, 28);
+    ctx.rotate((roll ? roll.time : 1 - p) * (jackpot ? .32 : .18));
+    ctx.strokeStyle = jackpot ? `rgba(255,255,225,${.82 * reveal})` : `rgba(255,226,126,${(high ? .68 : .42) * reveal})`;
+    ctx.lineWidth = jackpot ? 3 : 2;
+    const rayCount = jackpot ? 24 : high ? 18 : 12;
+    for (let i = 0; i < rayCount; i += 1) {
+      const a = i * Math.PI * 2 / rayCount;
+      const rayStart = 108 + (i % 2) * 4;
+      const rayEnd = rayStart + (jackpot ? 38 : high ? 30 : 22) * (.72 + settleFlash * .45);
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * rayStart, Math.sin(a) * rayStart * .55);
+      ctx.lineTo(Math.cos(a) * rayEnd, Math.sin(a) * rayEnd * .58);
+      ctx.stroke();
+    }
+  }
+  else if (e.type==="upgradeBurst") {
+    const progress = 1 - p;
+    ctx.translate(e.x, e.y);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = Math.min(1, p * 1.8);
+    ctx.strokeStyle = e.color;
+    ctx.lineWidth = 2 + p * 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, 15 + progress * 62, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 12; i += 1) {
+      const angle = i * Math.PI / 6 + progress * .6;
+      const inner = 20 + progress * 18;
+      const outer = inner + 18 + progress * 22;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+      ctx.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.font = "900 15px Arial";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0,0,0,.8)";
+    ctx.fillStyle = "#fff7c4";
+    ctx.strokeText(e.text || "POWER UP", 0, -38 - progress * 18);
+    ctx.fillText(e.text || "POWER UP", 0, -38 - progress * 18);
+  }
+  else if (e.type==="eliteDefeat") {
+    const progress = 1 - p;
+    ctx.globalAlpha = Math.min(1, p * 1.55);
+    ctx.translate(e.x, e.y);
+    ctx.strokeStyle = "#ffd85c";
+    ctx.lineWidth = 4 * p + 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18 + progress * 62, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,244,198,${.68*p})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i += 1) {
+      const a = i * Math.PI / 6 + progress * .34;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (22 + progress * 15), Math.sin(a) * (22 + progress * 15));
+      ctx.lineTo(Math.cos(a) * (50 + progress * 34), Math.sin(a) * (50 + progress * 34));
+      ctx.stroke();
+    }
+    const bannerY = -42 - progress * 24;
+    ctx.fillStyle = `rgba(15,10,5,${.82*p})`;
+    roundRect(-82, bannerY - 18, 164, 34, 5);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255,216,92,${p})`;
+    ctx.stroke();
+    ctx.font = "900 18px Microsoft JhengHei";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(0,0,0,.82)";
+    ctx.fillStyle = "#fff1a6";
+    ctx.strokeText(e.text || "菁英擊破", 0, bannerY + 5);
+    ctx.fillText(e.text || "菁英擊破", 0, bannerY + 5);
+  }
+  else if (e.type==="eliteShard") {
+    const progress = 1 - p;
+    const x = e.x + (e.tx - e.x) * progress;
+    const y = e.y + (e.ty - e.y) * progress + progress * progress * 18;
+    ctx.translate(x, y);
+    ctx.rotate(progress * 5);
+    ctx.globalAlpha = p;
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.moveTo(0,-5); ctx.lineTo(4,0); ctx.lineTo(0,5); ctx.lineTo(-4,0); ctx.closePath(); ctx.fill();
+  }
+  else if (e.type==="waveClear") {
+    const progress = 1 - p;
+    ctx.translate(e.x, e.y - progress * 14);
+    ctx.globalAlpha = Math.min(1, p * 1.8);
+    ctx.fillStyle = `rgba(5,12,18,${.72*p})`;
+    roundRect(-70,-21,140,42,5);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(137,228,255,${p})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#dff8ff";
+    ctx.font = "900 19px Microsoft JhengHei";
+    ctx.textAlign = "center";
+    ctx.fillText(e.text || "波次完成", 0, 7);
+  }
+  else if (e.type==="coin" || e.type==="eliteCoin") {
+    const elite = e.type === "eliteCoin";
+    const rise = (1 - p) * (elite ? 46 : 30);
+    const pop = 1 + Math.sin((1 - p) * Math.PI) * (elite ? .28 : .16);
+    ctx.globalAlpha = Math.min(1, p * 1.35);
+    ctx.translate(e.tx, e.ty - rise);
+    ctx.scale(pop, pop);
+    ctx.fillStyle = elite ? `rgba(255, 216, 92, ${.22 * p})` : `rgba(240, 188, 79, ${.15 * p})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, elite ? 28 : 17, 0, Math.PI * 2);
+    ctx.fill();
+    if (elite) {
+      ctx.strokeStyle = `rgba(255, 244, 198, ${.62 * p})`;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 10; i += 1) {
+        const a = i * Math.PI / 5 + (1 - p) * .4;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * 20, Math.sin(a) * 20);
+        ctx.lineTo(Math.cos(a) * 34, Math.sin(a) * 34);
+        ctx.stroke();
+      }
+    }
+    ctx.fillStyle = elite ? "#ffd85c" : "#f0bc4f";
+    ctx.strokeStyle = elite ? "#fff6bd" : "#ffe090";
+    ctx.lineWidth = elite ? 3 : 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, elite ? 13 : 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "rgba(80, 48, 0, .72)";
+    ctx.font = elite ? "900 15px Arial" : "900 10px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("$", 0, elite ? 1 : 0);
+    ctx.textBaseline = "alphabetic";
+    ctx.font = elite ? "900 23px Arial" : "900 15px Arial";
+    ctx.lineWidth = elite ? 5 : 4;
+    ctx.strokeStyle = "rgba(0,0,0,.76)";
+    ctx.fillStyle = elite ? "#fff1a6" : "#ffd86f";
+    const textY = elite ? -24 : -16;
+    ctx.strokeText(e.text, 0, textY);
+    ctx.fillText(e.text, 0, textY);
+  }
+  else if (e.type==="damageText") {
+    const rise = (1 - p) * 26;
+    ctx.globalAlpha = p;
+    ctx.font = e.weak ? "900 15px Arial" : "bold 13px Arial";
+    ctx.textAlign = "center";
+    ctx.lineWidth = e.weak ? 4 : 3;
+    ctx.strokeStyle = "rgba(0,0,0,.72)";
+    ctx.fillStyle = e.color || "#fff";
+    ctx.strokeText(e.text, e.x, e.y - rise);
+    ctx.fillText(e.text, e.x, e.y - rise);
+  }
+  else if (e.type==="cone") {
+    const dx = e.tx - e.x;
+    const dy = e.ty - e.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const nx = -dy / length;
+    const ny = dx / length;
+    const progress = 1 - p;
+    const flameLayers = [
+      { scale:1, color:`rgba(255,60,20,${.18*p})` },
+      { scale:.72, color:`rgba(255,139,30,${.24*p})` },
+      { scale:.42, color:`rgba(255,239,147,${.3*p})` }
+    ];
+    ctx.shadowColor = "#ff5b24";
+    ctx.shadowBlur = 12;
+    flameLayers.forEach(layer => {
+      const px = nx * e.width * layer.scale;
+      const py = ny * e.width * layer.scale;
+      const reach = .72 + layer.scale * .28;
+      ctx.fillStyle = layer.color;
+      ctx.beginPath();
+      ctx.moveTo(e.x,e.y);
+      ctx.quadraticCurveTo(e.x+dx*.55+px*.25,e.y+dy*.55+py*.25,e.x+dx*reach+px,e.y+dy*reach+py);
+      ctx.lineTo(e.x+dx*reach-px,e.y+dy*reach-py);
+      ctx.quadraticCurveTo(e.x+dx*.55-px*.25,e.y+dy*.55-py*.25,e.x,e.y);
+      ctx.fill();
+    });
+    ctx.strokeStyle = `rgba(255,226,119,${.7*p})`;
+    ctx.lineWidth = 2;
+    for (let i=0;i<5;i+=1) {
+      const t = .32 + i*.13;
+      const side = Math.sin(i*2.7+progress*12) * e.width * t*.45;
+      const x1=e.x+dx*t+nx*side;
+      const y1=e.y+dy*t+ny*side;
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);
+      ctx.lineTo(x1-dx/length*(8+i*2)+nx*3,y1-dy/length*(8+i*2)+ny*3);
+      ctx.stroke();
+    }
+  }
+  else if (e.type==="grenade") {
+    const progress = 1-p;
+    const radius = (e.radius || 22) * (.35 + progress*.85);
+    ctx.translate(e.tx,e.ty);
+    ctx.shadowColor="#ff5b24"; ctx.shadowBlur=14;
+    const blast=ctx.createRadialGradient(0,0,0,0,0,radius);
+    blast.addColorStop(0,`rgba(255,245,186,${.72*p})`);
+    blast.addColorStop(.32,`rgba(255,143,35,${.52*p})`);
+    blast.addColorStop(1,"rgba(139,28,8,0)");
+    ctx.fillStyle=blast; ctx.beginPath(); ctx.arc(0,0,radius,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=`rgba(255,211,91,${.8*p})`; ctx.lineWidth=3*p+1;
+    ctx.beginPath(); ctx.arc(0,0,radius*.9,0,Math.PI*2); ctx.stroke();
+    for(let i=0;i<10;i+=1){
+      const a=i*Math.PI/5+progress*.3;
+      const inner=radius*.42, outer=radius*(.82+(i%3)*.14);
+      ctx.strokeStyle=i%2?`rgba(255,99,27,${.75*p})`:`rgba(255,234,145,${.75*p})`;
+      ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(Math.cos(a)*inner,Math.sin(a)*inner); ctx.lineTo(Math.cos(a)*outer,Math.sin(a)*outer); ctx.stroke();
+    }
+  }
+  else if (e.type==="frost") {
+    const progress=1-p;
+    const radius=(e.radius||20)*(.35+progress*.8);
+    ctx.translate(e.tx,e.ty);
+    ctx.fillStyle=`rgba(126,226,255,${.18*p})`;
+    ctx.beginPath(); ctx.arc(0,0,radius,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=`rgba(211,251,255,${.86*p})`; ctx.lineWidth=2;
+    for(let i=0;i<10;i+=1){
+      const a=i*Math.PI/5+progress*.18;
+      ctx.beginPath(); ctx.moveTo(Math.cos(a)*radius*.12,Math.sin(a)*radius*.12); ctx.lineTo(Math.cos(a)*radius,Math.sin(a)*radius); ctx.stroke();
+      const tipX=Math.cos(a)*radius*.68, tipY=Math.sin(a)*radius*.68;
+      ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(tipX+Math.cos(a+.75)*radius*.22,tipY+Math.sin(a+.75)*radius*.22); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(tipX,tipY); ctx.lineTo(tipX+Math.cos(a-.75)*radius*.22,tipY+Math.sin(a-.75)*radius*.22); ctx.stroke();
+    }
+    ctx.strokeStyle=`rgba(116,211,255,${.68*p})`; ctx.lineWidth=3;
+    ctx.beginPath();ctx.arc(0,0,radius*.82,0,Math.PI*2);ctx.stroke();
+  }
+  else if (e.type==="gas") {
+    const progress=1-p;
+    const radius=(e.radius||24)*(.42+progress*.72);
+    ctx.translate(e.tx,e.ty);
+    ctx.shadowColor="#54d968";ctx.shadowBlur=9;
+    for(let i=0;i<8;i+=1){
+      const a=i*2.31+progress*(i%2?.7:-.5);
+      const rr=radius*(.08+(i%4)*.15);
+      const size=radius*(.24+(i%3)*.07);
+      ctx.fillStyle=i%2?`rgba(83,214,91,${.2*p})`:`rgba(171,255,102,${.16*p})`;
+      ctx.beginPath();ctx.arc(Math.cos(a)*rr,Math.sin(a)*rr,size,0,Math.PI*2);ctx.fill();
+    }
+    ctx.strokeStyle=`rgba(157,255,130,${.68*p})`;ctx.lineWidth=2;ctx.setLineDash([4,5]);
+    ctx.beginPath();ctx.arc(0,0,radius*.84,0,Math.PI*2);ctx.stroke();
+  }
+  else if (e.type==="trap") {
+    const progress=1-p;
+    const radius=(e.radius||20)*(.5+progress*.62);
+    ctx.translate(e.tx,e.ty);ctx.rotate(progress*.7);
+    ctx.fillStyle=`rgba(41,173,213,${.12*p})`;ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle=`rgba(142,239,255,${.76*p})`;ctx.lineWidth=2;
+    [1,.62].forEach(scale=>{ctx.beginPath();ctx.arc(0,0,radius*scale,0,Math.PI*2);ctx.stroke();});
+    for(let i=0;i<8;i+=1){const a=i*Math.PI/4;ctx.beginPath();ctx.moveTo(Math.cos(a)*radius*.28,Math.sin(a)*radius*.28);ctx.lineTo(Math.cos(a)*radius,Math.sin(a)*radius);ctx.stroke();}
+  }
+  else if (e.type==="needle") {
+    const progress=1-p;
+    const radius=(e.radius||14)*(.35+progress*.8);
+    ctx.translate(e.tx,e.ty);ctx.rotate(progress*.2);
+    ctx.strokeStyle=`rgba(115,255,133,${.82*p})`;ctx.lineWidth=2;
+    for(let i=0;i<8;i+=1){const a=i*Math.PI/4;ctx.beginPath();ctx.moveTo(Math.cos(a)*radius*.15,Math.sin(a)*radius*.15);ctx.lineTo(Math.cos(a)*radius,Math.sin(a)*radius);ctx.stroke();}
+    ctx.fillStyle=`rgba(64,218,92,${.24*p})`;ctx.beginPath();ctx.arc(0,0,radius*.58,0,Math.PI*2);ctx.fill();
+  }
+  else if (e.type==="blade") {
+    const progress=1-p;
+    const radius=(e.radius||18)*(.45+progress*.75);
+    ctx.translate(e.tx,e.ty);ctx.rotate(progress*2.4);
+    ctx.strokeStyle=`rgba(212,247,255,${.78*p})`;ctx.lineWidth=3;
+    for(let i=0;i<3;i+=1){ctx.beginPath();ctx.arc(0,0,radius,i*Math.PI*2/3,i*Math.PI*2/3+1.35);ctx.stroke();}
+    ctx.fillStyle=`rgba(122,220,255,${.18*p})`;ctx.beginPath();ctx.arc(0,0,radius*.68,0,Math.PI*2);ctx.fill();
+  }
+  else if (e.type==="impact" || e.type==="hitBase") {
+    const progress=1-p;
+    const radius=(e.radius||18)*(.35+progress*.9);
+    ctx.translate(e.tx,e.ty);
+    const color=e.type==="hitBase"?"255,72,58":"173,239,255";
+    ctx.fillStyle=`rgba(${color},${.15*p})`;ctx.beginPath();ctx.arc(0,0,radius,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle=`rgba(${color},${.8*p})`;ctx.lineWidth=3*p+1;ctx.beginPath();ctx.arc(0,0,radius*.86,0,Math.PI*2);ctx.stroke();
+    for(let i=0;i<6;i+=1){const a=i*Math.PI/3;ctx.beginPath();ctx.moveTo(Math.cos(a)*radius*.55,Math.sin(a)*radius*.55);ctx.lineTo(Math.cos(a)*radius*1.12,Math.sin(a)*radius*1.12);ctx.stroke();}
+  }
+  else if (e.type==="spark") {
+    const progress=1-p;
+    ctx.strokeStyle=e.color||"#d9f8ff";
+    ctx.lineWidth = 2.2;
+    ctx.shadowColor=e.color||"#9beaff";ctx.shadowBlur=7;
+    [[-4,-2,-17,-8],[4,2,17,8],[-3,4,-10,16],[3,-4,10,-16],[-2,0,-20,2],[2,0,20,-2]].forEach((s,i) => {
+      const spread=.72+progress*.34+(i%2)*.08;
+      ctx.beginPath();
+      ctx.moveTo(e.tx + s[0] * spread, e.ty + s[1] * spread);
+      ctx.lineTo(e.tx + s[2] * spread, e.ty + s[3] * spread);
+      ctx.stroke();
+    });
+  }
+  else if (e.type==="chain") {
+    let from={x:e.x,y:e.y};
+    [{x:e.tx,y:e.ty},...e.chain].forEach((to,i)=>{
+      ctx.strokeStyle=`rgba(93,104,255,${.25*p})`;ctx.lineWidth=10;ctx.shadowColor="#6e7cff";ctx.shadowBlur=10;jag(from,to,(1-p)*8+i);
+      ctx.strokeStyle=`rgba(177,192,255,${.92*p})`;ctx.lineWidth=3;ctx.shadowBlur=4;jag(from,to,(1-p)*8+i);
+      ctx.strokeStyle=`rgba(255,255,255,${.9*p})`;ctx.lineWidth=1;jag(from,to,(1-p)*8+i);
+      from=to;
+    });
+  }
+  else { ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(e.x,e.y); ctx.lineTo(e.tx,e.ty); ctx.stroke(); }
+  if (e.text && !["damageText","coin","eliteCoin","bossReward","eliteDefeat","waveClear"].includes(e.type)) { ctx.fillStyle="#fff3bf"; ctx.font="bold 18px Arial"; ctx.fillText(e.text,e.tx-24,e.ty-20); }
+  ctx.restore();
+}
+function jag(a,b,phase=0) {
+  const dx=b.x-a.x,dy=b.y-a.y;
+  const length=Math.hypot(dx,dy)||1;
+  const nx=-dy/length,ny=dx/length;
+  ctx.beginPath(); ctx.moveTo(a.x,a.y);
+  for (let i=1;i<6;i++) {
+    const t=i/6;
+    const wobble=Math.sin(i*8.73+phase*2.4)*Math.min(8,length*.06);
+    ctx.lineTo(a.x+dx*t+nx*wobble,a.y+dy*t+ny*wobble);
+  }
+  ctx.lineTo(b.x,b.y); ctx.stroke();
+}
+
+function updateAttributeIndicators(bossDanger) {
+  const previewWave = state.wave + 1;
+  const nextAttr = wavePrimaryAttribute(previewWave);
+  const showNext = !prototypeRunComplete() && nextAttr !== "neutral" && !state.waveActive && !state.choicesOpen && !state.over;
+  if (ui.nextAttrHint) {
+    ui.nextAttrHint.hidden = !showNext;
+    ui.nextAttrHint.classList.toggle("boss", bossDanger > 0);
+    ui.nextAttrHint.style.borderColor = (ATTRIBUTE_DISPLAY[nextAttr] || ATTRIBUTE_DISPLAY.neutral).color;
+    ui.nextAttrHint.style.color = bossDanger > 0 ? "#ff5b52" : (ATTRIBUTE_DISPLAY[nextAttr] || ATTRIBUTE_DISPLAY.neutral).color;
+    ui.nextAttrHint.setAttribute?.("aria-label", `${ATTRIBUTE_DISPLAY[nextAttr]?.label || "無"}屬性戰區傾向`);
+  }
+  if (showNext) renderAttributeCanvas(ui.nextAttrCanvas, nextAttr, bossDanger > 0);
+
+  const showCurrent = state.wave > 0 && state.currentWaveAttr !== "neutral" && (state.waveActive || state.monsters.length > 0);
+  if (ui.waveAttrCanvas) {
+    ui.waveAttrCanvas.hidden = !showCurrent;
+    ui.waveAttrCanvas.setAttribute?.("aria-label", `本波主要為${ATTRIBUTE_DISPLAY[state.currentWaveAttr]?.label || "無"}屬性弱點`);
+  }
+  if (showCurrent) renderAttributeCanvas(ui.waveAttrCanvas, state.currentWaveAttr, false);
+}
+
+function updateUi() {
+  if (HEADLESS_SIM) return;
+  const maxHp = Math.max(1, Math.round(params.baseHp));
+  const hpPct = clamp(state.hp / maxHp, 0, 1);
+  const scoreDisplay = scoreDisplaySnapshot();
+  ui.wallet.textContent = Math.floor(state.wallet);
+  ui.entryWallet.textContent = Math.floor(state.wallet);
+  ui.pot.textContent = scoreDisplay.potText;
+  ui.payout.textContent = scoreDisplay.total;
+  ui.wave.textContent = state.wave;
+  ui.hp.textContent = `HP ${Math.ceil(state.hp)} / ${maxHp}`;
+  ui.hpFill.style.width = `${Math.round(hpPct * 100)}%`;
+  ui.hpFill.classList.toggle("warning", hpPct <= .45);
+  ui.hpFill.classList.toggle("danger", hpPct <= .2);
+  ui.phone?.classList.toggle("base-warning", hpPct <= .5 && hpPct > .25);
+  ui.phone?.classList.toggle("base-danger", hpPct <= .25);
+  if (ENCOUNTER_DRAFT_PROTOTYPE && ui.phone) {
+    const pressure = biomeBossPressure();
+    ui.phone.style.setProperty("--boss-pressure", pressure.toFixed(3));
+    ui.phone.dataset.bossPressure = String(pressure >= .88 ? 3 : pressure >= .62 ? 2 : pressure >= .34 ? 1 : 0);
+  }
+  const nextExp = expRequired(state.level);
+  const expPct = clamp(state.exp / nextExp, 0, 1);
+  ui.level.textContent = state.level;
+  ui.exp.textContent = `${Math.floor(state.exp)}/${nextExp}`;
+  ui.expFill.style.width = `${Math.round(expPct * 100)}%`;
+  ui.betText.textContent = BET_STEPS[state.baseBetIndex];
+  ui.entryBet.textContent = BET_STEPS[state.baseBetIndex];
+  ui.waveBet.textContent = currentBet();
+  ui.speed.classList.toggle("fast", speedMultiplier() > 1);
+  SPEED_STEPS.forEach(step => ui.speed.classList.toggle(`speed-${step}`, speedMultiplier() === step));
+  const bossDanger = state.started && !state.waveActive && !state.choicesOpen && !state.over
+    ? Math.max(0, Math.min(3, Number(state.bossDanger) || 0)) : 0;
+  ui.waveChip.classList.toggle("boss-risk", bossDanger > 0);
+  [1,2,3].forEach(level => ui.waveChip.classList.toggle(`danger-${level}`, bossDanger === level));
+  updateAttributeIndicators(bossDanger);
+  const rollingMult = state.bossRoll ? scoreDisplay.multiplier : null;
+  ui.bossMult.textContent = rollingMult
+    ? `x${rollingMult.toFixed(1)}`
+    : state.bossSeen
+      ? `x${(1 + state.bossAdd).toFixed(1)}`
+      : "";
+  ui.bossMult.classList.toggle("empty", !state.bossSeen && !state.bossRoll);
+  ui.bossMult.classList.toggle("rolling", !!state.bossRoll);
+  ui.bossMult.classList.toggle("rolling-high", state.bossRoll?.tier === "high");
+  ui.bossMult.classList.toggle("rolling-jackpot", state.bossRoll?.tier === "jackpot");
+  ui.collectText.textContent = scoreDisplay.total;
+  const presentingReward = !HEADLESS_SIM && (state.betRaise ||
+    !ui.biomeTransition.classList.contains("hidden") ||
+    state.effects.some(effect => effect.type === "encounterChest" || effect.type === "bossReward"));
+  const waveCleared = state.started && state.wave > 0 && !state.over && !state.choicesOpen && !state.waveActive && !state.monsters.length && !state.spawn && !state.bossRoll && !presentingReward;
+  ui.message.textContent = state.choicesOpen
+      ? "請選擇一個項目。"
+      : state.waveActive
+        ? (state.message || "戰鬥中。")
+        : waveCleared
+          ? "波次完成。"
+          : state.started ? "準備下一波。" : "選擇 BET 與角色後開始戰鬥。";
+  ui.entryOverlay.classList.toggle("hidden", state.started || state.choicesOpen || state.over);
+  ui.bet.disabled = state.started || state.over || state.choicesOpen || state.wallet < BET_STEPS[state.baseBetIndex];
+  ui.bet.setAttribute?.("aria-label", `以 BET ${BET_STEPS[state.baseBetIndex]} 進入戰局`);
+  ui.waveDecision.classList.toggle("hidden", !waveCleared);
+  ui.waveDecision.classList.toggle("boss-risk", waveCleared && bossDanger > 0);
+  [1,2,3].forEach(level => ui.waveDecision.classList.toggle(`danger-${level}`, waveCleared && bossDanger === level));
+  ui.decisionWave.textContent = `第 ${state.wave} 波完成`;
+  ui.decisionPayout.textContent = scoreDisplay.total;
+  if (ui.decisionReward) ui.decisionReward.textContent = `+${Math.round(state.waveSummary?.pot || 0)} POT`;
+  if (ui.decisionDamage) ui.decisionDamage.textContent = `基地 -${Math.round(state.waveSummary?.damage || 0)} HP`;
+  if (ui.decisionRepair) {
+    const repair = state.waveSummary?.repair || 0;
+    const exp = state.waveSummary?.clearExp || 0;
+    ui.decisionRepair.textContent = [exp > 0 ? `通關 +${exp} EXP` : "", repair > 0 ? `戰區修復 +${Math.round(repair)} HP` : ""].filter(Boolean).join(" · ");
+    ui.decisionRepair.classList.toggle("hidden", exp <= 0 && repair <= 0);
+  }
+  ui.decisionDanger.classList.toggle("hidden", bossDanger <= 0);
+  ui.decisionDanger.textContent = "!".repeat(Math.max(1, bossDanger));
+  ui.decisionDanger.setAttribute?.("aria-label", `危險程度 ${bossDanger}`);
+  ui.continue.disabled = !waveCleared || state.wallet < currentBet();
+  ui.continue.setAttribute?.("aria-label", `繼續第 ${state.wave + 1} 波，BET ${currentBet()}`);
+  ui.collect.disabled = !canCollect();
+  ui.betMinus.disabled = state.started || state.baseBetIndex <= 0;
+  ui.betPlus.disabled = state.started || state.baseBetIndex >= BET_STEPS.length-1;
+  if (state.choiceKind === "upgrade" && !ui.reroll.classList.contains("hidden")) {
+    ui.reroll.disabled = state.choiceRerollUsed || state.wallet < currentBet();
+    ui.rerollCost.textContent = state.choiceRerollUsed ? "本次升級已使用" : `BET ${currentBet()}`;
+  }
+  renderBetOptions();
+  renderSlots();
+  updateDebugSnapshot();
+}
+
+function renderBetOptions() {
+  if (!ui.betOptions.childElementCount) {
+    BET_STEPS.forEach((bet, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = bet;
+      button.addEventListener("click", () => {
+        if (state.started) return;
+        state.baseBetIndex = index;
+        playSfx("ui");
+        updateUi();
+      });
+      ui.betOptions.appendChild(button);
+    });
+  }
+  Array.from(ui.betOptions.children).forEach((button, index) => {
+    button.classList.toggle("selected", index === state.baseBetIndex);
+    button.disabled = state.started || state.wallet < BET_STEPS[index];
+  });
+}
+
+function renderSlots() {
+  const totalSlots = MAX_TOWER_SLOTS + 1;
+  if (!slotViews.length) {
+    for (let i=0; i<totalSlots; i++) {
+      const root = document.createElement("div");
+      const iconShell = document.createElement("div");
+      const icon = document.createElement("img");
+      const name = document.createElement("div");
+      const info = document.createElement("small");
+      const cooldown = document.createElement("div");
+      const fill = document.createElement("div");
+      iconShell.className = "slot-icon-shell";
+      icon.className = "slot-icon";
+      icon.alt = "";
+      name.className = "slot-name";
+      cooldown.className = "slot-cd";
+      fill.className = "slot-cd-fill";
+      cooldown.appendChild(fill);
+      iconShell.appendChild(icon);
+      root.append(iconShell, name, info, cooldown);
+      ui.slots.appendChild(root);
+      slotViews.push({ root, iconShell, icon, name, info, cooldown, fill });
+    }
+  }
+
+  for (let i=0;i<totalSlots;i++) {
+    const isHeroSlot = i === 0;
+    const t = isHeroSlot ? state.hero : state.towers[i - 1];
+    const view = slotViews[i];
+    view.root.className = "slot" + (isHeroSlot ? " hero-slot" : "") + (t ? "" : " empty");
+    if (t) {
+      const ready = Math.round((isHeroSlot ? heroCooldownProgress(t) : cooldownProgress(t)) * 100);
+      view.root.dataset.attr = towerAttr(t);
+      view.icon.hidden = false;
+      const visualStage = isHeroSlot ? heroVisualStage(t) : towerVisualStage(t);
+      const iconKey = isHeroSlot ? `hero:${t.heroId}:${visualStage}` : `${t.id}:${visualStage}`;
+      if (view.icon.dataset.tower !== iconKey) {
+        view.icon.src = isHeroSlot ? heroIconDataUrl(t) : towerSpritePath(t, visualStage);
+        view.icon.dataset.tower = iconKey;
+      }
+      view.root.title = `${t.name} Lv.${t.level}`;
+      view.name.textContent = "";
+      view.name.hidden = true;
+      view.info.textContent = t.level;
+      view.info.hidden = false;
+      view.cooldown.hidden = false;
+      view.fill.style.width = `${ready}%`;
+    } else {
+      delete view.root.dataset.attr;
+      view.icon.hidden = true;
+      view.icon.removeAttribute?.("src");
+      view.icon.dataset.tower = "";
+      view.root.removeAttribute("title");
+      view.name.textContent = "";
+      view.name.hidden = true;
+      view.info.hidden = true;
+      view.cooldown.hidden = true;
+    }
+  }
+}
+
+function heroCooldownProgress(hero) {
+  return clamp(1 - Math.max(0, hero.cd || 0) / Math.max(.1, heroAttackCooldown(hero)), 0, 1);
+}
+
+function updateDebugSnapshot(now = performance.now()) {
+  if (now - lastDebugFrame < DEBUG_FRAME_MS) return;
+  lastDebugFrame = now;
+  const snapshot = JSON.stringify({ build:BUILD_VERSION, wave:state.wave, biome:currentBiomeConfig().id, biomeIndex:state.biomeIndex, biomeWave:state.biomeWave, bossAt:state.biomeBossAt, currentAttr:state.currentWaveAttr, nextAttr:wavePrimaryAttribute(state.wave + 1), hp:state.hp, pot:state.pot, monsters:state.monsters.length, projectiles:state.projectiles.length, zones:state.zones.length, effects:state.effects.length, spawn:!!state.spawn, hero:state.hero?.heroId || null, towers:state.towers.length, encounter:state.currentEncounter ? { lane:state.currentEncounter.lane || "boss", estimatedClear:state.currentEncounter.estimatedClear, estimatedRisk:state.currentEncounter.estimatedRisk, reward:state.currentEncounter.reward } : null, collect:canCollect(), upgrade:state.lastUpgradeDebug || null, audio:{ state:audioState.ctx?.state || "none", bgm:audioState.bgmTimer !== null, voices:audioState.bgmSources.size } });
+  if (snapshot === lastDebugSnapshot) return;
+  lastDebugSnapshot = snapshot;
+  document.body.dataset.debug = snapshot;
+}
+
+function cooldownProgress(t) {
+  if (t.channel) return 1;
+  const maxCd = t.mode === "flame" || t.mode === "laser" ? channelCooldown(t) : attackCooldown(t);
+  return clamp(1 - Math.max(0, t.cd || 0) / Math.max(.1, maxCd), 0, 1);
+}
+
+function loop(now) {
+  const dt = Math.min(.08, (now-last)/1000);
+  last = now;
+  for (let i = 0; i < speedMultiplier(); i += 1) update(dt);
+  if (now - lastUiFrame >= UI_FRAME_MS) {
+    updateUi();
+    lastUiFrame = now;
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function speedMultiplier() {
+  return SPEED_STEPS[speedIndex] || 1;
+}
+
+function toggleSpeed() {
+  speedIndex = (speedIndex + 1) % SPEED_STEPS.length;
+  playSfx("ui");
+  updateUi();
+}
+
+ui.betMinus.onclick = () => { if (!state.started) { state.baseBetIndex = Math.max(0,state.baseBetIndex-1); playSfx("ui"); } updateUi(); };
+ui.betPlus.onclick = () => { if (!state.started) { state.baseBetIndex = Math.min(BET_STEPS.length-1,state.baseBetIndex+1); playSfx("ui"); } updateUi(); };
+ui.bet.onclick = startBet;
+ui.continue.onclick = startBet;
+ui.collect.onclick = collect;
+ui.reroll.onclick = rerollUpgradeChoices;
+ui.reset.onclick = () => { playSfx("ui"); reset(); };
+ui.sound.onclick = toggleSound;
+ui.speed.onclick = toggleSpeed;
+ui.newRun.onclick = () => { playSfx("ui"); reset(); };
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopChannelAudio();
+    stopBgm();
+  } else if (!audioState.muted && audioState.ctx) {
+    ensureAudio();
+    resumeChannelAudio();
+  }
+});
+
+document.body.dataset.build = BUILD_VERSION;
+let viewportSyncFrame = 0;
+function syncViewportHeight() {
+  viewportSyncFrame = 0;
+  const height = Math.round(window.visualViewport?.height || window.innerHeight);
+  document.documentElement.style.setProperty("--app-height", `${height}px`);
+}
+function queueViewportSync() {
+  if (viewportSyncFrame) return;
+  viewportSyncFrame = requestAnimationFrame(syncViewportHeight);
+}
+syncViewportHeight();
+window.addEventListener("resize", queueViewportSync, { passive:true });
+window.addEventListener("orientationchange", queueViewportSync, { passive:true });
+window.visualViewport?.addEventListener("resize", queueViewportSync, { passive:true });
+document.addEventListener("visibilitychange", () => { last = performance.now(); });
+document.addEventListener("dblclick", event => event.preventDefault(), { passive:false });
+document.addEventListener("gesturestart", event => event.preventDefault(), { passive:false });
+document.addEventListener("touchstart", event => {
+  if (event.touches.length > 1) event.preventDefault();
+}, { passive:false });
+document.addEventListener("touchmove", event => {
+  if (event.touches.length > 1) event.preventDefault();
+}, { passive:false });
+
+updateSoundButton();
+reset();
+if (HEADLESS_SIM) {
+  let simSeed = 1;
+  const setSeed = value => {
+    simSeed = (Number(value) >>> 0) || 1;
+    Math.random = () => {
+      simSeed = (simSeed + 0x6d2b79f5) >>> 0;
+      let mixed = simSeed;
+      mixed = Math.imul(mixed ^ mixed >>> 15, mixed | 1);
+      mixed ^= mixed + Math.imul(mixed ^ mixed >>> 7, mixed | 61);
+      return ((mixed ^ mixed >>> 14) >>> 0) / 4294967296;
+    };
+  };
+  const headlessMathTicket = () => state.mathTicket ? {
+    wave:state.mathTicket.wave,
+    clearChance:state.mathTicket.clearChance,
+    pricingClearChance:state.mathTicket.pricingClearChance,
+    buildPower:state.mathTicket.buildPower,
+    attributePower:state.mathTicket.attributePower,
+    waveAttribute:state.mathTicket.waveAttribute,
+    hpRatio:state.mathTicket.hpRatio,
+    fairValue:state.mathTicket.fairValue,
+    conditionalPayoutExact:state.mathTicket.conditionalPayoutExact,
+    uncappedTargetPayout:state.mathTicket.uncappedTargetPayout,
+    targetPayout:state.mathTicket.targetPayout,
+    reservedPayout:state.mathTicket.reservedPayout,
+    poolCapped:!!state.mathTicket.poolCapped,
+    pricedStake:state.mathTicket.pricedStake,
+    entryCredit:state.mathTicket.entryCredit,
+    waveRewardTier:state.mathTicket.waveRewardTier,
+    waveRewardMultiplier:state.mathTicket.waveRewardMultiplier,
+    waveRewardFactor:state.mathTicket.waveRewardFactor,
+    rewardFactor:state.mathTicket.rewardFactor,
+    carryShapeEnabled:!!state.mathTicket.carryShapeEnabled,
+    carryShapeBranch:state.mathTicket.carryShapeBranch,
+    carryMeanTarget:state.mathTicket.carryMeanTarget,
+    carryAnchorTarget:state.mathTicket.carryAnchorTarget,
+    carryAlternateTarget:state.mathTicket.carryAlternateTarget,
+    carryAnchorChance:state.mathTicket.carryAnchorChance,
+    carryPreviousReturn:state.mathTicket.carryPreviousReturn,
+    bossOrdinal:state.mathTicket.bossOrdinal,
+    bossDifficulty:state.mathTicket.bossDifficulty,
+    singleShare:state.mathTicket.singleShare,
+    areaShare:state.mathTicket.areaShare,
+    controlShare:state.mathTicket.controlShare,
+    rerollStake:state.mathTicket.rerollStake,
+    repriceCount:state.mathTicket.reprices?.length || 0,
+    displayFloorLift:state.mathTicket.displayFloorLift || 0,
+    result:state.mathTicket.result,
+  } : null;
+  const headlessSnapshot = (includeBuild=false) => {
+    const display = scoreDisplaySnapshot();
+    const value = {
+      build:BUILD_VERSION, economyMode:economyMode(),
+      wallet:state.wallet, started:state.started, over:state.over, wave:state.wave, hp:state.hp, pot:state.pot,
+      exp:state.exp, level:state.level, choicesOpen:state.choicesOpen, waveActive:state.waveActive,
+      choiceRerollUsed:state.choiceRerollUsed, rerollSpent:state.rerollSpent,
+      spawning:!!state.spawn, spawnBoss:!!state.spawn?.boss, monsters:state.monsters.length,
+      projectiles:state.projectiles.length, zones:state.zones.length,
+      bossAlive:state.monsters.some(monster => monster.boss), bossSpawned:state.simBossSpawned || 0, bossSeen:state.bossSeen, bossTarget:ENCOUNTER_DRAFT_PROTOTYPE ? PROTOTYPE_BOSS_TOTAL : 0, bossRolled:state.bossRolled,
+      bossAdd:state.bossAdd, bossRolling:!!state.bossRoll, bossDanger:Number(state.bossDanger) || 0,
+      biome:currentBiomeConfig().id, biomeIndex:state.biomeIndex, biomeWave:state.biomeWave, biomeBossAt:state.biomeBossAt,
+      selectedTemplate:state.selectedTemplate, currentWaveAttr:state.currentWaveAttr,
+      encounter:state.currentEncounter ? {
+        boss:!!state.currentEncounter.boss, lane:state.currentEncounter.lane, formation:state.currentEncounter.formation,
+        attr:state.currentEncounter.attr, threat:state.currentEncounter.threat, reward:state.currentEncounter.reward,
+        estimatedClear:Number(state.currentEncounter.estimatedClear) || 0,
+        estimatedRisk:Number(state.currentEncounter.estimatedRisk) || 0,
+        estimatedFatal:Number(state.currentEncounter.estimatedFatal) || 0,
+        attributeState:state.currentEncounter.matchup?.attributeState || "even",
+        roleState:state.currentEncounter.matchup?.roleState || "even",
+        attributePower:Number(state.currentEncounter.matchup?.attributePower) || 1,
+        roleReadiness:Number(state.currentEncounter.matchup?.roleReadiness) || 0,
+        rolePower:Number(state.currentEncounter.matchup?.rolePower) || 1,
+        combatFit:Number(state.currentEncounter.matchup?.combatFit) || 1,
+        loadoutPower:Number(state.currentEncounter.matchup?.buildPower) || 1,
+      } : null,
+      waveReward:state.waveReward ? {
+        rules:state.waveReward.rules, budget:state.waveReward.budget, remaining:state.waveReward.remaining,
+        clearBonus:state.waveReward.clearBonus || 0, claimedBonus:state.waveReward.claimedBonus || 0,
+      } : null,
+      currentBet:currentBet(), payout:payout(),
+      displayPot:Number(display.potText), displayPayout:display.total, displayMultiplier:display.multiplier,
+      displayInvariantError:Math.abs(Math.round(Number(display.potText) * display.multiplier) - display.total),
+      mathPoolContribution:state.mathPoolContribution, mathGeneralContribution:state.mathGeneralContribution,
+      mathBossContribution:state.mathBossContribution, mathPoolCapHits:state.mathPoolCapHits,
+      mathPoolRecycled:state.mathPoolRecycled, mathPoolLastEntryMultiplier:state.mathPoolLastEntryMultiplier,
+      mathTotalStake:state.mathTotalStake, mathPendingStake:state.mathPendingStake,
+      mathPendingCredit:state.mathPendingCredit, pendingWaveStart:state.pendingWaveStart,
+      mathPool:mathPoolSnapshot(),
+    };
+    if (includeBuild) {
+      value.mathTicket = headlessMathTicket();
+      value.hero = state.hero ? { id:state.hero.heroId, name:state.hero.name, attrKey:state.hero.attrKey, level:state.hero.level, upgrades:state.hero.upgrades.slice() } : null;
+      value.towers = state.towers.map(tower => ({ id:tower.id, name:tower.name, level:tower.level, upgrades:tower.upgrades.slice() }));
+    }
+    return value;
+  };
+  window.__tdHeadless = {
+    build: BUILD_VERSION,
+    get economyMode() { return economyMode(); },
+    ready: true,
+    params: () => ({ ...params, mathModelEnabled:certifiedMathEnabled() ? 1 : 0 }),
+    mathTicket: headlessMathTicket,
+    normalizeParams: values => cleanParams(migrateBossParams(values || {})),
+    setParams: values => { params = cleanParams(values || {}); },
+    lockParams: value => { headlessParamsLocked = !!value; },
+    setEncounterPolicy: value => { headlessEncounterPolicy = ["safe","tactical","greedy","match","random","countered","adaptive"].includes(value) ? value : "adaptive"; },
+    setSeed,
+    resetMathPool: referenceBet => resetMathPool(referenceBet),
+    mathPool: () => mathPoolSnapshot(),
+    restoreMathPool: (snapshot,reservation) => restoreMathPool(snapshot,reservation),
+    settleSimulatedPayout: (value, stake) => settleSimulatedPoolPayout(value, stake),
+    resetRun: (wallet=INITIAL_WALLET, baseBetIndex=ENCOUNTER_DRAFT_PROTOTYPE ? 2 : 3) => {
+      if (state) state.wallet = Number(wallet) || INITIAL_WALLET;
+      reset();
+      state.wallet = Number(wallet) || INITIAL_WALLET;
+      state.baseBetIndex = Math.max(0, Math.min(BET_STEPS.length - 1, Math.round(baseBetIndex)));
+    },
+    setWallet: value => { state.wallet = Math.max(0, Number(value) || 0); },
+    setBaseBetIndex: value => { state.baseBetIndex = Math.max(0, Math.min(BET_STEPS.length - 1, Math.round(value))); },
+    encounterChoices: wave => buildRegularEncounterChoices(Math.max(1, Math.round(Number(wave) || 1))).map(choice => ({
+      lane:choice.lane,
+      formation:choice.formation,
+      attr:choice.attr,
+      estimatedRisk:choice.estimatedRisk,
+      estimatedFatal:choice.estimatedFatal,
+      combatFit:choice.matchup?.combatFit,
+      loadoutPower:choice.matchup?.buildPower,
+      threat:choice.threat,
+      reward:choice.reward,
+      pressureFactor:choice.pressureFactor,
+      rewardFactor:choice.rewardFactor,
+    })),
+    startBet,
+    update,
+    stepFrames: count => {
+      const frames = Math.max(1, Math.min(240, Math.round(Number(count) || 1)));
+      const idleFrames = headlessIdleFrameSkip();
+      if (idleFrames > 1) {
+        update(idleFrames / 60);
+        return idleFrames;
+      }
+      let advanced = 0;
+      for (let frame=0; frame<frames; frame+=1) {
+        const before = {
+          bossSpawned:state.simBossSpawned || 0,
+          bossSeen:state.bossSeen,
+          bossRolling:!!state.bossRoll,
+          idle:!state.waveActive && !state.spawn && state.monsters.length === 0,
+        };
+        update(1 / 60);
+        advanced += 1;
+        const idle = !state.waveActive && !state.spawn && state.monsters.length === 0;
+        if (state.over || state.choicesOpen ||
+            (state.simBossSpawned || 0) !== before.bossSpawned ||
+            state.bossSeen !== before.bossSeen ||
+            !!state.bossRoll !== before.bossRolling ||
+            idle !== before.idle) break;
+      }
+      return advanced;
+    },
+    collect,
+    canCollect,
+    currentBet,
+    payout,
+    mathLedger: () => state.mathLedger.map(ticket => ({ ...ticket })),
+    choices: () => currentChoices.map(({ onPick, ...choice }) => ({ ...choice })),
+    pickChoice: index => {
+      const choice = currentChoices[index];
+      if (!choice) throw new Error(`Invalid choice index ${index}`);
+      choice.onPick();
+    },
+    rerollUpgradeChoices,
+    snapshot: () => headlessSnapshot(true),
+    snapshotLite: () => headlessSnapshot(false),
+  };
+  document.body.dataset.headlessReady = "true";
+} else {
+  requestAnimationFrame(loop);
+}

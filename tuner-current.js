@@ -65,10 +65,10 @@ function buildCurrentTuner() {
     matrix("整波獎金縮放",["設定","金額倍率 ×"],[["整波獎金係數","encounterRewardScale"]])+
     advanced("進階金錢設定",
       matrix("額外全域倍率",["設定","金額倍率 ×"],[["全部金錢再乘","moneyMul"]],"與整波獎金係數相乘；保持 1 就不追加調整。")+
-      matrix("王後 POT 入場",["設定","換算強度 %"],[["依當下累積倍率折算","encounterPotEntryPower"]],"0% 會完整重複放大後續 BET；100% 完全按當下倍率換算。V278 使用 100%，BET 變大仍會提高實得金額。"),"chestAdvanced"));
+      "<p class=\"page-note\">V285 每區獨立結算；舊版 POT 入場折算欄位保留相容，但不影響本版獎金。</p>","chestAdvanced"));
   put("bossSettings",
     matrix("倍率抽取權重",["增幅類型","抽取權重","實際機率"],bossParts.map(([key,label])=>[
-      label,`encounterBoss${key}Weight`,{html:`<span class="probability-value" data-boss-probability="${key}">--</span>`}]),"機率由各組權重除以權重總和換算，不需要加總成 100。","bossWeightMatrix")+
+      label,`encounterBoss${key}Weight`,{html:`<span class="probability-value" data-boss-probability="${key}">--</span>`}]),"這是第一區權重；後續戰區會套固定高波動修正，逐區實際機率見參考表。","bossWeightMatrix")+
     matrix("倍率增加區間",["增幅類型","最少增加（倍）","最多增加（倍）"],bossParts.map(([key,label])=>[
       label,`encounterBoss${key}Min`,`encounterBoss${key}Max`]),"這是第一隻 BOSS 的增幅；每次至少 +0.1，最後四捨五入到 0.1。","bossIncrementMatrix")+
     matrix("後續 BOSS 倍率成長",["設定","每隻成長 %","最多放大 ×"],[["每往後一隻","encounterBossDepthGrowth","encounterBossDepthGrowthCap"]],"成長上限只限制後續王的序號加成，不限制頭獎區間。")+
