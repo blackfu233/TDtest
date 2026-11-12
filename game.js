@@ -1,7 +1,7 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 const HEADLESS_SIM = new URLSearchParams(window.location.search).get("headless") === "1";
-const BUILD_VERSION = "encounter-loadout-risk281";
+const BUILD_VERSION = "encounter-persistent-balance284";
 const ENCOUNTER_DRAFT_PROTOTYPE = true;
 const FORCE_FIRST_BOSS = new URLSearchParams(window.location.search).get("debugBoss") === "1";
 const DEBUG_BIOME = (() => {
@@ -737,7 +737,7 @@ const HEROES = [
   { id:"ice", name:"寒霜獵手", attr:"冰", attrKey:"ice", attackMode:"pierce", damage:172, rate:.70, range:980, color:"#72d4ff", status:.24, statusTime:1.35, splash:0, secondaryMul:.75, targets:3, projectileSpeed:1250, zoneDuration:0, attackTrait:"貫穿冰槍", desc:"直線貫穿｜強力緩速" },
   { id:"electric", name:"雷霆特工", attr:"電", attrKey:"electric", attackMode:"chain", damage:84, rate:1.35, range:900, color:"#d89cff", status:.12, statusTime:1.0, splash:0, secondaryMul:.62, targets:3, projectileSpeed:0, zoneDuration:0, attackTrait:"連鎖電弧", desc:"瞬發連鎖｜多目標" },
   { id:"poison", name:"劇毒術士", attr:"毒", attrKey:"poison", attackMode:"cloud", damage:107, rate:.76, range:820, color:"#66d86f", status:25, statusTime:2.6, splash:58, secondaryMul:.50, targets:1, projectileSpeed:520, zoneDuration:2.0, attackTrait:"腐蝕毒囊", desc:"拋射毒囊｜持續毒區" },
-  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", attackMode:"burst", damage:112, rate:.92, range:940, color:"#d5dde8", status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0, attackTrait:"三連實彈", desc:"高速三連｜純傷害" },
+  { id:"neutral", name:"戰術傭兵", attr:"無", attrKey:"neutral", attackMode:"burst", damage:115, rate:.92, range:940, color:"#d5dde8", status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0, attackTrait:"三連實彈", desc:"高速三連｜純傷害" },
 ];
 const UPGRADE_DIMENSIONS = {
   damage:{ label:"傷害", mark:"DMG" },
@@ -858,17 +858,16 @@ const PROTOTYPE_BOSS_REPAIR = .35;
 // Prototype-only POT per paid BET; disjoint chest bands, not calibrated RTP.
 const ENCOUNTER_REWARD_BANDS = { 1:[.45,.65], 2:[1.00,1.35], 3:[2.40,3.10], 4:[4.80,6.00] };
 const ENCOUNTER_PARAM_DEFAULTS = {
-  encounterRewardRevision:278,
+  encounterRewardRevision:284,
   encounterEconomyEnabled:1,
   encounterRtpTargetMin:.96, encounterRtpTargetMax:1,
-  encounterRewardScale:.456,
+  encounterRewardScale:.54,
   encounterPotEntryPower:1,
   encounterChestUpgradeChance:.10,
   encounterHpDepthGrowth:.09, encounterHpDepthCap:2,
-  encounterGrade1HpMul:1.38, encounterGrade2HpMul:1.00, encounterGrade3HpMul:.82,
-  encounterGrade1AtkMul:4.5, encounterGrade2AtkMul:2.4, encounterGrade3AtkMul:1.6,
-  encounterBaseHitCap:55,
-  encounterMinionBaseHitLimit:1,
+  encounterGrade1HpMul:1.75, encounterGrade2HpMul:1.15, encounterGrade3HpMul:.90,
+  encounterGrade1AtkMul:1, encounterGrade2AtkMul:1, encounterGrade3AtkMul:1,
+  encounterBaseHitCap:14,
   encounterChest1Min:.05, encounterChest1Max:3.00, encounterChest1Shape:2.933,
   encounterChest2Min:.35, encounterChest2Max:4.00, encounterChest2Shape:2.527,
   encounterChest3Min:.80, encounterChest3Max:4.50, encounterChest3Shape:1.467,
@@ -1526,7 +1525,6 @@ function cleanParams(input={}) {
   next.encounterHpDepthGrowth = clamp(next.encounterHpDepthGrowth, 0, .5);
   next.encounterHpDepthCap = clamp(next.encounterHpDepthCap, 1, 5);
   next.encounterBaseHitCap = clamp(next.encounterBaseHitCap, 1, 1000);
-  next.encounterMinionBaseHitLimit = Math.round(clamp(next.encounterMinionBaseHitLimit, 1, 10));
   for (const grade of [1,2,3]) {
     next[`encounterGrade${grade}HpMul`] = clamp(next[`encounterGrade${grade}HpMul`], .5, 3);
     next[`encounterGrade${grade}AtkMul`] = clamp(next[`encounterGrade${grade}AtkMul`], 1, 20);
@@ -1734,8 +1732,28 @@ function loadParams() {
 
 function migrateEncounterRewardParams(input) {
   const revision = Number(input.encounterRewardRevision) || 0;
-  if (revision >= 278) return input;
+  if (revision >= 284) return input;
   const next = {...input};
+  if (revision >= 283) {
+    for (const [key,value] of Object.entries({encounterRewardScale:.53,hero_neutral_damage:112})) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 284;
+    return next;
+  }
+  if (revision >= 278) {
+    const defaults278 = {
+      encounterRewardScale:.456,
+      encounterGrade1HpMul:1.38, encounterGrade2HpMul:1.00, encounterGrade3HpMul:.82,
+      encounterGrade1AtkMul:4.5, encounterGrade2AtkMul:2.4, encounterGrade3AtkMul:1.6,
+      encounterBaseHitCap:55,
+    };
+    for (const [key,value] of Object.entries(defaults278)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 283;
+    return migrateEncounterRewardParams(next);
+  }
   if (revision >= 274) {
     const defaults274 = {
       encounterChest1Min:.05, encounterChest1Max:1.55,
@@ -1753,7 +1771,7 @@ function migrateEncounterRewardParams(input) {
       next[`encounterChest${tier}Shape`] = unchanged || alreadyUpdated ? DEFAULT_PARAMS[`encounterChest${tier}Shape`] : 1;
     }
     next.encounterRewardRevision = 278;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 273) {
     const defaults273 = {
@@ -2026,7 +2044,6 @@ function migrateEncounterRewardParams(input) {
     for (const [key,value] of Object.entries(defaults255)) {
       if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
     }
-    if (input.encounterMinionBaseHitLimit === undefined) next.encounterMinionBaseHitLimit = DEFAULT_PARAMS.encounterMinionBaseHitLimit;
     next.encounterRewardRevision = 258;
     return migrateEncounterRewardParams(next);
   }
@@ -3478,7 +3495,7 @@ function encounterEconomyEnabled() {
 }
 function economyMode() {
   return ENCOUNTER_DRAFT_PROTOTYPE
-    ? encounterEconomyEnabled() ? "encounter-rtp-candidate-278" : "encounter-playtest-unbalanced-278"
+    ? encounterEconomyEnabled() ? "encounter-rtp-candidate-284" : "encounter-playtest-unbalanced-284"
     : "legacy-math";
 }
 function mathPoolEnabled() {
@@ -7090,12 +7107,6 @@ function updateEnemies(dt) {
               });
             } else {
               if (performEnemyBaseAttack(m, 1)) break;
-              m.baseHitCount = (m.baseHitCount || 0) + 1;
-              if (m.baseHitCount >= params.encounterMinionBaseHitLimit) {
-                // A breached regular enemy deals its configured hits, then exits without a kill reward.
-                m.rewardClaimed = true;
-                m.hp = 0;
-              }
             }
           }
         }

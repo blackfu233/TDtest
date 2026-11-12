@@ -110,7 +110,7 @@ const HERO_TUNING = [
   ["ice","寒霜獵手","冰","貫穿冰槍",{ damage:172, rate:.70, range:980, status:.24, statusTime:1.35, splash:0, secondaryMul:.75, targets:3, projectileSpeed:1250, zoneDuration:0 }],
   ["electric","雷霆特工","電","連鎖電弧",{ damage:84, rate:1.35, range:900, status:.12, statusTime:1.0, splash:0, secondaryMul:.62, targets:3, projectileSpeed:0, zoneDuration:0 }],
   ["poison","劇毒術士","毒","腐蝕毒囊",{ damage:107, rate:.76, range:820, status:25, statusTime:2.6, splash:58, secondaryMul:.50, targets:1, projectileSpeed:520, zoneDuration:2.0 }],
-  ["neutral","戰術傭兵","無","三連實彈",{ damage:112, rate:.92, range:940, status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0 }],
+  ["neutral","戰術傭兵","無","三連實彈",{ damage:115, rate:.92, range:940, status:0, statusTime:0, splash:0, secondaryMul:1, targets:3, projectileSpeed:1450, zoneDuration:0 }],
 ];
 const HERO_FIELDS = [
   ["damage","傷害",0,1000,1],["rate","攻速",.05,10,.01],["range","射程",100,1200,10],
@@ -417,17 +417,16 @@ function upgradeRequirementText(text) {
 }
 
 const ENCOUNTER_PARAM_DEFAULTS = {
-  encounterRewardRevision:278,
+  encounterRewardRevision:284,
   encounterEconomyEnabled:1,
   encounterRtpTargetMin:.96, encounterRtpTargetMax:1,
-  encounterRewardScale:.456,
+  encounterRewardScale:.54,
   encounterPotEntryPower:1,
   encounterChestUpgradeChance:.10,
   encounterHpDepthGrowth:.09, encounterHpDepthCap:2,
-  encounterGrade1HpMul:1.38, encounterGrade2HpMul:1.00, encounterGrade3HpMul:.82,
-  encounterGrade1AtkMul:4.5, encounterGrade2AtkMul:2.4, encounterGrade3AtkMul:1.6,
-  encounterBaseHitCap:55,
-  encounterMinionBaseHitLimit:1,
+  encounterGrade1HpMul:1.75, encounterGrade2HpMul:1.15, encounterGrade3HpMul:.90,
+  encounterGrade1AtkMul:1, encounterGrade2AtkMul:1, encounterGrade3AtkMul:1,
+  encounterBaseHitCap:14,
   encounterChest1Min:.05, encounterChest1Max:3.00, encounterChest1Shape:2.933,
   encounterChest2Min:.35, encounterChest2Max:4.00, encounterChest2Shape:2.527,
   encounterChest3Min:.80, encounterChest3Max:4.50, encounterChest3Shape:1.467,
@@ -866,8 +865,7 @@ const ENCOUNTER_PARAM_GROUPS = [
     ]),
     ["encounterHpDepthGrowth", "每波額外耐久成長", "比例", 0, .5, .01, "額外係數為 1 + (波次 - 1) × 成長；不讀取玩家配置、血量、POT 或過往勝敗。"],
     ["encounterHpDepthCap", "額外耐久成長上限", "倍", 1, 5, .1, "只限制此額外係數；原本波次血量曲線仍生效。"],
-    ["encounterBaseHitCap", "一般波單次傷害上限", "HP", 1, 1000, 10, "限制單隻敵人的單次基地傷害，多隻敵人仍可連續造成傷害；BOSS 波不套用。"],
-    ["encounterMinionBaseHitLimit", "一般怪突破攻擊次數", "次", 1, 10, 1, "一般怪抵達基地後最多攻擊幾次便離場；離場不視為擊殺，也不會發放該怪獎勵。BOSS 不受此值限制。"],
+    ["encounterBaseHitCap", "一般波單次傷害上限", "HP", 1, 1000, 1, "限制單隻敵人的單次基地傷害，多隻敵人仍可連續造成傷害；BOSS 波不套用。"],
   ]],
   ["251 戰鬥 / 配置差異", "system-group", [
     ["encounterRushSpeedCap", "高速怪速度上限", "像素 / 秒", 40, 96, 1, "保留高速特性，但限制難度與屬性疊乘後的移速。"],
@@ -943,8 +941,28 @@ try { channel = new BroadcastChannel(PARAM_CHANNEL); } catch {}
 function loadParams() { try { return cleanParams(migrateBossParams(JSON.parse(localStorage.getItem(PARAM_STORAGE_KEY) || "{}"))); } catch { return cleanParams(); } }
 function migrateEncounterRewardParams(input) {
   const revision = Number(input.encounterRewardRevision) || 0;
-  if (revision >= 278) return input;
+  if (revision >= 284) return input;
   const next = {...input};
+  if (revision >= 283) {
+    for (const [key,value] of Object.entries({encounterRewardScale:.53,hero_neutral_damage:112})) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 284;
+    return next;
+  }
+  if (revision >= 278) {
+    const defaults278 = {
+      encounterRewardScale:.456,
+      encounterGrade1HpMul:1.38, encounterGrade2HpMul:1.00, encounterGrade3HpMul:.82,
+      encounterGrade1AtkMul:4.5, encounterGrade2AtkMul:2.4, encounterGrade3AtkMul:1.6,
+      encounterBaseHitCap:55,
+    };
+    for (const [key,value] of Object.entries(defaults278)) {
+      if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
+    }
+    next.encounterRewardRevision = 283;
+    return migrateEncounterRewardParams(next);
+  }
   if (revision >= 274) {
     const defaults274 = {
       encounterChest1Min:.05, encounterChest1Max:1.55,
@@ -962,7 +980,7 @@ function migrateEncounterRewardParams(input) {
       next[`encounterChest${tier}Shape`] = unchanged || alreadyUpdated ? DEFAULT_PARAMS[`encounterChest${tier}Shape`] : 1;
     }
     next.encounterRewardRevision = 278;
-    return next;
+    return migrateEncounterRewardParams(next);
   }
   if (revision === 273) {
     const defaults273 = {
@@ -1235,7 +1253,6 @@ function migrateEncounterRewardParams(input) {
     for (const [key,value] of Object.entries(defaults255)) {
       if (input[key] === undefined || Number(input[key]) === value) next[key] = DEFAULT_PARAMS[key];
     }
-    if (input.encounterMinionBaseHitLimit === undefined) next.encounterMinionBaseHitLimit = DEFAULT_PARAMS.encounterMinionBaseHitLimit;
     next.encounterRewardRevision = 258;
     return migrateEncounterRewardParams(next);
   }
@@ -2511,7 +2528,6 @@ function cleanParams(input={}) {
   next.encounterHpDepthGrowth = clamp(next.encounterHpDepthGrowth, 0, .5);
   next.encounterHpDepthCap = clamp(next.encounterHpDepthCap, 1, 5);
   next.encounterBaseHitCap = clamp(next.encounterBaseHitCap, 1, 1000);
-  next.encounterMinionBaseHitLimit = Math.round(clamp(next.encounterMinionBaseHitLimit, 1, 10));
   for (const grade of [1,2,3]) {
     next[`encounterGrade${grade}HpMul`] = clamp(next[`encounterGrade${grade}HpMul`], .5, 3);
     next[`encounterGrade${grade}AtkMul`] = clamp(next[`encounterGrade${grade}AtkMul`], 1, 20);

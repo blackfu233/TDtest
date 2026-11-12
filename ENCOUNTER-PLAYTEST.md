@@ -1,8 +1,33 @@
 # Encounter Combat and Rewards Playtest
 
-Current build: `encounter-loadout-risk281`.
-Economy identity: `encounter-rtp-candidate-278`.
-This is an RTP candidate under validation, not an approved release.
+Current build: `encounter-persistent-balance284`.
+
+Regular enemies now remain at the base and continue attacking until their HP reaches zero; reaching the base no longer removes them or suppresses their kill reward.
+Economy identity: `encounter-rtp-candidate-284`.
+This RTP candidate is validated for the human-balanced proxy, not an all-strategy approved release.
+
+## Formal Baseline and Candidate Revision 284
+
+- V283 completed 100,000 independent-wallet runs using the human-balanced proxy,
+  balanced towers and adaptive encounters: RTP 96.096% (95% CI +/- 0.834 percentage
+  points), 2x+ 15.138%, 5x+ 1.661%, 10x+ 0.429%, death 34.439%, payout mismatch 0.
+- General reward scale increases from 0.53 to 0.54 to provide margin above the
+  RTP and 2x lower targets. Neutral hero damage increases from 112 to 115 because
+  its baseline death rate was 37.510%, above the other heroes' 32.875%-34.190%.
+- Monster HP, attacks, persistent behavior, BOSS timing and multiplier bands are
+  unchanged. Custom parameter values survive the shared V283-to-V284 migration.
+- V284 formal validation uses 500,000 fresh-seed runs with the same proxy policy;
+  paired tuning samples and independent small validation are not included in it.
+- V284 completed all 500,000 runs: RTP 98.740% (95% CI 98.356%-99.123%),
+  2x+ 15.697%, 5x+ 1.777%, 10x+ 0.462%, death 34.334%, average terminal wave
+  11.508, payout mismatch 0. The 2x+ 95% Wilson interval is 15.596%-15.798%.
+  No 50x+ result was observed; the empirical maximum was 26.228x.
+- All 100 chunks and frozen engine/analyzer hashes reconcile. The cloud report
+  `正式驗證_20261005_v284_真人50萬` is sheet 284500000 in spreadsheet
+  `1qxuumFgxv8bQ_h1thprbHMil62xJufUskDWukbU8YKo`; all 3,510 cells read back
+  without differences. Historical sheets are preserved.
+- Reports distinguish observed damage-event rates from displayed estimates and
+  identify later-BOSS arrival as policy-dependent rather than a pure survival rate.
 
 ## Loadout-aware Risk Revision 281
 
