@@ -206,7 +206,8 @@
 @keyframes matchupWarning { 0%, 100% { opacity: 1; } 50% { opacity: .30; } }
 @keyframes lethalRiskWarning { 0%, 100% { box-shadow: inset 0 0 8px #ff343444; } 50% { box-shadow: inset 0 0 20px #ff343499; } }
 @media (prefers-reduced-motion: reduce) { .encounter-clear.lethal-risk { animation: none; } }
-.milestone-demo .battlefield #game { top: 140px; height: calc(100% - 140px); }
+.milestone-demo .battle-viewport { position: absolute; inset: 140px 0 0; display: grid; place-items: center; container-type: size; background: #080b0f; }
+.milestone-demo .battle-viewport #game { position: static; display: block; width: min(100cqw, calc(100cqh * 350 / 760)); height: auto; max-height: 100%; aspect-ratio: 350 / 760; }
 .milestone-demo .battlefield::after { top: 140px; }
 .milestone-demo .tower-slots { top: 146px; }
 .milestone-demo .next-attr-hint { top: 142px; }
@@ -218,6 +219,46 @@
 .milestone-paid .decision-wave-summary strong,
 .milestone-paid .decision-wave-summary > span { font-size: 13px; overflow-wrap: anywhere; }
 .milestone-demo .boss-draft .encounter-reward { flex-wrap: wrap; gap: 3px; }
+.milestone-demo .zone-progress { position: absolute; z-index: 15; top: 76px; left: 184px; right: 45px; white-space: pre-line; color: #c3d0d4; font-size: 11px; line-height: 18px; }
+.milestone-demo .rules-button { position: absolute; z-index: 16; top: 79px; right: 10px; width: 28px; height: 28px; padding: 0; border: 1px solid #81969e; border-radius: 50%; background: #151c20; color: #edf4f4; font-weight: 700; }
+.milestone-demo .entry-panel { max-height: calc(100% - 16px); padding: 16px; overflow-y: auto; }
+.milestone-demo .entry-rules { display: grid; gap: 9px; margin: 12px 0; padding: 0; list-style: none; text-align: left; }
+.milestone-demo .entry-rules li { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; padding-bottom: 8px; border-bottom: 1px solid #3a4449; font-size: 12px; line-height: 1.6; }
+.milestone-demo .entry-rules strong { color: #f3dc99; }
+.milestone-demo .entry-rules span { color: #d0d8db; }
+.milestone-demo .rules-link { display: block; margin: 13px auto 0; padding: 3px; border: 0; background: none; color: #a6dbed; text-decoration: underline; font-size: 12px; }
+.milestone-demo .encounter-wager,
+.milestone-demo .encounter-rule { margin: 0; color: #ccd7da; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.milestone-demo .encounter-wager { color: #f4dc99; }
+.milestone-demo .encounter-rule { padding-top: 4px; border-top: 1px solid #495357; }
+.milestone-demo .encounter-panel { max-height: calc(100% - 16px); overflow-y: auto; }
+.milestone-demo .decision-explanation { margin: 0 0 12px; color: #d9e3e6; font-size: 12px; line-height: 1.6; text-align: left; }
+.milestone-demo .decision-exit-hint { margin: 12px 0 0; color: #adbec3; font-size: 11px; line-height: 1.5; text-align: center; }
+.milestone-demo .decision-panel { max-height: calc(100% - 24px); overflow-y: auto; }
+.milestone-demo .rules-dialog { width: min(390px, calc(100% - 28px)); max-height: calc(100% - 36px); padding: 18px; border: 1px solid #78939c; border-radius: 7px; background: #11191d; color: #d8e3e6; font-size: 13px; line-height: 1.65; }
+.milestone-demo .rules-dialog::backdrop { background: rgba(0, 0, 0, .78); }
+.milestone-demo .rules-dialog-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 8px; background: #11191d; }
+.milestone-demo .rules-dialog h2 { margin: 0; color: #f3f7f8; font-size: 19px; }
+.milestone-demo .rules-dialog-head button { flex: 0 0 32px; height: 32px; padding: 0; border: 1px solid #657e87; border-radius: 4px; background: #1d2a30; color: #fff; font-size: 22px; }
+.milestone-demo .rules-dialog dt { margin-top: 14px; color: #f4dc99; font-weight: 700; }
+.milestone-demo .rules-dialog dd { margin: 3px 0 0; }
+.milestone-demo .rules-example { padding-top: 12px; border-top: 1px solid #52646b; color: #9de4bd; }
+.milestone-demo .rules-example p { margin: 4px 0 0; }
+.milestone-demo .rules-footnote { margin: 14px 0 0; color: #acbbc0; font-size: 11px; }
+@media (max-height: 700px) {
+  .milestone-demo .entry-panel { padding: 12px; }
+  .milestone-demo .entry-rules { gap: 5px; margin: 8px 0; }
+  .milestone-demo .entry-rules li { grid-template-columns: 78px minmax(0, 1fr); gap: 6px; padding-bottom: 5px; font-size: 11px; line-height: 1.45; }
+  .milestone-demo .entry-stepper { height: 46px; margin: 8px auto; }
+  .milestone-demo .entry-stepper strong { font-size: 20px; }
+  .milestone-demo .bet-options button { min-height: 26px; }
+  .milestone-demo .entry-start { min-height: 50px; margin-top: 8px; }
+  .milestone-demo .rules-link { margin-top: 8px; }
+}
+@media (max-height: 640px) {
+  .milestone-demo .wave-decision { padding: 140px 0 10px; }
+  .milestone-demo .decision-panel { max-height: 100%; }
+}
 @media (max-width: 350px) {
   .encounter-metric { gap: 3px; }
   .encounter-metric small { font-size: 9px; }

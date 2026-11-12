@@ -6,6 +6,23 @@ Regular enemies now remain at the base and continue attacking until their HP rea
 Economy identity: `encounter-milestone-unbalanced-285`.
 This is a settlement prototype. RTP has not been calibrated or formally validated.
 
+## Presentation Revision milestone285-ui2
+
+- The complete 350-by-760 battlefield now fits its viewport with a single uniform
+  scale. HUD space no longer distorts background, characters or enemies; the full
+  combat area remains visible at short mobile and desktop sizes.
+- Entry, hero selection and enemy selection identify the per-wave BET charge.
+  Entry rules and a reopenable rules dialog explain automatic combat, estimated
+  damage risk, upgrades, paid rerolls, zone settlement and voluntary exit.
+- Labels distinguish unpaid, at-risk POT from wallet credits. Continue explains
+  the next debit; the BOSS receipt distinguishes gross payout from net profit and
+  makes the next-zone reset and retained formation explicit.
+- This is presentation only: combat, wagers, rewards, probabilities and settlement
+  are unchanged from commit `0b5fa36`. Six same-seed/policy comparisons match the
+  complete outcome, wave records, parameters, multiplier weights and next RNG value.
+- `archive/v285-before-display-fix` retains that pre-fix source. The V284 playable
+  entry and source archive remain unchanged.
+
 ## Milestone Settlement Prototype 285
 
 - Each wave still costs its displayed BET. Mid-zone Collect remains available.

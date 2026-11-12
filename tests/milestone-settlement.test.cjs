@@ -82,12 +82,15 @@ test("simulator counts already-paid zones on later defeat and final completion",
 });
 
 test("default gameplay reconciles wagers and rewards across seeds and cashout policies",()=>{
+  const baseline={"9/boss1":[1300,856,12],"9/never":[1750,856,15],"185/boss1":[1450,3633,13],
+    "185/never":[4150,5304,25],"812/boss1":[1450,1028,13],"812/never":[3750,2333,25]};
   for(const seed of [9,185,812])for(const policy of ["boss1","never"]){
     const run=fixture(),r=run(`TDSimCore.runOne(__tdHeadless,{baseBet:100,baseHp:1000,startWallet:10000,maxWave:25,
       strategy:"balanced",encounterPolicy:"adaptive",collectPolicy:"${policy}",rerollChance:.05,
       walletMode:"independent"},10000,${seed})`);
     assert.equal(r.endingWallet,10000-r.bets+r.payout);assert.equal(r.payoutMismatch,0);
     assert.equal(r.basePayout+r.bossPayout,r.payout);
+    assert.deepEqual([r.bets,r.payout,r.wave],baseline[`${seed}/${policy}`]);
     assert.ok(r.payout>=r.milestones.reduce((sum,m)=>sum+m.amount,0));
   }
 });

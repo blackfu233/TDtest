@@ -85,6 +85,8 @@ const ui = {
   payout: document.getElementById("payoutText"),
   banked: document.getElementById("bankedText"),
   stake: document.getElementById("stakeText"),
+  zoneProgress: document.getElementById("zoneProgressText"),
+  rulesDialog: document.getElementById("rulesDialog"),
   potChip: document.querySelector(".pot-chip"),
   wave: document.getElementById("waveText"),
   waveChip: document.getElementById("waveText").closest(".hud-chip"),
@@ -115,6 +117,8 @@ const ui = {
   decisionReward: document.getElementById("decisionReward"),
   decisionDamage: document.getElementById("decisionDamage"),
   decisionRepair: document.getElementById("decisionRepair"),
+  decisionExplanation: document.getElementById("decisionExplanation"),
+  decisionExitHint: document.getElementById("decisionExitHint"),
   continue: document.getElementById("continueBtn"),
   nextAttrHint: document.getElementById("nextAttrHint"),
   nextAttrCanvas: document.getElementById("nextAttrIcon"),
@@ -134,6 +138,8 @@ const ui = {
   encounterPanel: document.getElementById("encounterPanel"),
   encounterWave: document.getElementById("encounterWave"),
   encounterTitle: document.getElementById("encounterTitle"),
+  encounterWager: document.getElementById("encounterWagerText"),
+  encounterRule: document.getElementById("encounterRuleText"),
   encounterList: document.getElementById("encounterList"),
   biomeHud: document.getElementById("biomeHud"),
   biomeName: document.getElementById("biomeName"),
@@ -5242,6 +5248,10 @@ function renderEncounterDraft(choices, boss) {
     ? `BOSS ${state.bossSeen + 1} / ${PROTOTYPE_BOSS_TOTAL}`
     : `${biome.short} · WAVE ${String(state.wave + 1).padStart(2, "0")}`;
   ui.encounterTitle.textContent = boss ? `${biome.name} BOSS` : "選擇目標";
+  ui.encounterWager.textContent = `本波已扣 BET ${currentBet()}・選定後自動戰鬥`;
+  ui.encounterRule.textContent = boss
+    ? "清完王與護衛：本區 POT × 王倍率直接入帳。"
+    : "受損風險是基地受傷的估計機率，不等於輸錢機率；POT 尚未入帳。";
   ui.encounterPanel.classList.toggle("boss-draft", boss);
   ui.encounterPanel.classList.toggle("behavior-preview", BEHAVIOR_PREVIEW && !boss);
   ui.encounterList.innerHTML = "";
@@ -5464,7 +5474,7 @@ function showHeroDraft() {
       prepareEncounterDraft();
     }
   }));
-  showChoices("選擇出戰角色", "選定角色後直接開始第一波。", choices);
+  showChoices("選擇出戰角色", `本波已扣 BET ${currentBet()}，選角色後再選敵軍。`, choices);
 }
 
 function addHero(def) {
@@ -9823,6 +9833,7 @@ function updateUi() {
   ui.payout.textContent = scoreDisplay.total;
   if (ui.banked) ui.banked.textContent = state.bankedPayout;
   if (ui.stake) ui.stake.textContent = state.totalStake;
+  ui.zoneProgress.textContent = `第 ${Math.min(PROTOTYPE_BOSS_TOTAL, state.biomeIndex + 1)} / ${PROTOTYPE_BOSS_TOTAL} 區\n區內第 ${Math.max(1, state.biomeWave + (state.waveActive || state.pendingWaveStart || state.choiceKind === "encounter" ? 1 : 0))} 波`;
   ui.wave.textContent = state.wave;
   ui.hp.textContent = `HP ${Math.ceil(state.hp)} / ${maxHp}`;
   ui.hpFill.style.width = `${Math.round(hpPct * 100)}%`;
@@ -9883,7 +9894,7 @@ function updateUi() {
   ui.waveDecision.classList.toggle("milestone-paid", !!milestone);
   ui.decisionWave.textContent = milestone ? `${milestone.name}結算・已入帳` : `第 ${state.wave} 波完成`;
   ui.decisionPayout.textContent = milestone ? milestone.amount : scoreDisplay.total;
-  document.getElementById("decisionPayoutLabel").textContent = milestone ? "本區派彩" : "本區可領";
+  document.getElementById("decisionPayoutLabel").textContent = milestone ? "本區派彩" : "收手可領";
   ui.continue.querySelector("span").textContent = milestone ? "挑戰下一區" : "繼續";
   if (ui.decisionReward) ui.decisionReward.textContent = milestone
     ? `${milestone.pot} POT × ${milestone.multiplier.toFixed(1)}` : `+${Math.round(state.waveSummary?.pot || 0)} POT`;
@@ -9895,6 +9906,12 @@ function updateUi() {
     ui.decisionRepair.textContent = [exp > 0 ? `通關 +${exp} EXP` : "", repair > 0 ? `戰區修復 +${Math.round(repair)} HP` : ""].filter(Boolean).join(" · ");
     ui.decisionRepair.classList.toggle("hidden", exp <= 0 && repair <= 0);
   }
+  ui.decisionExplanation.textContent = milestone
+    ? "獎金已進錢包。下一區重置 POT 與倍率，角色、砲台與升級保留。"
+    : `繼續需再扣 BET ${currentBet()}；本區未領 POT 在失敗時會歸零。`;
+  ui.decisionExitHint.textContent = milestone
+    ? "現在離場，已入帳獎金不變。"
+    : "收手會領取上方金額，並結束本局。";
   ui.decisionDanger.classList.toggle("hidden", bossDanger <= 0);
   ui.decisionDanger.textContent = "!".repeat(Math.max(1, bossDanger));
   ui.decisionDanger.setAttribute?.("aria-label", `危險程度 ${bossDanger}`);
@@ -10045,6 +10062,9 @@ ui.reset.onclick = () => { playSfx("ui"); reset(); };
 ui.sound.onclick = toggleSound;
 ui.speed.onclick = toggleSpeed;
 ui.newRun.onclick = () => { playSfx("ui"); reset(); };
+if (!HEADLESS_SIM) document.querySelectorAll("[data-open-rules]").forEach(button => {
+  button.addEventListener("click", () => ui.rulesDialog.showModal());
+});
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {

@@ -1780,6 +1780,6 @@ globalThis.TD_ENCOUNTER_TUNING = {
     ]
   },
   "clearShare": 0.4,
-  "engineSha256": "204134a3403fb49a786094cbb5f2f5ca3ae1c1b564db1073a4b32fbf1aa3742d"
+  "engineSha256": "30269e6033ac1d4088657efcbbf66464aed245ca5781b210a201ab9f6b271a4a"
 };
 if (typeof module !== "undefined") module.exports = globalThis.TD_ENCOUNTER_TUNING;

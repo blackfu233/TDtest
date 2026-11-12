@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防卡牌玩法測試</title>
   <link rel="stylesheet" href="styles.css?v=encounter-integrated-card238">
-  <link rel="stylesheet" href="encounter-integrated.css?v=encounter-milestone285">
+  <link rel="stylesheet" href="encounter-integrated.css?v=milestone285-ui2">
 </head>
-<body class="milestone-demo">
+<body class="milestone-demo" data-presentation="milestone285-ui2">
   <main class="phone">
     <section class="top-hud">
       <div class="hud-chip">
@@ -18,12 +18,12 @@
         <strong id="walletText">10000</strong>
       </div>
       <div class="pot-chip">
-        <span>本區 POT</span>
+        <span>本區 POT・未入帳</span>
         <div class="pot-row">
           <strong id="potText">0</strong>
           <b id="bossMultText" class="empty"></b>
         </div>
-        <div class="payout-row"><span>本區可領</span><strong id="payoutText">0</strong></div>
+        <div class="payout-row"><span>收手可領</span><strong id="payoutText">0</strong></div>
       </div>
       <div class="hud-icons">
         <button id="resetBtn" type="button" aria-label="重新開始本局">↻</button>
@@ -42,7 +42,9 @@
       </div>
     </section>
 
-    <div class="milestone-ledger"><span>已入帳 <b id="bankedText">0</b></span><span>本局投注 <b id="stakeText">0</b></span></div>
+    <div class="milestone-ledger"><span>已入帳・保留 <b id="bankedText">0</b></span><span>本局投注 <b id="stakeText">0</b></span></div>
+    <div id="zoneProgressText" class="zone-progress"></div>
+    <button class="rules-button" type="button" data-open-rules aria-label="查看玩法與結算規則" title="玩法與結算規則">?</button>
 
     <section class="battlefield">
       <div id="biomeHud" class="biome-hud" aria-label="目前戰區與 BOSS 進度">
@@ -51,7 +53,7 @@
         <span id="biomeRoute" class="biome-route"></span>
       </div>
       <span id="nextAttrHint" class="next-attr-hint" role="img"><canvas id="nextAttrIcon" width="44" height="44"></canvas></span>
-      <canvas id="game" width="350" height="760" aria-label="塔防戰場"></canvas>
+      <div class="battle-viewport"><canvas id="game" width="350" height="760" aria-label="塔防戰場"></canvas></div>
       <div id="messageText" class="message">選擇 BET 與角色後開始戰鬥。</div>
     </section>
 
@@ -76,6 +78,11 @@
       <div class="entry-panel">
         <span class="entry-kicker">里程碑測試 · RTP 未校準</span>
         <h2>突破五大戰區</h2>
+        <ol class="entry-rules">
+          <li><strong>每波下注</strong><span>扣除當波 BET，選敵後自動戰鬥；BET 會隨進度提高。</span></li>
+          <li><strong>過王入帳</strong><span>清完 BOSS 與護衛，本區 POT × 王倍率直接入錢包。</span></li>
+          <li><strong>只冒本區風險</strong><span>失敗會失去未領 POT，已入帳保留；中途收手會結束本局。</span></li>
+        </ol>
         <div class="entry-wallet"><span>錢包</span><strong id="entryWalletText">10000</strong></div>
         <div class="entry-stepper">
           <button id="betMinusBtn" type="button" aria-label="降低 BET">−</button>
@@ -84,8 +91,9 @@
         </div>
         <div id="betOptions" class="bet-options" aria-label="BET 選項"></div>
         <button id="betBtn" class="entry-start" type="button">
-          <span>開始戰局</span><small>BET <b id="entryBetText">100</b></small>
+          <span>下注並選角色</span><small>扣除 BET <b id="entryBetText">100</b></small>
         </button>
+        <button class="rules-link" type="button" data-open-rules>完整玩法與結算範例</button>
       </div>
     </section>
 
@@ -101,14 +109,16 @@
           <span id="decisionDamage">基地 -0 HP</span>
           <small id="decisionRepair" class="hidden"></small>
         </div>
+        <p id="decisionExplanation" class="decision-explanation"></p>
         <div class="decision-actions">
           <button id="continueBtn" class="continue-button" type="button">
-            <span>繼續</span><small>BET <b id="waveBetText">100</b></small>
+            <span>繼續</span><small>再扣 BET <b id="waveBetText">100</b></small>
           </button>
           <button id="collectBtn" class="collect-button" type="button" disabled>
             <span>COLLECT</span><strong id="collectText">0</strong>
           </button>
         </div>
+        <p id="decisionExitHint" class="decision-exit-hint"></p>
       </div>
     </section>
 
@@ -139,7 +149,9 @@
           <h2 id="encounterTitle">選擇目標</h2>
           <span class="encounter-scan" aria-hidden="true"></span>
         </header>
+        <p id="encounterWagerText" class="encounter-wager"></p>
         <div id="encounterList" class="encounter-list" role="group" aria-label="本波敵軍選擇"></div>
+        <p id="encounterRuleText" class="encounter-rule"></p>
       </div>
     </section>
 
@@ -151,6 +163,17 @@
       </div>
     </section>
   </main>
-  <script src="game.js?v=encounter-milestone285" charset="utf-8"></script>
+  <dialog id="rulesDialog" class="rules-dialog" aria-labelledby="rulesTitle">
+    <form method="dialog" class="rules-dialog-head"><h2 id="rulesTitle">玩法與結算</h2><button aria-label="關閉玩法說明" title="關閉">×</button></form>
+    <dl>
+      <dt>每波扣一次 BET</dt><dd>選角色、選敵後自動戰鬥。每次繼續都再扣當波 BET，金額會隨進度提高；經驗升級可選強化，REROLL 另扣一次當波 BET。</dd>
+      <dt>每區第 7–14 波出現 BOSS</dt><dd>清完 BOSS 與護衛後，本區 POT × 本區王倍率直接入錢包。首區也可能開出高倍率；擊殺率與受損風險都是估計值，不是保證。</dd>
+      <dt>收手或繼續，由你決定</dt><dd>清場後可領取「收手可領」並結束本局；繼續則保留本區 POT 冒險。失敗只清空本區未領 POT，不追回先前已入帳獎金。</dd>
+      <dt>養成影響戰鬥，過區保留隊伍</dt><dd>角色、砲台與升級會影響傷害、控場及屬性克制。過區後 POT 與王倍率重置、隊伍保留，基地最多修復最大 HP 的 35%；打完五區結束本局。</dd>
+    </dl>
+    <div class="rules-example"><strong>派彩不是淨贏</strong><p>本區投入 1000、POT 600、王倍率 ×3<br>入帳 1800，淨贏 800。<br>下一區失敗，也不追回這筆 1800。</p></div>
+    <p class="rules-footnote">試玩點數・RTP 未校準。查看說明不會暫停戰鬥。</p>
+  </dialog>
+  <script src="game.js?v=milestone285-ui2" charset="utf-8"></script>
 </body>
 </html>
