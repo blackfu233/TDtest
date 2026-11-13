@@ -4733,7 +4733,9 @@ function showChoices(title, hint, choices, options={}) {
       btn.disabled = true;
       playSfx("upgrade");
       try {
+        const powerBefore = window.TDCombatPower?.summary().total;
         choice.onPick();
+        window.TDCombatPower?.recordChange(powerBefore);
       } catch (error) {
         console.error(error);
         btn.disabled = false;
@@ -4750,6 +4752,7 @@ function showChoices(title, hint, choices, options={}) {
   ui.reroll.querySelector("b").textContent = state.choiceRerollUsed ? "已重抽" : "REROLL";
   ui.rerollCost.textContent = state.choiceRerollUsed ? "本次升級已使用" : `BET ${currentBet()}`;
   ui.choiceOverlay.classList.remove("hidden");
+  window.TDCombatPower?.renderChoices(choices);
   updateUi();
 }
 function hideChoices() {
@@ -5318,6 +5321,7 @@ function renderEncounterDraft(choices, boss) {
     });
   });
   ui.encounterOverlay.classList.remove("hidden");
+  window.TDCombatPower?.renderEncounter(choices, boss);
 }
 
 function encounterAutoChoice(choices, policy=headlessEncounterPolicy) {
@@ -9838,7 +9842,7 @@ function updateUi() {
   ui.payout.textContent = scoreDisplay.total;
   if (ui.banked) ui.banked.textContent = state.bankedPayout;
   if (ui.stake) ui.stake.textContent = state.totalStake;
-  ui.zoneProgress.textContent = `第 ${Math.min(PROTOTYPE_BOSS_TOTAL, state.biomeIndex + 1)} / ${PROTOTYPE_BOSS_TOTAL} 區\n區內第 ${Math.max(1, state.biomeWave + (state.waveActive || state.pendingWaveStart || state.choiceKind === "encounter" ? 1 : 0))} 波`;
+  ui.zoneProgress.textContent = `${Math.min(PROTOTYPE_BOSS_TOTAL, state.biomeIndex + 1)}/${PROTOTYPE_BOSS_TOTAL} 區・第 ${Math.max(1, state.biomeWave + (state.waveActive || state.pendingWaveStart || state.choiceKind === "encounter" ? 1 : 0))} 波`;
   ui.wave.textContent = state.wave;
   ui.hp.textContent = `HP ${Math.ceil(state.hp)} / ${maxHp}`;
   ui.hpFill.style.width = `${Math.round(hpPct * 100)}%`;
@@ -9931,6 +9935,7 @@ function updateUi() {
   }
   renderBetOptions();
   renderSlots();
+  window.TDCombatPower?.renderTeam();
   updateDebugSnapshot();
 }
 

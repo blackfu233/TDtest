@@ -6,6 +6,28 @@ Regular enemies now remain at the base and continue attacking until their HP rea
 Economy identity: `encounter-milestone-unbalanced-285`.
 This is a settlement prototype. RTP has not been calibrated or formally validated.
 
+## Display Prototype milestone285-power1
+
+- `combat-power.js` is display-only and uses existing damage, cooldown, range,
+  class/attribute multipliers, unlocked effects and actual hero amplification.
+  Unit power averages a single-target and three-target reference; team power
+  reconciles unit scores plus resonance/conditional-effect contributions.
+- Conditional effects use an explicit 50% coverage assumption. Hard-control-based
+  freeze bonuses do not apply to BOSS damage. Poison/burn providers must actually
+  have the corresponding effect unlocked; a tower's color alone is not a trigger.
+- BOSS comparison uses projected damage against the disclosed BOSS and estimated
+  guards, then applies attributes and current base-health exposure. The opposing
+  score uses tuned HP, armor, attack cadence, speed and average guard HP, independent
+  of the player's composition. It never samples the unrevealed spawn roster.
+- Ratios >=1.2 / <0.85 label stronger/weaker firepower, not probabilities. Damage
+  overlap, positioning, phase timing and status coverage are approximations. This
+  display model is not calibrated as a win predictor and does not promise profit.
+- Unit badges, candidate cards, the team breakdown, actual post-selection change
+  and BOSS comparison make the numbers inspectable. Gameplay RNG, combat rules,
+  wagers, rewards, auto-player policies and settlement remain unchanged.
+- `archive/v285-before-power-index` retains the prior full-width presentation.
+  The V284 playable entry and prior source archives remain unchanged.
+
 ## Presentation Revision milestone285-ui3
 
 - The canvas now fills the entire available battlefield viewport. The backdrop

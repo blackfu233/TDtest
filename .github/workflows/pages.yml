@@ -33,6 +33,7 @@ jobs:
         run: |
           mkdir _site
           cp index.html game.js v284.html game-v284.js styles.css encounter-integrated.css _site/
+          cp combat-power.js combat-power.css _site/
           cp tuner.html tuner-legacy.html tuner.css tuner-current.css _site/
           cp tuner.js tuner-current.js tuner-encounter.js encounter-tuning-data.js _site/
           cp simulator.html simulator.css simulator.js simulator-core.js simulator-worker.js _site/

@@ -8,9 +8,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>塔防卡牌玩法測試</title>
   <link rel="stylesheet" href="styles.css?v=encounter-integrated-card238">
-  <link rel="stylesheet" href="encounter-integrated.css?v=milestone285-ui3">
+  <link rel="stylesheet" href="encounter-integrated.css?v=milestone285-power1">
+  <link rel="stylesheet" href="combat-power.css?v=milestone285-power1">
 </head>
-<body class="milestone-demo" data-presentation="milestone285-ui3">
+<body class="milestone-demo" data-presentation="milestone285-power1">
   <main class="phone">
     <section class="top-hud">
       <div class="hud-chip">
@@ -43,7 +44,10 @@
     </section>
 
     <div class="milestone-ledger"><span>已入帳・保留 <b id="bankedText">0</b></span><span>本局投注 <b id="stakeText">0</b></span></div>
-    <div id="zoneProgressText" class="zone-progress"></div>
+    <button id="powerSummaryBtn" class="power-summary" type="button" disabled aria-haspopup="dialog" aria-label="隊伍戰力估算與連動明細">
+      <span id="zoneProgressText" class="zone-progress"></span>
+      <span>估算戰力 <b id="teamPowerText">0</b><i id="powerChangeText"></i></span>
+    </button>
     <button class="rules-button" type="button" data-open-rules aria-label="查看玩法與結算規則" title="玩法與結算規則">?</button>
 
     <section class="battlefield">
@@ -174,6 +178,15 @@
     <div class="rules-example"><strong>派彩不是淨贏</strong><p>本區投入 1000、POT 600、王倍率 ×3<br>入帳 1800，淨贏 800。<br>下一區失敗，也不追回這筆 1800。</p></div>
     <p class="rules-footnote">試玩點數・RTP 未校準。查看說明不會暫停戰鬥。</p>
   </dialog>
-  <script src="game.js?v=milestone285-ui3" charset="utf-8"></script>
+  <dialog id="powerDialog" class="rules-dialog power-dialog" aria-labelledby="powerTitle">
+    <form method="dialog" class="rules-dialog-head"><h2 id="powerTitle">隊伍戰力・估算</h2><button aria-label="關閉戰力明細" title="關閉">×</button></form>
+    <div class="power-totals"><span>單位合計 <b id="powerBaseText">0</b></span><span>連動修正 <b id="powerLinkText">+0</b></span><strong>隊伍戰力 <b id="powerTotalText">0</b></strong></div>
+    <p id="powerLastChangeText" class="power-method"></p>
+    <ul id="powerUnitList" class="power-unit-list"></ul>
+    <p class="power-method">單位戰力含自身強化，以單體／三目標輸出、射程及緩速作參考。同屬英雄加成依實際倍率；已可觸發的條件增傷以半數覆蓋估算，沒有額外增加戰鬥加成。</p>
+    <p class="rules-footnote">持續傷害重疊、走位、護甲階段與控場覆蓋仍是近似值。戰力不是勝率，也不是派彩倍率；對王時另計屬性、配置與基地狀態。這是待試玩校正的顯示模型。</p>
+  </dialog>
+  <script src="game.js?v=milestone285-power1" charset="utf-8"></script>
+  <script src="combat-power.js?v=milestone285-power1" charset="utf-8"></script>
 </body>
 </html>
