@@ -158,6 +158,7 @@ const BET_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
 const SPEED_STEPS = [1, 2, 3];
 const SOUND_STORAGE_KEY = "towerDefenseSoundMuted.v1";
 const FIELD = { w: 350, h: 760, pathX: 175, spawnY: -18, baseY: 720, attackLineY: 596 };
+let battlefieldView = { width:FIELD.w, height:FIELD.h, scale:1, x:0, y:0 };
 const TOWER_SLOTS = [{ x: 44, y: 700 }, { x: 131, y: 682 }, { x: 219, y: 682 }, { x: 306, y: 700 }];
 const EXP_TABLE = [95,125,155,190,225,290,330,370,415,460,510,565,625,690,760,835,915,1000,1090,1185,1285,1390,1500,1615,1735,1860,1990,2125,2265,2410,2560,2715,2875,3040,3210,3385,3565,3750,3940];
 
@@ -8180,6 +8181,9 @@ function distSquared(a,b) {
 function draw() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
   drawField();
+  ctx.save();
+  ctx.translate(battlefieldView.x, battlefieldView.y);
+  ctx.scale(battlefieldView.scale, battlefieldView.scale);
   drawHero();
   drawDefenseStage();
   state.zones.forEach(drawZone);
@@ -8187,6 +8191,7 @@ function draw() {
   drawActiveChannels();
   state.effects.forEach(drawEffect);
   state.monsters.forEach(drawEnemy);
+  ctx.restore();
 }
 
 function drawHero() {
@@ -8498,7 +8503,7 @@ function drawField() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   } else {
     if (!fieldLayer) fieldLayer = buildFieldLayer();
-    ctx.drawImage(fieldLayer, 0, 0);
+    ctx.drawImage(fieldLayer, battlefieldView.x, battlefieldView.y, FIELD.w * battlefieldView.scale, FIELD.h * battlefieldView.scale);
   }
   drawBiomeFieldOverlay();
 }
@@ -8629,8 +8634,8 @@ function drawDefenseStage() {
 
 function buildFieldLayer() {
   const layer = document.createElement("canvas");
-  layer.width = canvas.width;
-  layer.height = canvas.height;
+  layer.width = FIELD.w;
+  layer.height = FIELD.h;
   const g = layer.getContext("2d", { alpha: false });
   const ground = g.createLinearGradient(0, 0, 0, layer.height);
   ground.addColorStop(0, "#10141a");
@@ -10078,10 +10083,23 @@ document.addEventListener("visibilitychange", () => {
 
 document.body.dataset.build = BUILD_VERSION;
 let viewportSyncFrame = 0;
+function fitBattlefieldView(width, height, pixelRatio=1) {
+  const renderWidth = Math.round(width * pixelRatio), renderHeight = Math.round(height * pixelRatio);
+  const scale = Math.min(renderWidth / FIELD.w, renderHeight / FIELD.h);
+  return { width:renderWidth, height:renderHeight, scale,
+    x:(renderWidth - FIELD.w * scale) / 2, y:(renderHeight - FIELD.h * scale) / 2 };
+}
 function syncViewportHeight() {
   viewportSyncFrame = 0;
   const height = Math.round(window.visualViewport?.height || window.innerHeight);
   document.documentElement.style.setProperty("--app-height", `${height}px`);
+  if (!HEADLESS_SIM) {
+    const bounds = canvas.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    battlefieldView = fitBattlefieldView(bounds.width, bounds.height, Math.min(window.devicePixelRatio || 1, 2));
+    canvas.width = battlefieldView.width;
+    canvas.height = battlefieldView.height;
+  }
 }
 function queueViewportSync() {
   if (viewportSyncFrame) return;

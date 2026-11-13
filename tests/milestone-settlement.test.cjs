@@ -116,6 +116,21 @@ test("V285 tuning is isolated from the preserved V284 game",()=>{
   }
 });
 
+test("the battlefield fills its viewport with uniform actors and the complete combat area",()=>{
+  const run=fixture();
+  for(const [width,height] of [[420,635],[390,644],[350,560],[320,374],[420,700],[320,900]]){
+    for(const ratio of [1,1.25,2]){
+      const view=run(`fitBattlefieldView(${width},${height},${ratio})`);
+      assert.equal(view.width,Math.round(width*ratio));assert.equal(view.height,Math.round(height*ratio));
+      assert.ok(view.x>=-1e-8 && view.y>=-1e-8);
+      assert.ok(view.x+350*view.scale<=view.width+1e-8);
+      assert.ok(view.y+760*view.scale<=view.height+1e-8);
+      assert.ok(Math.abs(view.x*2+350*view.scale-view.width)<1e-8);
+      assert.ok(Math.abs(view.y*2+760*view.scale-view.height)<1e-8);
+    }
+  }
+});
+
 test("chase analysis distinguishes death from zero payout after a paid milestone",()=>{
   const source=fs.readFileSync(path.join(root,"simulator.js"),"utf8"),sandbox={};
   vm.runInNewContext(source.slice(source.indexOf("function buildChaseAnalysis"),source.indexOf("function mergeChaseReports")),sandbox);

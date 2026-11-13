@@ -206,8 +206,8 @@
 @keyframes matchupWarning { 0%, 100% { opacity: 1; } 50% { opacity: .30; } }
 @keyframes lethalRiskWarning { 0%, 100% { box-shadow: inset 0 0 8px #ff343444; } 50% { box-shadow: inset 0 0 20px #ff343499; } }
 @media (prefers-reduced-motion: reduce) { .encounter-clear.lethal-risk { animation: none; } }
-.milestone-demo .battle-viewport { position: absolute; inset: 140px 0 0; display: grid; place-items: center; container-type: size; background: #080b0f; }
-.milestone-demo .battle-viewport #game { position: static; display: block; width: min(100cqw, calc(100cqh * 350 / 760)); height: auto; max-height: 100%; aspect-ratio: 350 / 760; }
+.milestone-demo .battle-viewport { position: absolute; inset: 140px 0 0; background: #080b0f; }
+.milestone-demo .battle-viewport #game { position: static; display: block; width: 100%; height: 100%; }
 .milestone-demo .battlefield::after { top: 140px; }
 .milestone-demo .tower-slots { top: 146px; }
 .milestone-demo .next-attr-hint { top: 142px; }

@@ -6,6 +6,19 @@ Regular enemies now remain at the base and continue attacking until their HP rea
 Economy identity: `encounter-milestone-unbalanced-285`.
 This is a settlement prototype. RTP has not been calibrated or formally validated.
 
+## Presentation Revision milestone285-ui3
+
+- The canvas now fills the entire available battlefield viewport. The backdrop
+  uses proportional cover cropping, replacing the previous left/right black bars.
+- Foreground actors, projectiles and effects use one uniform scale and a centered
+  display offset. The complete 350-by-760 combat area remains visible; logical
+  positions, ranges, damage, RNG, wagers and settlement are unchanged.
+- Resize and pixel-density changes update only the render buffer and view mapping.
+  Mobile, desktop, high-DPI and tall-phone checks verify full viewport coverage,
+  equal horizontal/vertical actor scale and visible side-edge background pixels.
+- `archive/v285-ui2-before-fullbleed` retains the previous presentation. V284 and
+  all earlier rule/source archives remain intact.
+
 ## Presentation Revision milestone285-ui2
 
 - The complete 350-by-760 battlefield now fits its viewport with a single uniform
